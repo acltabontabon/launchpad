@@ -18,10 +18,9 @@ import dev.tamboui.widgets.block.Block;
 import dev.tamboui.widgets.block.Borders;
 import dev.tamboui.widgets.block.Title;
 import dev.tamboui.widgets.paragraph.Paragraph;
-import org.springframework.stereotype.Component;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.springframework.stereotype.Component;
 
 @Component
 public class ProjectSelectView implements View {

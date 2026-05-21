@@ -20,9 +20,8 @@ import dev.tamboui.widgets.block.Borders;
 import dev.tamboui.widgets.block.Title;
 import dev.tamboui.widgets.gauge.Gauge;
 import dev.tamboui.widgets.paragraph.Paragraph;
-import org.springframework.stereotype.Component;
-
 import java.util.ArrayList;
+import org.springframework.stereotype.Component;
 
 @Component
 public class ScanProgressView implements View {
