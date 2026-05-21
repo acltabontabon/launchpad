@@ -1,6 +1,8 @@
 package com.acltabontabon.launchpad.tui;
 
 import com.acltabontabon.launchpad.ai.ContextGeneratorService;
+import com.acltabontabon.launchpad.ai.OllamaHealthChecker;
+import com.acltabontabon.launchpad.ai.OllamaStatus;
 import com.acltabontabon.launchpad.scanner.ProjectScanner;
 import com.acltabontabon.launchpad.template.ContextTemplateEngine;
 import com.acltabontabon.launchpad.tui.view.ProjectSelectView;
@@ -51,6 +53,7 @@ public class LaunchpadRunner implements ApplicationRunner {
 
     private final ProjectScanner scanner;
     private final ContextGeneratorService generatorService;
+    private final OllamaHealthChecker healthChecker;
     private final ContextTemplateEngine templateEngine = new ContextTemplateEngine();
 
     private boolean scanStarted = false;
@@ -62,7 +65,8 @@ public class LaunchpadRunner implements ApplicationRunner {
         ScanProgressView scanProgressView,
         ReviewView reviewView,
         ProjectScanner scanner,
-        ContextGeneratorService generatorService
+        ContextGeneratorService generatorService,
+        OllamaHealthChecker healthChecker
     ) {
         this.welcomeView = welcomeView;
         this.projectSelectView = projectSelectView;
@@ -71,6 +75,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         this.reviewView = reviewView;
         this.scanner = scanner;
         this.generatorService = generatorService;
+        this.healthChecker = healthChecker;
     }
 
     @Override
@@ -99,6 +104,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     // ── Rendering ─────────────────────────────────────────────────────────────
 
     private void renderFrame(Frame frame) {
+        triggerHealthCheckIfNeeded();
         triggerScanIfNeeded();
 
         var area = frame.area();
@@ -148,6 +154,16 @@ public class LaunchpadRunner implements ApplicationRunner {
                 .build())
             .build();
         frame.renderWidget(footer, area);
+    }
+
+    // ── Background health check ────────────────────────────────────────────────
+
+    private void triggerHealthCheckIfNeeded() {
+        if (!state.healthCheckRequested) return;
+        state.healthCheckRequested = false;
+        state.ollamaStatus.set(OllamaStatus.checking());
+
+        CompletableFuture.runAsync(() -> state.ollamaStatus.set(healthChecker.check()));
     }
 
     // ── Background scan pipeline ───────────────────────────────────────────────

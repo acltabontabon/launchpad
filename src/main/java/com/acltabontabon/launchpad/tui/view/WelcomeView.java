@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.tui.view;
 
+import com.acltabontabon.launchpad.ai.OllamaStatus;
 import com.acltabontabon.launchpad.tui.AppState;
 import dev.tamboui.layout.Alignment;
 import dev.tamboui.layout.Constraint;
@@ -13,6 +14,7 @@ import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
+import dev.tamboui.tui.event.TickEvent;
 import dev.tamboui.widgets.block.Block;
 import dev.tamboui.widgets.block.Borders;
 import dev.tamboui.widgets.paragraph.Paragraph;
@@ -20,6 +22,9 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class WelcomeView implements View {
+
+    private static final String[] SPINNER = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+    private int spinnerFrame = 0;
 
     private static final String ASCII_LOGO = """
          ██╗      █████╗ ██╗   ██╗███╗   ██╗ ██████╗██╗  ██╗██████╗  █████╗ ██████╗
@@ -32,6 +37,8 @@ public class WelcomeView implements View {
 
     @Override
     public void render(Frame frame, Rect area, AppState state) {
+        spinnerFrame = (spinnerFrame + 1) % SPINNER.length;
+
         var outerBlock = Block.builder()
             .borders(Borders.ALL)
             .borderStyle(Style.create().fg(Color.CYAN))
@@ -44,6 +51,8 @@ public class WelcomeView implements View {
             .constraints(
                 Constraint.length(7),   // logo
                 Constraint.length(2),   // tagline
+                Constraint.length(1),   // ollama status badge
+                Constraint.length(1),   // ollama status hint
                 Constraint.min(0),      // spacer
                 Constraint.length(1),   // version
                 Constraint.length(1),   // prompt
@@ -69,6 +78,24 @@ public class WelcomeView implements View {
             .build();
         frame.renderWidget(tagline, rows.get(1));
 
+        var status = state.ollamaStatus.get();
+
+        // Status badge
+        var badge = Paragraph.builder()
+            .text(Text.styled(badgeText(status), badgeStyle(status)))
+            .alignment(Alignment.CENTER)
+            .build();
+        frame.renderWidget(badge, rows.get(2));
+
+        // Status hint (only when not ready)
+        if (status.hint() != null) {
+            var hint = Paragraph.builder()
+                .text(Text.styled(status.hint(), Style.create().fg(Color.DARK_GRAY)))
+                .alignment(Alignment.CENTER)
+                .build();
+            frame.renderWidget(hint, rows.get(3));
+        }
+
         // Version
         var version = Paragraph.builder()
             .text(Text.styled(
@@ -77,35 +104,66 @@ public class WelcomeView implements View {
             ))
             .alignment(Alignment.CENTER)
             .build();
-        frame.renderWidget(version, rows.get(3));
+        frame.renderWidget(version, rows.get(5));
 
-        // Press enter prompt
+        // Prompt
         var prompt = Paragraph.builder()
-            .text(Text.styled(
-                "[ Press Enter to start ]",
-                Style.create().fg(Color.YELLOW).bold()
-            ))
+            .text(Text.styled(promptText(status), Style.create().fg(Color.YELLOW).bold()))
             .alignment(Alignment.CENTER)
             .build();
-        frame.renderWidget(prompt, rows.get(4));
+        frame.renderWidget(prompt, rows.get(6));
 
-        // Quit hint
-        var hint = Paragraph.builder()
-            .text(Text.styled(
-                "q · quit",
-                Style.create().fg(Color.DARK_GRAY)
-            ))
+        // Bottom hint
+        var bottomHint = Paragraph.builder()
+            .text(Text.styled(bottomHintText(status), Style.create().fg(Color.DARK_GRAY)))
             .alignment(Alignment.CENTER)
             .build();
-        frame.renderWidget(hint, rows.get(5));
+        frame.renderWidget(bottomHint, rows.get(7));
+    }
+
+    private String badgeText(OllamaStatus status) {
+        var glyph = status.state() == OllamaStatus.State.CHECKING ? SPINNER[spinnerFrame] : "●";
+        return glyph + "  " + status.message();
+    }
+
+    private static Style badgeStyle(OllamaStatus status) {
+        return switch (status.state()) {
+            case CHECKING      -> Style.create().fg(Color.DARK_GRAY);
+            case READY         -> Style.create().fg(Color.GREEN).bold();
+            case DAEMON_DOWN,
+                 MODEL_MISSING -> Style.create().fg(Color.RED).bold();
+        };
+    }
+
+    private static String promptText(OllamaStatus status) {
+        return status.isReady()
+            ? "[ Press Enter to start ]"
+            : "[ Press r to re-check ]";
+    }
+
+    private static String bottomHintText(OllamaStatus status) {
+        return status.isReady() ? "q · quit" : "r · re-check    q · quit";
     }
 
     @Override
     public boolean handleEvent(Event event, TuiRunner runner, AppState state) {
-        if (event instanceof KeyEvent key && key.isKey(KeyCode.ENTER)) {
+        // Redraw on every tick. The Welcome screen needs to animate the spinner
+        // while the health check is in flight and reflect status changes the
+        // moment the background task completes - simpler than tracking deltas.
+        if (event instanceof TickEvent) return true;
+
+        if (!(event instanceof KeyEvent key)) return false;
+
+        if (key.isKey(KeyCode.ENTER) && state.ollamaStatus.get().isReady()) {
             state.currentScreen = AppState.Screen.PROJECT_SELECT;
             return true;
         }
+
+        if (key.isChar('r')) {
+            state.healthCheckRequested = true;
+            return true;
+        }
+
         return false;
     }
 }

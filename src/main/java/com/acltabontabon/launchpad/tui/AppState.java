@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.tui;
 
+import com.acltabontabon.launchpad.ai.OllamaStatus;
 import com.acltabontabon.launchpad.template.ContextTarget;
 import com.acltabontabon.launchpad.template.GeneratedFile;
 
@@ -24,6 +25,10 @@ public class AppState {
 
     // Navigation
     public volatile Screen currentScreen = Screen.WELCOME;
+
+    // Ollama readiness (updated from background thread)
+    public final AtomicReference<OllamaStatus> ollamaStatus = new AtomicReference<>(OllamaStatus.checking());
+    public volatile boolean healthCheckRequested = true;
 
     // User selections
     public volatile String projectPath = System.getProperty("user.home");

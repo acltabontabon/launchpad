@@ -196,8 +196,9 @@ skinparam state {
 
 [*] --> WELCOME
 
-WELCOME : ASCII logo + version
-WELCOME --> PROJECT_SELECT : Enter
+WELCOME : ASCII logo + Ollama readiness badge
+WELCOME --> PROJECT_SELECT : Enter (only if ollamaStatus.isReady())
+WELCOME --> WELCOME : r (re-run readiness check)
 WELCOME --> [*] : q
 
 PROJECT_SELECT : Path input + live validation
@@ -276,6 +277,8 @@ W -> S : write scanProgress,\n  scanMessage,\n  generatedFiles,\n  scanComplete,
 
 Anything mutated from the background side is `volatile` or wrapped in `AtomicInteger`/`AtomicReference`. The visibility guarantee is per-field, not snapshot-consistent: a render tick can observe `scanProgress=100` before `generatedFiles` is non-empty, which is why `ScanProgressView` only checks `scanComplete` (the last flag flipped) before allowing the transition to REVIEW.
 
+A second short-lived `CompletableFuture.runAsync` runs the Ollama readiness check. It is kicked off on the first render tick (`AppState.healthCheckRequested` starts `true`) and again whenever the user presses `r` on the Welcome screen. The worker writes the result into `AppState.ollamaStatus` (an `AtomicReference<OllamaStatus>`). The same threading rules apply.
+
 [WARNING]
 ====
 Adding plain mutable fields to `AppState` is a bug waiting to happen. The class's javadoc spells this out, but it is easy to miss. Use `volatile` for references and primitives, or `Atomic*` for compound updates.
@@ -304,8 +307,8 @@ Adding plain mutable fields to `AppState` is a bug waiting to happen. The class'
 | `ProjectScanner` (`@Service`), `ProjectContext` (record)
 
 | `com.acltabontabon.launchpad.ai`
-| Spring AI `ChatClient` wrapper with three prompt templates.
-| `ContextGeneratorService` (`@Service`)
+| Spring AI `ChatClient` wrapper with three prompt templates, plus an Ollama readiness check.
+| `ContextGeneratorService` (`@Service`), `OllamaHealthChecker` (`@Component`), `OllamaStatus` (record)
 
 | `com.acltabontabon.launchpad.template`
 | Assembles `List<GeneratedFile>` from AI output + rules.
@@ -400,6 +403,10 @@ Three prompt constants, one `ChatClient`, three public methods. The class is int
 |===
 
 `ChatClient` is built once in the constructor from the Spring-AI-provided `ChatClient.Builder`. The Ollama base URL and model come from `application.properties`. Swapping providers is a dependency-swap on the starter, not a code change here.
+
+=== OllamaHealthChecker
+
+A small `@Component` that bypasses Spring AI and talks to Ollama's HTTP API directly. It exposes one method, `check()`, which GETs `<base-url>/api/tags` with a 2-second timeout, then scans the JSON body for model `name` entries. The configured model matches if it equals an installed name exactly or matches the prefix before `:` (Ollama returns `llama3.2:latest` for a `llama3.2` pull). The result is an immutable `OllamaStatus` record with one of four states: `CHECKING`, `READY`, `DAEMON_DOWN`, `MODEL_MISSING`. Any failure - connection refused, non-200 response, malformed body - collapses to `DAEMON_DOWN`. Used only by `LaunchpadRunner.triggerHealthCheckIfNeeded` to feed `AppState.ollamaStatus`, which `WelcomeView` renders as a colored badge.
 
 === ContextTemplateEngine
 
