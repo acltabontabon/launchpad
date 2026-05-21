@@ -1,0 +1,59 @@
+name: Release native image
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform-tag }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform-tag: linux-x64
+            binary-suffix: ''
+            mvn: ./mvnw
+          - runner: macos-latest
+            platform-tag: macos-arm64
+            binary-suffix: ''
+            mvn: ./mvnw
+          - runner: windows-latest
+            platform-tag: windows-x64
+            binary-suffix: '.exe'
+            mvn: .\mvnw.cmd
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up GraalVM for JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'maven'
+
+      - name: Build native image
+        shell: bash
+        run: ${{ matrix.mvn }} -Pnative native:compile -DskipTests -B
+
+      - name: Rename binary
+        shell: bash
+        run: |
+          mv "target/launchpad${{ matrix.binary-suffix }}" "launchpad-${{ matrix.platform-tag }}${{ matrix.binary-suffix }}"
+
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "launchpad-${{ matrix.platform-tag }}${{ matrix.binary-suffix }}" \
+            --clobber
