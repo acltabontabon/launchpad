@@ -1,0 +1,530 @@
+= Launchpad - Technical Architecture
+:toc: left
+:toclevels: 3
+:sectnums:
+:sectanchors:
+:source-highlighter: rouge
+:icons: font
+:imagesdir: images
+
+[abstract]
+Launchpad is a local-AI-powered terminal UI that scans a target codebase, asks a locally-running Ollama model to summarise it, and emits AI-assistant context files (`CLAUDE.md` + `.ai/` for Claude Code, `.cursorrules` + `.cursor/rules/` for Cursor). It is a Spring Boot application with no web server: the process owns the terminal, runs the scan/AI pipeline on a background thread, and exits when the user quits.
+
+This document explains how the pieces fit together, the data that flows between them, and the extension points if you want to add a new target or a new scan rule.
+
+== At a glance
+
+[cols="1,3"]
+|===
+| Runtime           | Spring Boot 4.0.6 (non-web), Java 25, optional GraalVM native image
+| AI client         | Spring AI 2.0.0-M6 (`spring-ai-starter-model-ollama`)
+| TUI library       | TamboUI 0.3.0 (Ratatui-inspired Java TUI, Panama backend)
+| External services | One: an Ollama daemon on `http://localhost:11434`
+| Output            | Files written to the scanned project root (CLAUDE.md, .ai/+, or .cursorrules, .cursor/rules/+)
+| Source size       | ~1.6k lines of Java across 16 files in 5 packages
+|===
+
+== Running it
+
+[source,bash]
+----
+# 1. Start Ollama and make the configured model available
+ollama serve
+ollama pull llama3.2
+
+# 2. Launch the TUI
+./mvnw spring-boot:run
+
+# 3. Or build a fast-starting native binary
+./mvnw -Pnative native:compile
+----
+
+Everything else (model name, Ollama URL, scan limits) is in `src/main/resources/application.properties`.
+
+== High-level architecture
+
+The application is a thin Spring Boot shell around three responsibilities: render a TUI, walk a file tree, and talk to Ollama. The five Java packages map 1-to-1 to those concerns plus shared types.
+
+[plantuml,architecture-overview,svg]
+----
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+
+package "LaunchpadApplication\n(Spring Boot, no web)" {
+
+  package "tui" as TUI #E8F4FD {
+    [LaunchpadRunner\n(ApplicationRunner)] as Runner
+    [AppState\n(shared mutable state)] as State
+    package "tui.view" {
+      [WelcomeView] as W
+      [ProjectSelectView] as P
+      [TargetSelectView] as T
+      [ScanProgressView] as S
+      [ReviewView] as R
+    }
+  }
+
+  package "scanner" as SCAN #FDF6E3 {
+    [ProjectScanner\n(@Service)] as Scanner
+    [ProjectContext\n(record)] as Ctx
+  }
+
+  package "ai" as AI #F4ECF7 {
+    [ContextGeneratorService\n(@Service)] as Gen
+  }
+
+  package "template" as TPL #E8F8F5 {
+    [ContextTemplateEngine] as Engine
+    [ContextTarget\n(enum)] as Target
+    [GeneratedFile\n(record)] as File
+  }
+
+  package "rules" as RULES #FDEDEC {
+    [EngineeringRule\n(enum)] as Rule
+  }
+}
+
+cloud "Ollama daemon\nlocalhost:11434" as Ollama
+database "Filesystem\n(target project)" as FS
+actor "User" as U
+
+U -down-> TUI : keypresses
+Runner -right-> State : reads/writes
+Runner -down-> W
+Runner -down-> P
+Runner -down-> T
+Runner -down-> S
+Runner -down-> R
+Runner -right-> Scanner : scan(path)
+Runner -right-> Gen : generate*(ctx)
+Runner -right-> Engine : buildFiles(ctx, target, ...)
+
+Scanner -down-> FS : walkFileTree
+Scanner -right-> Ctx : produces
+Gen -down-> Ollama : ChatClient.prompt()
+Gen -up-> Ctx : reads.toPromptString()
+Engine -up-> Rule : enumerates
+Engine -right-> File : produces
+
+R -down-> FS : writeString (on 's')
+
+@enduml
+----
+
+The arrows show data flow, not call frequency. Every render tick (~12 fps) `LaunchpadRunner` reads `AppState` to know what to draw, but the heavy work (file walk + two LLM calls) runs once on a background thread and writes its progress back into `AppState`.
+
+== The pipeline
+
+The end-to-end flow has six observable phases. All of them are driven from `LaunchpadRunner.triggerScanIfNeeded()` (`src/main/java/com/acltabontabon/launchpad/tui/LaunchpadRunner.java:159`) and run inside a single `CompletableFuture.runAsync`.
+
+[plantuml,pipeline-sequence,svg]
+----
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam sequenceMessageAlign center
+
+actor User
+participant "ScanProgressView\n(render thread)" as V
+participant "LaunchpadRunner" as R
+participant "AppState" as S
+participant "ProjectScanner" as PS
+participant "ContextGeneratorService" as G
+database "Ollama" as O
+participant "ContextTemplateEngine" as E
+
+User -> V : Enter (from TARGET_SELECT)
+V -> S : currentScreen = SCANNING
+
+== Background pipeline (CompletableFuture.runAsync) ==
+
+R -> S : scanProgress = 5\nmessage = "Scanning project files..."
+R -> PS : scan(projectPath, progressCb)
+PS -> PS : walkFileTree (skip dirs,\n  max-file-size filter)
+PS -> PS : detectStack +\n  extractDependencies +\n  detectEntryPoints
+PS --> R : ProjectContext
+
+R -> S : scanProgress = 30\nmessage = "Generating project summary..."
+R -> G : generateProjectSummary(ctx)
+G -> O : ChatClient prompt #1\n(PROJECT_SUMMARY_PROMPT)
+O --> G : summary (markdown)
+G --> R : summary
+
+R -> S : scanProgress = 60\nmessage = "Generating <target> content..."
+R -> G : generateTargetSpecificContent(ctx, target)
+G -> O : ChatClient prompt #2\n(SKILLS_PROMPT or CURSOR_RULES_PROMPT)
+O --> G : targetContent
+G --> R : targetContent
+
+R -> S : scanProgress = 85\nmessage = "Assembling output files..."
+R -> E : buildFiles(ctx, target, summary, targetContent)
+E --> R : List<GeneratedFile>
+R -> S : generatedFiles = files\nscanProgress = 100\nscanComplete = true
+
+== Back on the render thread ==
+
+V -> S : reads scanComplete, shows\n"Press Enter to review"
+User -> V : Enter
+V -> S : currentScreen = REVIEW
+@enduml
+----
+
+A few details that are not obvious from the picture:
+
+* The `progressCb` passed to `ProjectScanner.scan` is a `Consumer<String>` that simply writes to `state.scanMessage`. This is how the file-walk phase animates its sub-status ("Reading pom.xml...") inside the broader "Scanning project files..." phase.
+* `ScanProgressView` does not subscribe to anything. It just re-reads `state.scanProgress` and `state.scanMessage` on every render tick. The spinner advances by incrementing `spinnerFrame` in the render method, which is the only mutable state that lives on a view.
+* If the background task throws, the catch block sets `state.scanError = true` and `state.scanComplete = true` so the gauge stops animating and the user sees a red message. The view never transitions to REVIEW on error.
+
+== TUI state machine
+
+`AppState.Screen` (5 enum values) plus the boolean `scanComplete` flag are the entire navigation model. Each `View` returns `true` from `handleEvent` to consume the key and (often) sets `state.currentScreen` to advance.
+
+[plantuml,state-machine,svg]
+----
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam state {
+  BackgroundColor #E8F4FD
+  BorderColor #2C3E50
+}
+
+[*] --> WELCOME
+
+WELCOME : ASCII logo + version
+WELCOME --> PROJECT_SELECT : Enter
+WELCOME --> [*] : q
+
+PROJECT_SELECT : Path input + live validation
+PROJECT_SELECT --> WELCOME : Esc
+PROJECT_SELECT --> TARGET_SELECT : Enter (path valid)
+note right of PROJECT_SELECT
+  Path is validated each render:
+  exists + isDirectory.
+  'q' is ignored here so users
+  can type 'q' in paths.
+end note
+
+TARGET_SELECT : Two cards: Claude / Cursor
+TARGET_SELECT --> PROJECT_SELECT : Esc
+TARGET_SELECT --> SCANNING : Enter
+TARGET_SELECT --> TARGET_SELECT : Left/Right or h/l
+
+SCANNING : Gauge + phase list + spinner
+SCANNING --> REVIEW : Enter (scanComplete &&\n!scanError)
+note right of SCANNING
+  Pipeline runs once on first
+  entry (scanStarted guard in
+  LaunchpadRunner). On error,
+  this state is terminal except
+  for 'q'.
+end note
+
+REVIEW : Left: file list. Right: preview
+REVIEW --> REVIEW : Up/Down or j/k (cycle files)
+REVIEW --> REVIEW : s (write all to disk)
+REVIEW --> [*] : q
+
+@enduml
+----
+
+Two subtleties:
+
+. The global `q`-to-quit handler in `LaunchpadRunner.handleEvent` is suppressed when `currentScreen == PROJECT_SELECT`. That is so a user can type the letter `q` as part of a path. Every other screen treats `q` as quit before the per-view handler runs.
+. `scanStarted` is a field on `LaunchpadRunner` (not on `AppState`) because it is a one-shot latch that should never reset. Once the user has triggered a scan, even if they navigate back, the pipeline does not re-run. There is no "rescan" path today; that would require resetting `scanStarted` and clearing the progress/error fields together.
+
+== Threading model
+
+There are exactly two threads that matter.
+
+[plantuml,threading,svg]
+----
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+
+participant "TUI thread\n(TuiRunner.run loop)" as T
+participant "AppState\n(volatile + atomic fields)" as S
+participant "ForkJoinPool worker\n(CompletableFuture.runAsync)" as W
+
+note over T
+  Tick every 80ms (~12 fps):
+   1. drain input events
+   2. dispatch to current view's
+      handleEvent
+   3. render the frame
+end note
+
+T -> S : read currentScreen,\n  scanProgress, scanMessage,\n  generatedFiles, etc.
+T -> S : write currentScreen,\n  projectPath (char input),\n  targetCursorIndex
+
+note over W
+  Spawned once when SCANNING
+  is entered. Lives for the
+  duration of the pipeline.
+end note
+
+W -> S : write scanProgress,\n  scanMessage,\n  generatedFiles,\n  scanComplete, scanError
+@enduml
+----
+
+Anything mutated from the background side is `volatile` or wrapped in `AtomicInteger`/`AtomicReference`. The visibility guarantee is per-field, not snapshot-consistent: a render tick can observe `scanProgress=100` before `generatedFiles` is non-empty, which is why `ScanProgressView` only checks `scanComplete` (the last flag flipped) before allowing the transition to REVIEW.
+
+[WARNING]
+====
+Adding plain mutable fields to `AppState` is a bug waiting to happen. The class's javadoc spells this out, but it is easy to miss. Use `volatile` for references and primitives, or `Atomic*` for compound updates.
+====
+
+== Package map
+
+[cols="1,2,3"]
+|===
+| Package | Role | Notable types
+
+| `com.acltabontabon.launchpad`
+| Spring Boot entry point.
+| `LaunchpadApplication` (`@SpringBootApplication`, `@EnableAsync`)
+
+| `com.acltabontabon.launchpad.tui`
+| Render loop, shared state, screen dispatch.
+| `LaunchpadRunner` (`ApplicationRunner`), `AppState`
+
+| `com.acltabontabon.launchpad.tui.view`
+| One class per screen. All implement `View`.
+| `WelcomeView`, `ProjectSelectView`, `TargetSelectView`, `ScanProgressView`, `ReviewView`
+
+| `com.acltabontabon.launchpad.scanner`
+| Walks the project, detects stack/deps/entry points.
+| `ProjectScanner` (`@Service`), `ProjectContext` (record)
+
+| `com.acltabontabon.launchpad.ai`
+| Spring AI `ChatClient` wrapper with three prompt templates.
+| `ContextGeneratorService` (`@Service`)
+
+| `com.acltabontabon.launchpad.template`
+| Assembles `List<GeneratedFile>` from AI output + rules.
+| `ContextTemplateEngine`, `ContextTarget`, `GeneratedFile`
+
+| `com.acltabontabon.launchpad.rules`
+| Static, target-agnostic engineering principles.
+| `EngineeringRule` (enum, 10 constants)
+|===
+
+== Component deep dives
+
+=== ProjectScanner
+
+`ProjectScanner.scan` (`src/main/java/com/acltabontabon/launchpad/scanner/ProjectScanner.java:34`) is a single pass over the file tree that fills four collections, then runs three quick post-processors.
+
+[plantuml,scanner-internal,svg]
+----
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+
+start
+:scan(rootPath, progressCb);
+
+partition "Files.walkFileTree" {
+  if (dir name in SKIP_DIRS?) then (yes)
+    :SKIP_SUBTREE;
+  else (no)
+    if (file size > maxFileSizeKb?) then (yes)
+      :skip file;
+    else (no)
+      if (path contains test/tests/spec/specs?) then (yes)
+        if (includeTestNames\n  && isSourceFile?) then (yes)
+          :testClassNames.add;
+        endif
+      else (no)
+        if (isSourceFile?) then (yes)
+          :sourceFiles.add;
+        endif
+        if (filename in KEY_FILE_NAMES?) then (yes)
+          :read first 60 lines\n-> fileSnippets;
+        endif
+      endif
+    endif
+  endif
+}
+
+:detectStack(keyFiles)
+  -> "Java / Maven", "Node.js", etc.;
+:extractDependencies(fileSnippets)
+  -> regex over pom.xml /
+     package.json, capped at 50;
+:detectEntryPoints(sourceFiles)
+  -> Application.java, main.py, *Config.java;
+
+:new ProjectContext(...);
+stop
+@enduml
+----
+
+Important behaviour to know about:
+
+* `SKIP_DIRS` is hardcoded. The `launchpad.scan.skip-patterns` property in `application.properties` is *not* read by the scanner today. If you need to add a skip directory, edit `ProjectScanner.SKIP_DIRS`.
+* Test files are identified purely by path segment (`test`, `tests`, `spec`, `specs`). A file named `MyServiceTest.java` outside such a directory will still be classified as a source file.
+* `extractDependencies` only knows about `pom.xml` (regex on `<artifactId>`) and `package.json` (regex on quoted keys). Gradle, Cargo, Go modules, and Python `pyproject.toml` give a non-empty `detectedStack` but an empty `dependencies` list.
+
+=== ProjectContext.toPromptString
+
+The scan result is converted to a single string with `ProjectContext.toPromptString()` and pasted verbatim into every prompt. The format is deliberately summary-style (file names, not file contents) to keep token counts predictable even for large projects. Only `KEY_FILE_NAMES` get their first 60 lines included.
+
+=== ContextGeneratorService
+
+Three prompt constants, one `ChatClient`, three public methods. The class is intentionally small.
+
+[cols="1,2,2"]
+|===
+| Prompt | Used by | Output
+
+| `PROJECT_SUMMARY_PROMPT`
+| `generateProjectSummary` (always called)
+| Overview + patterns + module list + conventions + gotchas, in markdown.
+
+| `SKILLS_PROMPT`
+| `generateTargetSpecificContent` when target = CLAUDE
+| 5-8 skill blocks (`## Skill: name` + Trigger/Steps/Notes).
+
+| `CURSOR_RULES_PROMPT`
+| `generateTargetSpecificContent` when target = CURSOR
+| Project-specific, ordered Cursor rules.
+|===
+
+`ChatClient` is built once in the constructor from the Spring-AI-provided `ChatClient.Builder`. The Ollama base URL and model come from `application.properties`. Swapping providers is a dependency-swap on the starter, not a code change here.
+
+=== ContextTemplateEngine
+
+The engine has one public method, `buildFiles`, that branches on `ContextTarget`:
+
+[plantuml,template-output,svg]
+----
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+
+object "ProjectContext\n+ summary\n+ targetContent\n+ ContextTarget" as Input
+
+package "CLAUDE branch" #E8F4FD {
+  object "CLAUDE.md\nkind = CONTEXT" as C1
+  object ".ai/index.md\nkind = INDEX" as C2
+  object ".ai/engineering-rules.md\nkind = RULES" as C3
+  object ".ai/stack.md\nkind = CONTEXT" as C4
+}
+
+package "CURSOR branch" #FDF6E3 {
+  object ".cursorrules\nkind = CONTEXT" as U1
+  object ".cursor/rules/engineering.mdc\nkind = RULES" as U2
+  object ".cursor/rules/stack.mdc\nkind = CONTEXT" as U3
+}
+
+Input --> C1 : if CLAUDE
+Input --> C2
+Input --> C3
+Input --> C4
+Input --> U1 : if CURSOR
+Input --> U2
+Input --> U3
+@enduml
+----
+
+The engineering rules are pulled from the `EngineeringRule` enum and formatted differently for each target (markdown headings for CLAUDE, MDC frontmatter + bullet list for CURSOR). The summary and target-specific content are inlined verbatim; the engine does no post-processing of the AI output.
+
+=== Views
+
+Each `View` is `@Component` (so Spring constructs them) and implements two methods:
+
+[source,java]
+----
+void render(Frame frame, Rect area, AppState state);          // pure, called every tick
+boolean handleEvent(Event event, TuiRunner runner, AppState state);
+----
+
+The convention is that `render` reads `AppState` and never mutates it, while `handleEvent` may mutate `AppState.currentScreen` or domain fields to drive navigation. The only deliberate exception is the spinner counter in `ScanProgressView`, which lives on the view itself rather than `AppState` because it is purely cosmetic.
+
+`LaunchpadRunner.currentView()` (`src/main/java/com/acltabontabon/launchpad/tui/LaunchpadRunner.java:201`) is a `switch` over `AppState.Screen` that returns the right view instance. This is the entire "router" of the TUI.
+
+== Configuration
+
+`src/main/resources/application.properties`:
+
+[cols="3,1,3"]
+|===
+| Key | Default | Effect
+
+| `spring.main.web-application-type`
+| `none`
+| Disables the embedded servlet container. Without this, the JVM keeps a server thread alive and the TUI does not own stdin/stdout cleanly.
+
+| `spring.main.banner-mode`
+| `off`
+| Stops Spring printing its banner before the TUI takes over the terminal.
+
+| `logging.level.root`
+| `OFF`
+| Same idea: any stray log line would corrupt the rendered frame.
+
+| `spring.ai.ollama.base-url`
+| `http://localhost:11434`
+| The Ollama daemon endpoint.
+
+| `spring.ai.ollama.chat.options.model`
+| `llama3.2`
+| Model tag. Must be pulled (`ollama pull <name>`) before launch.
+
+| `launchpad.scan.max-file-size-kb`
+| `512`
+| Files larger than this are skipped during scan (used by `ProjectScanner.visitFile`).
+
+| `launchpad.scan.skip-patterns`
+| (set)
+| *Currently unused.* Reserved; skipping is done via `ProjectScanner.SKIP_DIRS`.
+
+| `launchpad.scan.include-test-names`
+| `true`
+| Whether to collect test-file relative paths into `ProjectContext.testClassNames`.
+|===
+
+== Extending Launchpad
+
+=== Adding a new target (e.g. Aider, Continue, Cline)
+
+1. Add a constant to `ContextTarget` with a `displayName`, `description`, and unique `profileKey`.
+2. Add a `buildXxxFiles(...)` branch in `ContextTemplateEngine.buildFiles` returning the desired `GeneratedFile` list.
+3. Add a prompt constant + a branch in `ContextGeneratorService.generateTargetSpecificContent`.
+4. The `TargetSelectView` reads `ContextTarget.values()`, so the new card appears automatically; only update `outputFileList` to spell out the new file paths.
+
+=== Adding a scan signal (e.g. detect React, Spring Boot version)
+
+Most additions live inside `ProjectScanner.scan`. Add a field to `ProjectContext`, populate it during or after the file walk, and surface it in `ProjectContext.toPromptString` so the AI sees it. Downstream code does not need to change unless you want the engine to use the new field directly.
+
+=== Adding an engineering rule
+
+Add a constant to `EngineeringRule`. Both the CLAUDE and CURSOR generators iterate the enum, so the new rule is included in both output styles without further work.
+
+=== Swapping the LLM provider
+
+The only file that touches Spring AI is `ContextGeneratorService`. Swap `spring-ai-starter-model-ollama` for another starter in `pom.xml` and the matching `spring.ai.*` properties; the `ChatClient` interface absorbs the change.
+
+== Glossary
+
+[cols="1,3"]
+|===
+| Term | Meaning
+
+| Pipeline      | The end-to-end flow that turns a project path into `List<GeneratedFile>`: scan -> summary -> target content -> assemble.
+| Target        | An AI assistant family Launchpad knows how to generate files for. Today: Claude Code, Cursor.
+| Context file  | The top-level file an AI assistant reads at session start (`CLAUDE.md`, `.cursorrules`).
+| Engineering rule | A project-agnostic principle from `EngineeringRule`, injected into every target's rules file.
+| Skill         | A short procedure (Trigger / Steps / Notes) the AI should follow for a common task in the scanned project.
+| Phase         | One of the six display-only milestones in `ScanProgressView` (driven by `scanProgress` thresholds, not by code structure).
+|===
