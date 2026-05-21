@@ -47,3 +47,7 @@ That's the whole loop. No accounts, no cloud, no API keys.
 ## Status
 
 Launchpad is early and evolving. Expect rough edges, and please share feedback - what works, what doesn't, and which assistants you'd like to see supported next.
+
+## License
+
+Launchpad is released under the [MIT License](LICENSE). You're free to use, modify, and share it.
