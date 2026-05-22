@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.tui.view;
 
 import com.acltabontabon.launchpad.tui.AppState;
+import com.acltabontabon.launchpad.tui.PathAutocomplete;
 import dev.tamboui.layout.Constraint;
 import dev.tamboui.layout.Layout;
 import dev.tamboui.layout.Rect;
@@ -54,9 +55,13 @@ public class ProjectSelectView implements View {
             .borderStyle(Style.create().fg(Color.YELLOW))
             .build();
 
-        var pathDisplay = state.projectPath + "█"; // simple cursor indicator
+        var inputLine = Line.from(
+            Span.styled(" " + state.projectPath, Style.create().fg(Color.WHITE)),
+            Span.styled("█", Style.create().fg(Color.WHITE)),
+            Span.styled(state.pathSuggestion, Style.create().fg(Color.DARK_GRAY))
+        );
         var inputParagraph = Paragraph.builder()
-            .text(Text.styled(" " + pathDisplay, Style.create().fg(Color.WHITE)))
+            .text(Text.from(inputLine))
             .block(inputBlock)
             .build();
         frame.renderWidget(inputParagraph, rows.get(1));
@@ -77,6 +82,8 @@ public class ProjectSelectView implements View {
             .text(Text.from(Line.from(
                 Span.styled(" Enter ", Style.create().fg(Color.BLACK).bg(Color.YELLOW)),
                 Span.styled(" confirm  ", Style.create().fg(Color.DARK_GRAY)),
+                Span.styled(" Tab ", Style.create().fg(Color.BLACK).bg(Color.YELLOW)),
+                Span.styled(" autocomplete  ", Style.create().fg(Color.DARK_GRAY)),
                 Span.styled(" Esc ", Style.create().fg(Color.BLACK).bg(Color.DARK_GRAY)),
                 Span.styled(" back  ", Style.create().fg(Color.DARK_GRAY)),
                 Span.styled(" q ", Style.create().fg(Color.BLACK).bg(Color.DARK_GRAY)),
@@ -104,11 +111,20 @@ public class ProjectSelectView implements View {
         if (key.isKey(KeyCode.BACKSPACE)) {
             if (!state.projectPath.isEmpty()) {
                 state.projectPath = state.projectPath.substring(0, state.projectPath.length() - 1);
+                state.pathSuggestion = PathAutocomplete.suggest(state.projectPath);
+            }
+            return true;
+        }
+        if (key.isKey(KeyCode.TAB) || key.isKey(KeyCode.RIGHT)) {
+            if (!state.pathSuggestion.isEmpty()) {
+                state.projectPath = state.projectPath + state.pathSuggestion + "/";
+                state.pathSuggestion = PathAutocomplete.suggest(state.projectPath);
             }
             return true;
         }
         if (key.code() == KeyCode.CHAR) {
             state.projectPath = state.projectPath + key.character();
+            state.pathSuggestion = PathAutocomplete.suggest(state.projectPath);
             return true;
         }
         return false;

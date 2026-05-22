@@ -35,6 +35,7 @@ public class AppState {
 
     // User selections
     public volatile String projectPath = System.getProperty("user.home");
+    public volatile String pathSuggestion = PathAutocomplete.suggest(projectPath);
     public volatile ContextTarget selectedTarget = ContextTarget.CLAUDE;
     public volatile int targetCursorIndex = 0;
 
