@@ -88,6 +88,14 @@
             <plugin>
                 <groupId>org.graalvm.buildtools</groupId>
                 <artifactId>native-maven-plugin</artifactId>
+                <configuration>
+                    <buildArgs>
+                        <!-- TamboUI's UnixTerminal.close() uses Arena.ofShared, which native-image disables by default -->
+                        <buildArg>-H:+SharedArenaSupport</buildArg>
+                        <!-- Bake in native-access permission for TamboUI's Panama FFI calls (JDK 25 restricted methods) -->
+                        <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
+                    </buildArgs>
+                </configuration>
             </plugin>
         </plugins>
     </build>

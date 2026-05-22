@@ -26,7 +26,7 @@ jobs:
           - runner: windows-latest
             platform-tag: windows-x64
             binary-suffix: '.exe'
-            mvn: .\mvnw.cmd
+            mvn: ./mvnw.cmd
 
     steps:
       - name: Checkout
