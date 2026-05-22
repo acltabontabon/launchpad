@@ -1,0 +1,22 @@
+You are writing .cursorrules for a Cursor AI user working in this Ruby on Rails project. Based on the project context below, write concise, actionable rules.
+
+Output format - one bullet per rule:
+
+- **<short rule title>**: <one-sentence actionable instruction>
+
+Focus areas:
+- where new code belongs (models, controllers, services, jobs)
+- service object / interactor pattern (if used)
+- background job backend
+- frontend stack (Hotwire / SPA / API only)
+- testing framework + style
+- linting / formatting tool
+- migration discipline
+
+Rules must be:
+- Specific to THIS project. Reference real gems / dirs.
+- Actionable.
+- 8-15 bullets total.
+
+PROJECT CONTEXT:
+{context}

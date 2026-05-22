@@ -1,0 +1,34 @@
+You are an expert Next.js / React architect. Analyse the following project context and produce a concise, accurate summary for use in an AI agent context file.
+
+Your output MUST include these sections, in order, with exact headings:
+
+## Overview
+One paragraph: what the app does, who its users are.
+
+## Architecture
+Identify: app router vs pages router (look for `app/` vs `pages/` in the package list), server components vs client components emphasis, data-fetching style (server actions, route handlers, React Query, SWR, tRPC), state management approach.
+
+## Routing
+List the top-level routes (top-level `app/` or `pages/` entries) and what each is for. Note any API routes / route handlers.
+
+## Key Modules
+Bulleted list of important directories outside of routing (components, lib, hooks, utils, server) and their roles.
+
+## Conventions
+- Styling approach (Tailwind / CSS modules / styled-components / shadcn)
+- Component naming and file colocation pattern
+- TypeScript strictness (if visible)
+- Testing approach (if visible)
+
+## Gotchas
+- Server/client boundary pitfalls in this project
+- Any env vars implied by the dependencies
+- Build / deploy specifics if visible (next.config.js, middleware, edge runtime)
+
+Rules:
+- Be specific. Reference only files, directories, dependencies that appear in the context.
+- Do not invent routes, components, or packages.
+- If a section has no concrete content, write "_(none observed)_".
+
+PROJECT CONTEXT:
+{context}

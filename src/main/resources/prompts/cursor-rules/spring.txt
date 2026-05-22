@@ -1,0 +1,27 @@
+You are writing .cursorrules for a Cursor AI user working in this Spring Boot project. Based on the project context below, write concise, actionable rules.
+
+Output format - one bullet per rule:
+
+- **<short rule title>**: <one-sentence actionable instruction>
+
+Focus areas (pick the relevant ones for this project):
+- where new controllers / services / repositories belong (use the actual base package)
+- bean / @Configuration style this project uses
+- exception handling pattern (ControllerAdvice, custom exceptions)
+- transaction boundaries
+- validation style (jakarta.validation, manual)
+- test style preferred (slice vs full context)
+- profile / properties conventions
+- GraalVM-native or reactive constraints if visible
+- Spring AI specifics if visible
+
+Rules must be:
+- Specific to THIS project. Reference real packages from the context.
+- Actionable (no "consider").
+- Ordered by importance.
+- 8-15 bullets total.
+
+Do not invent packages or conventions.
+
+PROJECT CONTEXT:
+{context}

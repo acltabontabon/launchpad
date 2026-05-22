@@ -1,0 +1,16 @@
+You are writing .cursorrules for a Cursor AI user working in this specific project. Based on the project context below, write concise, actionable rules.
+
+Output format - one bullet per rule:
+
+- **<short rule title>**: <one-sentence actionable instruction>
+
+Rules must be:
+- Specific to THIS project (reference its packages, conventions, dependencies). Not generic best practices.
+- Actionable (what to do or not do, not "consider").
+- Ordered by importance (most impactful first).
+- 8-15 bullets total.
+
+Do not invent packages, files, or conventions that don't appear in the context.
+
+PROJECT CONTEXT:
+{context}

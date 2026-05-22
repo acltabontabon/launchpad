@@ -1,0 +1,26 @@
+Based on the following Spring Boot project context, suggest 5-8 developer tasks an AI agent should know how to perform in THIS specific project. Format each as a skill definition exactly:
+
+## Skill: <short-kebab-case-name>
+**Trigger:** <when to use this skill, one sentence>
+**Steps:**
+1. <numbered, specific to this project - reference real packages / classes when relevant>
+2. ...
+**Notes:** <project-specific gotchas, or "_(none)_">
+
+Suggested topics to draw from (pick the ones that fit this project):
+- add a REST endpoint / controller method
+- add a service + bean wiring
+- add a JPA entity + repository
+- add a @ConfigurationProperties section
+- add a new application profile
+- add a scheduled / async task
+- add an integration test (slice test or @SpringBootTest)
+- add a Spring AI tool / chat client config (if Spring AI is in deps)
+
+Rules:
+- Skills must reference real packages from the context. Do not invent.
+- Steps must mention the specific project's conventions (e.g. base package, where controllers go).
+- Aim for 6 skills.
+
+PROJECT CONTEXT:
+{context}

@@ -156,11 +156,13 @@ public class LaunchpadRunner implements ApplicationRunner {
                 spans.add(Span.styled("  ·  ", dim));
                 spans.add(Span.styled(shortenPath(state.projectPath), Style.create().fg(Color.WHITE)));
             }
-            if (state.launchpadAware) {
-                spans.add(Span.styled("  ", dim));
-                spans.add(Span.styled("✨ launchpad-aware", Style.create().fg(Color.YELLOW).bold()));
-            }
+            // Badge and target appear only once the project is committed (TARGET_SELECT onward).
+            // On PROJECT_SELECT the user is still editing, so launchpadAware could be stale.
             if (screen != AppState.Screen.PROJECT_SELECT) {
+                if (state.launchpadAware) {
+                    spans.add(Span.styled("  ", dim));
+                    spans.add(Span.styled("✨ launchpad-aware", Style.create().fg(Color.YELLOW).bold()));
+                }
                 spans.add(Span.styled("  ·  ", dim));
                 spans.add(Span.styled("→ " + state.selectedTarget.displayName,
                     Style.create().fg(Color.GREEN)));
@@ -233,10 +235,22 @@ public class LaunchpadRunner implements ApplicationRunner {
                 var targetContent = generatorService.generateTargetSpecificContent(ctx, state.selectedTarget,
                     chunk -> onAiChunk(chunk, 60, 85));
 
+                // Collect validation warnings so the Review screen can surface them.
+                var warnings = new java.util.ArrayList<String>();
+                if (summary.retried()) warnings.add("summary phase retried once after a format violation");
+                if (targetContent.retried()) warnings.add(state.selectedTarget.displayName + " phase retried once after a format violation");
+                summary.warnings().forEach(w -> warnings.add("summary: " + w));
+                targetContent.warnings().forEach(w -> warnings.add(state.selectedTarget.displayName.toLowerCase() + ": " + w));
+                state.generationWarnings = warnings;
+
                 // Phase 4 - assemble files
                 beginPhase(AppState.Phase.ASSEMBLE, 90, "Assembling output files...");
-                var files = templateEngine.buildFiles(ctx, state.selectedTarget, summary, targetContent);
+                var files = templateEngine.buildFiles(ctx, state.selectedTarget, summary.content(), targetContent.content());
                 state.generatedFiles = files;
+                var projectRoot = java.nio.file.Path.of(state.projectPath).toAbsolutePath();
+                var plans = new java.util.ArrayList<com.acltabontabon.launchpad.template.FilePlan>();
+                for (var f : files) plans.add(com.acltabontabon.launchpad.template.FilePlan.compute(f, projectRoot));
+                state.filePlans = plans;
 
                 // Done
                 beginPhase(AppState.Phase.DONE, 100, "Done! " + files.size() + " files generated.");

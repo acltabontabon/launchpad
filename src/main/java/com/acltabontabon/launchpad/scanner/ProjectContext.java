@@ -3,52 +3,106 @@ package com.acltabontabon.launchpad.scanner;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Result of a project scan. Carries a structured stack profile, dependency
+ * list, package-grouped structure summary, entry points, and short excerpts
+ * of key build / config files.
+ * <p>
+ * `toPromptString` renders a token-budget-aware view for the LLM - prefer it
+ * over assembling prompt content from raw fields, so the budget cap holds.
+ */
 public record ProjectContext(
     String name,
     String rootPath,
-    String detectedStack,           // e.g. "Java / Spring Boot / Maven"
-    List<String> sourceFiles,       // relative paths of source files scanned
-    List<String> testClassNames,    // test class names only (no implementation)
-    Map<String, String> entryPoints,// e.g. {"main": "com.example.App", "config": "..."}
-    List<String> dependencies,      // from pom.xml / package.json / etc.
-    Map<String, String> fileSnippets // relativePath -> first N lines for key files
+    StackProfile stack,
+    List<String> sourceFiles,            // full list - used for hallucination check, not the prompt
+    List<String> testClassNames,
+    Map<String, String> entryPoints,
+    List<Dependency> dependencies,
+    Map<String, String> fileSnippets,    // key build / config file → first N lines
+    List<PackageSummary> packageSummaries,
+    String existingContextSummary        // first ~800 chars of existing CLAUDE.md / .cursorrules, or null
 ) {
 
-    /**
-     * Formats context into a single prompt-friendly string for the AI model.
-     * Keeps token count manageable by summarising rather than dumping raw content.
-     */
+    /** Approximate character budget for the prompt-side rendering of this context. */
+    private static final int DEFAULT_BUDGET_CHARS = 8_000;
+
     public String toPromptString() {
+        return toPromptString(DEFAULT_BUDGET_CHARS);
+    }
+
+    public String toPromptString(int budgetChars) {
         var sb = new StringBuilder();
 
         sb.append("# Project: ").append(name).append("\n");
-        sb.append("Stack: ").append(detectedStack).append("\n\n");
-
-        sb.append("## Source Files (").append(sourceFiles.size()).append(")\n");
-        sourceFiles.forEach(f -> sb.append("- ").append(f).append("\n"));
-
+        sb.append("Stack: ").append(stack.displayName()).append("\n");
+        if (stack.framework() != null) {
+            sb.append("Framework: ").append(stack.framework()).append("\n");
+        }
+        sb.append("Source file count: ").append(sourceFiles.size()).append("\n");
         if (!testClassNames.isEmpty()) {
-            sb.append("\n## Test Classes (names only)\n");
-            testClassNames.forEach(t -> sb.append("- ").append(t).append("\n"));
+            sb.append("Test file count: ").append(testClassNames.size()).append("\n");
+        }
+        sb.append("\n");
+
+        if (!entryPoints.isEmpty()) {
+            sb.append("## Entry Points\n");
+            entryPoints.forEach((k, v) -> sb.append("- ").append(k).append(": `").append(v).append("`\n"));
+            sb.append("\n");
+        }
+
+        if (!packageSummaries.isEmpty()) {
+            sb.append("## Source Structure (top packages by file count)\n");
+            for (var pkg : packageSummaries) {
+                sb.append("- `").append(pkg.path()).append("/` (").append(pkg.fileCount()).append(" files)");
+                if (!pkg.sampleSymbols().isEmpty()) {
+                    sb.append(" - ").append(String.join(", ", pkg.sampleSymbols()));
+                }
+                sb.append("\n");
+                if (sb.length() > budgetChars * 6 / 10) break;
+            }
+            sb.append("\n");
         }
 
         if (!dependencies.isEmpty()) {
-            sb.append("\n## Dependencies\n");
-            dependencies.forEach(d -> sb.append("- ").append(d).append("\n"));
+            sb.append("## Dependencies (").append(dependencies.size()).append(" total)\n");
+            int limit = Math.min(dependencies.size(), 40);
+            for (int i = 0; i < limit; i++) {
+                sb.append("- ").append(dependencies.get(i).display()).append("\n");
+            }
+            if (dependencies.size() > limit) {
+                sb.append("- ... and ").append(dependencies.size() - limit).append(" more\n");
+            }
+            sb.append("\n");
         }
 
-        if (!entryPoints.isEmpty()) {
-            sb.append("\n## Entry Points\n");
-            entryPoints.forEach((k, v) -> sb.append("- ").append(k).append(": ").append(v).append("\n"));
+        if (existingContextSummary != null && !existingContextSummary.isBlank()
+            && sb.length() < budgetChars - 600) {
+            sb.append("## Existing Context (already documented - focus on what's missing, don't duplicate)\n\n```\n");
+            sb.append(truncate(existingContextSummary, 600));
+            sb.append("\n```\n\n");
         }
 
-        if (!fileSnippets.isEmpty()) {
-            sb.append("\n## Key File Excerpts\n");
-            fileSnippets.forEach((path, snippet) -> {
-                sb.append("\n### ").append(path).append("\n```\n").append(snippet).append("\n```\n");
-            });
+        if (!fileSnippets.isEmpty() && sb.length() < budgetChars - 500) {
+            sb.append("## Key File Excerpts\n");
+            for (var entry : fileSnippets.entrySet()) {
+                if (sb.length() > budgetChars - 300) break;
+                sb.append("\n### ").append(entry.getKey()).append("\n```\n");
+                sb.append(truncate(entry.getValue(), Math.min(800, budgetChars - sb.length() - 200)));
+                sb.append("\n```\n");
+            }
         }
 
+        if (sb.length() > budgetChars) {
+            sb.setLength(budgetChars);
+            sb.append("\n... (truncated to fit prompt budget)\n");
+        }
         return sb.toString();
+    }
+
+    private static String truncate(String s, int maxChars) {
+        if (s == null) return "";
+        if (s.length() <= maxChars) return s;
+        return s.substring(0, Math.max(0, maxChars)) + "\n... (truncated)";
     }
 }

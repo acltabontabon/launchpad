@@ -1,0 +1,26 @@
+You are an expert software architect. Analyse the following project context and produce a concise, accurate summary for use in an AI agent context file.
+
+Your output MUST include these sections, in order, with exact headings:
+
+## Overview
+One paragraph: what the project is, what it does, key design decisions.
+
+## Architecture
+Primary architectural patterns (MVC, hexagonal, event-driven, layered, etc.). 2-4 sentences.
+
+## Key Modules
+Bulleted list of the most important packages/directories and their responsibilities. Use the package structure provided in the context.
+
+## Conventions
+Bulleted list of conventions you can infer (naming, error handling, testing style, dependency choices).
+
+## Gotchas
+Anything an AI agent must know before touching this codebase (hidden constraints, surprising patterns, things to avoid).
+
+Rules:
+- Be specific. Do not pad with generic best practices.
+- Reference only files, packages, classes, or dependencies that appear in the context below. Do not invent names.
+- If a section has no concrete content to fill, write "_(none observed)_" rather than guessing.
+
+PROJECT CONTEXT:
+{context}

@@ -1,0 +1,17 @@
+Based on the following project context, suggest 5-8 common developer tasks that an AI agent should know how to perform in THIS specific project. Format each as a skill definition exactly:
+
+## Skill: <short-kebab-case-name>
+**Trigger:** <when to use this skill, one sentence>
+**Steps:**
+1. <numbered, specific to this project - reference real packages / files when relevant>
+2. ...
+**Notes:** <project-specific gotchas, or "_(none)_" if there are none>
+
+Rules:
+- Skills must be concrete tasks (e.g. "add a new REST endpoint", "create a new database migration") - not vague advice.
+- Steps must reference the project's actual structure. Use package names that appear in the context.
+- Do not invent files or packages that aren't in the context.
+- Aim for 6 skills.
+
+PROJECT CONTEXT:
+{context}

@@ -3,6 +3,7 @@ package com.acltabontabon.launchpad.tui;
 import com.acltabontabon.launchpad.ai.OllamaStatus;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.template.ContextTarget;
+import com.acltabontabon.launchpad.template.FilePlan;
 import com.acltabontabon.launchpad.template.GeneratedFile;
 
 import java.util.ArrayList;
@@ -71,6 +72,12 @@ public class AppState {
     // Generated output
     public volatile List<GeneratedFile> generatedFiles = new ArrayList<>();
     public volatile int reviewFileIndex = 0;
+    // Per-file write plans (existence check + action). Parallel to generatedFiles.
+    public volatile List<FilePlan> filePlans = new ArrayList<>();
+    // Validation warnings from the LLM phases (missing sections, hallucinated paths, retries).
+    public volatile List<String> generationWarnings = new ArrayList<>();
+    // Review screen: whether the preview pane is showing the diff vs the existing file.
+    public volatile boolean reviewShowDiff = false;
 
     // Review screen: save-all feedback (shown in the action bar)
     public final AtomicReference<String> reviewSaveStatus = new AtomicReference<>("");
@@ -106,5 +113,10 @@ public class AppState {
     public GeneratedFile currentReviewFile() {
         if (generatedFiles.isEmpty()) return null;
         return generatedFiles.get(reviewFileIndex);
+    }
+
+    public FilePlan currentFilePlan() {
+        if (filePlans.isEmpty() || reviewFileIndex >= filePlans.size()) return null;
+        return filePlans.get(reviewFileIndex);
     }
 }

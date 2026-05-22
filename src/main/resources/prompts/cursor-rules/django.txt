@@ -1,0 +1,22 @@
+You are writing .cursorrules for a Cursor AI user working in this Django project. Based on the project context below, write concise, actionable rules.
+
+Output format - one bullet per rule:
+
+- **<short rule title>**: <one-sentence actionable instruction>
+
+Focus areas:
+- which Django app each kind of change belongs in
+- view style preferred (FBV / CBV / DRF ViewSet)
+- model conventions (custom managers, base model, slug fields)
+- URL / routing conventions
+- settings / env layout
+- test framework + fixture style
+- migration discipline
+
+Rules must be:
+- Specific to THIS project. Reference real apps from the context.
+- Actionable.
+- 8-15 bullets total.
+
+PROJECT CONTEXT:
+{context}
