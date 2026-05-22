@@ -103,6 +103,7 @@ public class ProjectSelectView implements View {
             if (!state.projectPath.isEmpty()) {
                 state.projectPath = state.projectPath.substring(0, state.projectPath.length() - 1);
                 state.pathSuggestion = PathAutocomplete.suggest(state.projectPath);
+                state.launchpadAware = AppState.detectLaunchpadAware(state.projectPath);
             }
             return true;
         }
@@ -110,12 +111,14 @@ public class ProjectSelectView implements View {
             if (!state.pathSuggestion.isEmpty()) {
                 state.projectPath = state.projectPath + state.pathSuggestion + "/";
                 state.pathSuggestion = PathAutocomplete.suggest(state.projectPath);
+                state.launchpadAware = AppState.detectLaunchpadAware(state.projectPath);
             }
             return true;
         }
         if (key.code() == KeyCode.CHAR) {
             state.projectPath = state.projectPath + key.character();
             state.pathSuggestion = PathAutocomplete.suggest(state.projectPath);
+            state.launchpadAware = AppState.detectLaunchpadAware(state.projectPath);
             return true;
         }
         return false;

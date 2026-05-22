@@ -156,13 +156,14 @@ public class LaunchpadRunner implements ApplicationRunner {
                 spans.add(Span.styled("  ·  ", dim));
                 spans.add(Span.styled(shortenPath(state.projectPath), Style.create().fg(Color.WHITE)));
             }
-            // Badge and target appear only once the project is committed (TARGET_SELECT onward).
-            // On PROJECT_SELECT the user is still editing, so launchpadAware could be stale.
+            // Badge tracks the currently-typed path (ProjectSelectView recomputes on every
+            // keystroke), so it's safe to render on PROJECT_SELECT as live typing feedback.
+            if (state.launchpadAware) {
+                spans.add(Span.styled("  ", dim));
+                spans.add(Span.styled("✨ launchpad-aware", Style.create().fg(Color.YELLOW).bold()));
+            }
+            // Target arrow stays committed-only (chosen on TARGET_SELECT onward).
             if (screen != AppState.Screen.PROJECT_SELECT) {
-                if (state.launchpadAware) {
-                    spans.add(Span.styled("  ", dim));
-                    spans.add(Span.styled("✨ launchpad-aware", Style.create().fg(Color.YELLOW).bold()));
-                }
                 spans.add(Span.styled("  ·  ", dim));
                 spans.add(Span.styled("→ " + state.selectedTarget.displayName,
                     Style.create().fg(Color.GREEN)));

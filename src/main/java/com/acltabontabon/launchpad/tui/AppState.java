@@ -6,6 +6,8 @@ import com.acltabontabon.launchpad.template.ContextTarget;
 import com.acltabontabon.launchpad.template.FilePlan;
 import com.acltabontabon.launchpad.template.GeneratedFile;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -55,8 +57,23 @@ public class AppState {
     public volatile ContextTarget selectedTarget = ContextTarget.CLAUDE;
     public volatile int targetCursorIndex = 0;
 
-    // Set by ProjectSelectView on ENTER if <projectPath>/.launchpad/standards/ exists.
-    public volatile boolean launchpadAware = false;
+    // Live-updated by ProjectSelectView on every keystroke that mutates projectPath, and
+    // again on ENTER. True if <projectPath>/.launchpad/standards/ exists right now.
+    public volatile boolean launchpadAware = detectLaunchpadAware(projectPath);
+
+    /**
+     * Cheap filesystem probe: does the given path host a `.launchpad/standards/` directory?
+     * Sub-microsecond after OS dentry cache warmup; safe to call from the TUI key handler on
+     * every keystroke. Returns false for null / empty / non-existent / non-directory paths.
+     */
+    public static boolean detectLaunchpadAware(String path) {
+        if (path == null || path.isEmpty()) return false;
+        try {
+            return Files.isDirectory(Path.of(path, ".launchpad", "standards"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     // Scan progress (updated from background thread)
     public final AtomicInteger scanProgress = new AtomicInteger(0);
