@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.tui;
 
 import com.acltabontabon.launchpad.ai.OllamaStatus;
+import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.template.ContextTarget;
 import com.acltabontabon.launchpad.template.GeneratedFile;
 
@@ -42,6 +43,11 @@ public class AppState {
     public final AtomicReference<OllamaStatus> ollamaStatus = new AtomicReference<>(OllamaStatus.checking());
     public volatile boolean healthCheckRequested = true;
 
+    // Remote standards repo readiness (updated from background thread)
+    public final AtomicReference<RemoteStandardsStatus> remoteStandardsStatus =
+        new AtomicReference<>(RemoteStandardsStatus.checking());
+    public volatile boolean remoteStandardsCheckRequested = true;
+
     // User selections
     public volatile String projectPath = System.getProperty("user.home");
     public volatile String pathSuggestion = PathAutocomplete.suggest(projectPath);
@@ -73,10 +79,11 @@ public class AppState {
     // Text input cursor for path input
     public volatile int inputCursorPos = 0;
 
-    // Settings screen input state (Ollama base URL + model)
+    // Settings screen input state (Ollama base URL + model + remote standards URL)
     public volatile String settingsBaseUrlInput = "";
     public volatile String settingsModelInput = "";
-    public volatile int settingsFocusIndex = 0; // 0 = base URL, 1 = model
+    public volatile String settingsRemoteStandardsUrlInput = "";
+    public volatile int settingsFocusIndex = 0; // 0 = base URL, 1 = model, 2 = remote standards URL
     public volatile String settingsErrorMessage = null;
 
     // Welcome screen command palette

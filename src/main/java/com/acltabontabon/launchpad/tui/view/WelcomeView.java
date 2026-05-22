@@ -2,6 +2,7 @@ package com.acltabontabon.launchpad.tui.view;
 
 import com.acltabontabon.launchpad.ai.OllamaStatus;
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
+import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.tui.AppState;
 import com.acltabontabon.launchpad.tui.command.CommandPalette;
 import dev.tamboui.layout.Alignment;
@@ -67,6 +68,7 @@ public class WelcomeView implements View {
                 Constraint.length(1),   // ollama status badge
                 Constraint.length(1),   // ollama target (baseUrl · model)
                 Constraint.length(1),   // ollama status hint
+                Constraint.length(1),   // remote standards badge
                 Constraint.min(0),      // flexible spacer
                 Constraint.length(1),   // version
                 Constraint.length(4),   // command dropdown (rendered only when palette is open)
@@ -118,6 +120,8 @@ public class WelcomeView implements View {
             frame.renderWidget(hint, rows.get(4));
         }
 
+        renderStandardsBadge(frame, rows.get(5), state.remoteStandardsStatus.get());
+
         var version = Paragraph.builder()
             .text(Text.styled(
                 "v0.1.0  ·  Powered by Ollama + Spring AI",
@@ -125,12 +129,30 @@ public class WelcomeView implements View {
             ))
             .alignment(Alignment.CENTER)
             .build();
-        frame.renderWidget(version, rows.get(6));
+        frame.renderWidget(version, rows.get(7));
 
-        renderDropdown(frame, rows.get(7), state);
-        renderFlash(frame, rows.get(8), state);
-        renderInputBar(frame, rows.get(9), state);
-        renderBottomHint(frame, rows.get(10), state);
+        renderDropdown(frame, rows.get(8), state);
+        renderFlash(frame, rows.get(9), state);
+        renderInputBar(frame, rows.get(10), state);
+        renderBottomHint(frame, rows.get(11), state);
+    }
+
+    private void renderStandardsBadge(Frame frame, Rect area, RemoteStandardsStatus status) {
+        var glyph = status.state() == RemoteStandardsStatus.State.CHECKING ? SPINNER[spinnerFrame] : "●";
+        var badge = Paragraph.builder()
+            .text(Text.styled(glyph + "  " + status.message(), standardsBadgeStyle(status)))
+            .alignment(Alignment.CENTER)
+            .build();
+        frame.renderWidget(badge, area);
+    }
+
+    private static Style standardsBadgeStyle(RemoteStandardsStatus status) {
+        return switch (status.state()) {
+            case CHECKING, NOT_CONFIGURED -> Style.create().fg(Color.DARK_GRAY);
+            case SYNCED                   -> Style.create().fg(Color.GREEN);
+            case STALE_CACHE              -> Style.create().fg(Color.YELLOW);
+            case ERROR                    -> Style.create().fg(Color.RED);
+        };
     }
 
     private static void renderDropdown(Frame frame, Rect area, AppState state) {
@@ -219,6 +241,8 @@ public class WelcomeView implements View {
                 var snap = settings.snapshot();
                 state.settingsBaseUrlInput = snap.baseUrl();
                 state.settingsModelInput = snap.model();
+                state.settingsRemoteStandardsUrlInput =
+                    snap.remoteStandardsUrl() == null ? "" : snap.remoteStandardsUrl();
                 state.settingsFocusIndex = 0;
                 state.settingsErrorMessage = null;
             }

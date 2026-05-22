@@ -4,6 +4,8 @@ import com.acltabontabon.launchpad.ai.ContextGeneratorService;
 import com.acltabontabon.launchpad.ai.OllamaHealthChecker;
 import com.acltabontabon.launchpad.ai.OllamaStatus;
 import com.acltabontabon.launchpad.scanner.ProjectScanner;
+import com.acltabontabon.launchpad.standards.RemoteStandardsChecker;
+import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.template.ContextTemplateEngine;
 import com.acltabontabon.launchpad.tui.view.ProjectSelectView;
 import com.acltabontabon.launchpad.tui.view.ReviewView;
@@ -52,6 +54,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final ProjectScanner scanner;
     private final ContextGeneratorService generatorService;
     private final OllamaHealthChecker healthChecker;
+    private final RemoteStandardsChecker remoteStandardsChecker;
     private final ContextTemplateEngine templateEngine;
 
     private boolean scanStarted = false;
@@ -66,6 +69,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         ProjectScanner scanner,
         ContextGeneratorService generatorService,
         OllamaHealthChecker healthChecker,
+        RemoteStandardsChecker remoteStandardsChecker,
         ContextTemplateEngine templateEngine
     ) {
         this.welcomeView = welcomeView;
@@ -77,6 +81,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         this.scanner = scanner;
         this.generatorService = generatorService;
         this.healthChecker = healthChecker;
+        this.remoteStandardsChecker = remoteStandardsChecker;
         this.templateEngine = templateEngine;
     }
 
@@ -118,6 +123,7 @@ public class LaunchpadRunner implements ApplicationRunner {
 
     private void renderFrame(Frame frame) {
         triggerHealthCheckIfNeeded();
+        triggerRemoteStandardsCheckIfNeeded();
         triggerScanIfNeeded();
 
         var area = frame.area();
@@ -184,6 +190,15 @@ public class LaunchpadRunner implements ApplicationRunner {
         state.ollamaStatus.set(OllamaStatus.checking());
 
         CompletableFuture.runAsync(() -> state.ollamaStatus.set(healthChecker.check()));
+    }
+
+    private void triggerRemoteStandardsCheckIfNeeded() {
+        if (!state.remoteStandardsCheckRequested) return;
+        state.remoteStandardsCheckRequested = false;
+        state.remoteStandardsStatus.set(RemoteStandardsStatus.checking());
+
+        CompletableFuture.runAsync(() ->
+            state.remoteStandardsStatus.set(remoteStandardsChecker.check()));
     }
 
     // ── Background scan pipeline ───────────────────────────────────────────────

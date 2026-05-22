@@ -27,6 +27,8 @@ public class SettingsView implements View {
 
     private static final int FIELD_BASE_URL = 0;
     private static final int FIELD_MODEL = 1;
+    private static final int FIELD_REMOTE_STANDARDS = 2;
+    private static final int FIELD_COUNT = 3;
 
     private final LaunchpadSettings settings;
 
@@ -41,15 +43,15 @@ public class SettingsView implements View {
                 Constraint.length(3),  // title
                 Constraint.length(3),  // base URL input
                 Constraint.length(3),  // model input
+                Constraint.length(3),  // remote standards URL input
                 Constraint.length(2),  // error message
                 Constraint.min(0),     // spacer
                 Constraint.length(1)   // hints
             )
             .split(area);
 
-        // Title
         var title = Paragraph.builder()
-            .text(Text.styled(" Ollama Configuration", Style.create().fg(Color.CYAN).bold()))
+            .text(Text.styled(" Launchpad Configuration", Style.create().fg(Color.CYAN).bold()))
             .block(Block.builder()
                 .borders(Borders.BOTTOM_ONLY)
                 .borderStyle(Style.create().fg(Color.DARK_GRAY))
@@ -57,20 +59,20 @@ public class SettingsView implements View {
             .build();
         frame.renderWidget(title, rows.get(0));
 
-        renderField(frame, rows.get(1), " Base URL ",
+        renderField(frame, rows.get(1), " Ollama Base URL ",
             state.settingsBaseUrlInput, state.settingsFocusIndex == FIELD_BASE_URL);
-        renderField(frame, rows.get(2), " Model ",
+        renderField(frame, rows.get(2), " Ollama Model ",
             state.settingsModelInput, state.settingsFocusIndex == FIELD_MODEL);
+        renderField(frame, rows.get(3), " Remote Standards Git URL (optional) ",
+            state.settingsRemoteStandardsUrlInput, state.settingsFocusIndex == FIELD_REMOTE_STANDARDS);
 
-        // Error message (only when present)
         if (state.settingsErrorMessage != null) {
             var error = Paragraph.builder()
                 .text(Text.styled(" ✗  " + state.settingsErrorMessage, Style.create().fg(Color.RED)))
                 .build();
-            frame.renderWidget(error, rows.get(3));
+            frame.renderWidget(error, rows.get(4));
         }
 
-        // Hints
         var hints = Paragraph.builder()
             .text(Text.from(Line.from(
                 Span.styled(" Tab ", Style.create().fg(Color.BLACK).bg(Color.YELLOW)),
@@ -81,7 +83,7 @@ public class SettingsView implements View {
                 Span.styled(" cancel", Style.create().fg(Color.DARK_GRAY))
             )))
             .build();
-        frame.renderWidget(hints, rows.get(5));
+        frame.renderWidget(hints, rows.get(6));
     }
 
     private static void renderField(Frame frame, Rect area, String label, String value, boolean focused) {
@@ -117,7 +119,7 @@ public class SettingsView implements View {
         }
 
         if (key.isKey(KeyCode.TAB)) {
-            state.settingsFocusIndex = (state.settingsFocusIndex + 1) % 2;
+            state.settingsFocusIndex = (state.settingsFocusIndex + 1) % FIELD_COUNT;
             return true;
         }
 
@@ -137,41 +139,43 @@ public class SettingsView implements View {
     private boolean save(AppState state) {
         var url = state.settingsBaseUrlInput.trim();
         var model = state.settingsModelInput.trim();
+        var remoteUrl = state.settingsRemoteStandardsUrlInput.trim();
         if (url.isEmpty() || model.isEmpty()) {
-            state.settingsErrorMessage = "Base URL and model cannot be empty";
+            state.settingsErrorMessage = "Ollama base URL and model cannot be empty";
             return true;
         }
         try {
-            settings.update(url, model);
+            settings.update(url, model, remoteUrl);
         } catch (IOException e) {
             state.settingsErrorMessage = "Could not save: " + e.getMessage();
             return true;
         }
         state.settingsErrorMessage = null;
         state.healthCheckRequested = true;
+        state.remoteStandardsCheckRequested = true;
         state.currentScreen = AppState.Screen.WELCOME;
         return true;
     }
 
     private static void appendChar(AppState state, char c) {
-        if (state.settingsFocusIndex == FIELD_BASE_URL) {
-            state.settingsBaseUrlInput = state.settingsBaseUrlInput + c;
-        } else {
-            state.settingsModelInput = state.settingsModelInput + c;
+        switch (state.settingsFocusIndex) {
+            case FIELD_BASE_URL -> state.settingsBaseUrlInput = state.settingsBaseUrlInput + c;
+            case FIELD_MODEL -> state.settingsModelInput = state.settingsModelInput + c;
+            case FIELD_REMOTE_STANDARDS ->
+                state.settingsRemoteStandardsUrlInput = state.settingsRemoteStandardsUrlInput + c;
         }
     }
 
     private static void popChar(AppState state) {
-        if (state.settingsFocusIndex == FIELD_BASE_URL) {
-            if (!state.settingsBaseUrlInput.isEmpty()) {
-                state.settingsBaseUrlInput =
-                    state.settingsBaseUrlInput.substring(0, state.settingsBaseUrlInput.length() - 1);
-            }
-        } else {
-            if (!state.settingsModelInput.isEmpty()) {
-                state.settingsModelInput =
-                    state.settingsModelInput.substring(0, state.settingsModelInput.length() - 1);
-            }
+        switch (state.settingsFocusIndex) {
+            case FIELD_BASE_URL -> state.settingsBaseUrlInput = chop(state.settingsBaseUrlInput);
+            case FIELD_MODEL -> state.settingsModelInput = chop(state.settingsModelInput);
+            case FIELD_REMOTE_STANDARDS ->
+                state.settingsRemoteStandardsUrlInput = chop(state.settingsRemoteStandardsUrlInput);
         }
+    }
+
+    private static String chop(String s) {
+        return s.isEmpty() ? s : s.substring(0, s.length() - 1);
     }
 }

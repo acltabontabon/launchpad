@@ -22,7 +22,7 @@ public final class CommandPalette {
         new Command(
             "/settings",
             "Settings",
-            "Configure Ollama base URL and model",
+            "Configure Ollama and remote standards repo",
             (state, runner) -> state.currentScreen = AppState.Screen.SETTINGS
         ),
         new Command(

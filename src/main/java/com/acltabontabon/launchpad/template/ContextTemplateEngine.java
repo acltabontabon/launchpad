@@ -226,10 +226,22 @@ public class ContextTemplateEngine {
             """.formatted(ctx.name(), summary, ctx.detectedStack(), generatedRules);
     }
 
+    private static final String RULES_PLACEHOLDER =
+        "_No engineering rules configured. Set `launchpad.standards.remote.url` in Launchpad settings, "
+        + "or add `.launchpad/standards/rules.yml` to this project._\n";
+
+    private static final String SKILLS_PLACEHOLDER =
+        "_No workflow skills configured. Set `launchpad.standards.remote.url` in Launchpad settings, "
+        + "or add `.launchpad/standards/skills.yml` to this project._\n";
+
     private String buildEngineeringRulesMd(List<Rule> rules) {
         var sb = new StringBuilder();
         sb.append("# Engineering Rules\n\n");
         sb.append("These rules apply to all work in this project, regardless of feature or task.\n\n");
+        if (rules.isEmpty()) {
+            sb.append(RULES_PLACEHOLDER);
+            return sb.toString();
+        }
         rules.forEach(rule -> {
             sb.append("## ").append(rule.title()).append("\n\n");
             sb.append(rule.description()).append("\n\n");
@@ -240,6 +252,10 @@ public class ContextTemplateEngine {
     private String buildCursorEngineeringRules(List<Rule> rules) {
         var sb = new StringBuilder();
         sb.append("---\ndescription: Engineering rules for this project\nglobs: **/*\n---\n\n");
+        if (rules.isEmpty()) {
+            sb.append(RULES_PLACEHOLDER);
+            return sb.toString();
+        }
         rules.forEach(rule ->
             sb.append("- **").append(rule.title()).append(":** ").append(rule.description()).append("\n")
         );
@@ -249,6 +265,10 @@ public class ContextTemplateEngine {
     private String buildCursorSkills(List<Skill> skills) {
         var sb = new StringBuilder();
         sb.append("---\ndescription: Curated workflow skills for this project\nglobs: **/*\n---\n\n");
+        if (skills.isEmpty()) {
+            sb.append(SKILLS_PLACEHOLDER);
+            return sb.toString();
+        }
         skills.forEach(s -> appendSkill(sb, s));
         return sb.toString();
     }
