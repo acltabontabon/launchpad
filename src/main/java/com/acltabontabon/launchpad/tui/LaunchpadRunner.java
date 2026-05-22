@@ -104,11 +104,13 @@ public class LaunchpadRunner implements ApplicationRunner {
             return true;
         }
 
-        // Global quit - q from any screen except text input (PROJECT_SELECT, SETTINGS)
+        // Global quit - q from any screen except text input (PROJECT_SELECT, SETTINGS, WELCOME).
+        // WELCOME accepts text now (slash-command palette) - quitting from there goes through /quit.
         if (event instanceof KeyEvent key
                 && key.isChar('q')
                 && state.currentScreen != AppState.Screen.PROJECT_SELECT
-                && state.currentScreen != AppState.Screen.SETTINGS) {
+                && state.currentScreen != AppState.Screen.SETTINGS
+                && state.currentScreen != AppState.Screen.WELCOME) {
             runner.quit();
             return true;
         }

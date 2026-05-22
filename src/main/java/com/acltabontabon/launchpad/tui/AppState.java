@@ -76,6 +76,11 @@ public class AppState {
     public volatile int settingsFocusIndex = 0; // 0 = base URL, 1 = model
     public volatile String settingsErrorMessage = null;
 
+    // Welcome screen command palette
+    public volatile String commandInput = "";
+    public volatile int commandCursorIndex = 0;
+    public volatile String welcomeFlashMessage = "";
+
     public void nextReviewFile() {
         if (!generatedFiles.isEmpty()) {
             reviewFileIndex = (reviewFileIndex + 1) % generatedFiles.size();
