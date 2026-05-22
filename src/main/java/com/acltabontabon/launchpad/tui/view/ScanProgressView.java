@@ -26,7 +26,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class ScanProgressView implements View {
 
-    // Spinner frames for animation while waiting
     private static final String[] SPINNER = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
     private int spinnerFrame = 0;
 
@@ -39,13 +38,12 @@ public class ScanProgressView implements View {
                 Constraint.length(3),   // title
                 Constraint.length(1),   // spacer
                 Constraint.length(3),   // progress gauge
-                Constraint.length(2),   // status message
+                Constraint.length(3),   // status (line 1: phase + elapsed, line 2: streaming tail)
                 Constraint.min(0),      // phases list
                 Constraint.length(1)    // hint
             )
             .split(area);
 
-        // Title
         var title = Paragraph.builder()
             .text(Text.styled(" Step 3 of 3 - Scanning & Generating", Style.create().fg(Color.CYAN).bold()))
             .block(Block.builder()
@@ -55,7 +53,6 @@ public class ScanProgressView implements View {
             .build();
         frame.renderWidget(title, rows.get(0));
 
-        // Progress bar
         var progress = state.scanProgress.get();
         var gauge = Gauge.builder()
             .block(Block.builder()
@@ -69,22 +66,10 @@ public class ScanProgressView implements View {
             .build();
         frame.renderWidget(gauge, rows.get(2));
 
-        // Status message with spinner
-        var spinner = state.scanComplete ? (state.scanError ? "✗" : "✓") : SPINNER[spinnerFrame];
-        var messageStyle = state.scanError
-            ? Style.create().fg(Color.RED)
-            : state.scanComplete
-                ? Style.create().fg(Color.GREEN)
-                : Style.create().fg(Color.WHITE);
+        frame.renderWidget(buildStatus(state), rows.get(3));
 
-        var message = Paragraph.builder()
-            .text(Text.styled(" " + spinner + "  " + state.scanMessage.get(), messageStyle))
-            .build();
-        frame.renderWidget(message, rows.get(3));
-
-        // Phase list
         var phases = Paragraph.builder()
-            .text(buildPhaseList(progress, state))
+            .text(buildPhaseList(state))
             .block(Block.builder()
                 .title(Title.from(Span.styled(" Phases ", Style.create().fg(Color.DARK_GRAY))))
                 .borders(Borders.ALL)
@@ -93,7 +78,6 @@ public class ScanProgressView implements View {
             .build();
         frame.renderWidget(phases, rows.get(4));
 
-        // Transition hint when done
         if (state.scanComplete && !state.scanError) {
             var hint = Paragraph.builder()
                 .text(Text.styled(
@@ -106,33 +90,82 @@ public class ScanProgressView implements View {
         }
     }
 
-    private Text buildPhaseList(int progress, AppState state) {
+    private Paragraph buildStatus(AppState state) {
+        var spinner = state.scanComplete ? (state.scanError ? "✗" : "✓") : SPINNER[spinnerFrame];
+        var messageStyle = state.scanError
+            ? Style.create().fg(Color.RED)
+            : state.scanComplete
+                ? Style.create().fg(Color.GREEN)
+                : Style.create().fg(Color.WHITE);
+
+        var lines = new ArrayList<Line>();
+        lines.add(Line.from(Span.styled(" " + spinner + "  " + state.scanMessage.get(), messageStyle)));
+
+        if (isAiPhase(state.currentPhase.get()) && !state.scanComplete) {
+            var tail = state.streamTail.get();
+            if (tail != null && !tail.isEmpty()) {
+                lines.add(Line.from(Span.styled(" > " + tail, Style.create().fg(Color.DARK_GRAY).italic())));
+            }
+        }
+
+        return Paragraph.builder().text(Text.from(lines)).build();
+    }
+
+    private Text buildPhaseList(AppState state) {
+        var current = state.currentPhase.get();
+        var target = state.selectedTarget.displayName;
         var lines = new ArrayList<Line>();
 
-        lines.add(phaseRow("Scan project files", 10, progress));
-        lines.add(phaseRow("Parse dependencies", 25, progress));
-        lines.add(phaseRow("Generate project summary", 50, progress));
-        lines.add(phaseRow("Generate skills / rules", 75, progress));
-        lines.add(phaseRow("Assemble output files", 90, progress));
-        lines.add(phaseRow("Done", 100, progress));
+        lines.add(phaseRow(AppState.Phase.SCAN_FILES, "Scan project files", current, state));
+        lines.add(phaseRow(AppState.Phase.GENERATE_SUMMARY, "Generate project summary", current, state));
+        lines.add(phaseRow(AppState.Phase.GENERATE_TARGET, "Generate " + target + " content", current, state));
+        lines.add(phaseRow(AppState.Phase.ASSEMBLE, "Assemble output files", current, state));
+        lines.add(phaseRow(AppState.Phase.DONE, "Done", current, state));
 
         return Text.from(lines);
     }
 
-    private Line phaseRow(String label, int threshold, int progress) {
+    private Line phaseRow(AppState.Phase row, String label, AppState.Phase current, AppState state) {
         String icon;
         Style style;
-        if (progress >= threshold) {
+        String suffix = "";
+
+        int rowIdx = row.ordinal();
+        int curIdx = current.ordinal();
+        boolean done = state.scanComplete && !state.scanError;
+
+        if (state.scanError && row == current) {
+            icon = "✗";
+            style = Style.create().fg(Color.RED);
+        } else if (done || rowIdx < curIdx) {
             icon = "✓";
             style = Style.create().fg(Color.GREEN);
-        } else if (progress >= threshold - 15) {
+        } else if (rowIdx == curIdx) {
             icon = "→";
-            style = Style.create().fg(Color.YELLOW);
+            style = Style.create().fg(Color.YELLOW).bold();
+            suffix = activeSuffix(row, state);
         } else {
             icon = "○";
             style = Style.create().fg(Color.DARK_GRAY);
         }
-        return Line.from(Span.styled(" " + icon + "  " + label, style));
+
+        return Line.from(Span.styled(" " + icon + "  " + label + suffix, style));
+    }
+
+    private String activeSuffix(AppState.Phase phase, AppState state) {
+        long startedAt = state.phaseStartedAtMs.get();
+        if (startedAt == 0) return "";
+        long elapsedSec = (System.currentTimeMillis() - startedAt) / 1000;
+
+        if (isAiPhase(phase)) {
+            int chunks = state.streamedChunks.get();
+            return "  (" + elapsedSec + "s, " + chunks + " chunks)";
+        }
+        return elapsedSec > 0 ? "  (" + elapsedSec + "s)" : "";
+    }
+
+    private boolean isAiPhase(AppState.Phase phase) {
+        return phase == AppState.Phase.GENERATE_SUMMARY || phase == AppState.Phase.GENERATE_TARGET;
     }
 
     @Override

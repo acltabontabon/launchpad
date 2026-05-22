@@ -45,17 +45,28 @@ public class ProjectScanner {
         List<String> sourceFiles = new ArrayList<>();
         List<String> testClassNames = new ArrayList<>();
         Map<String, String> fileSnippets = new LinkedHashMap<>();
+        int[] fileCount = {0};
 
         progressCallback.accept("Scanning file tree...");
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                 var name = dir.getFileName().toString();
-                return SKIP_DIRS.contains(name) ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
+                if (SKIP_DIRS.contains(name)) return FileVisitResult.SKIP_SUBTREE;
+                if (!dir.equals(root)) {
+                    var rel = root.relativize(dir).toString();
+                    progressCallback.accept("Scanning " + truncateLeft(rel, 70) + "/");
+                }
+                return FileVisitResult.CONTINUE;
             }
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                fileCount[0]++;
+                if (fileCount[0] % 50 == 0) {
+                    progressCallback.accept("Scanned " + fileCount[0] + " files...");
+                }
+
                 if (attrs.size() > maxFileSizeKb * 1024) return FileVisitResult.CONTINUE;
 
                 var relative = root.relativize(file).toString();
@@ -85,7 +96,7 @@ public class ProjectScanner {
             }
         });
 
-        progressCallback.accept("Detecting project stack...");
+        progressCallback.accept("Scanned " + fileCount[0] + " files. Detecting project stack...");
         var stack = detectStack(fileSnippets.keySet(), root);
         var dependencies = extractDependencies(fileSnippets);
         var entryPoints = detectEntryPoints(sourceFiles);
@@ -147,6 +158,10 @@ public class ProjectScanner {
             }
         }
         return entryPoints;
+    }
+
+    private static String truncateLeft(String s, int max) {
+        return s.length() <= max ? s : "..." + s.substring(s.length() - (max - 3));
     }
 
     private String readFirstLines(Path file, int maxLines) throws IOException {

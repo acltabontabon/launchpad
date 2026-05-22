@@ -7,6 +7,7 @@ import com.acltabontabon.launchpad.template.GeneratedFile;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -26,6 +27,14 @@ public class AppState {
         SETTINGS
     }
 
+    public enum Phase {
+        SCAN_FILES,
+        GENERATE_SUMMARY,
+        GENERATE_TARGET,
+        ASSEMBLE,
+        DONE
+    }
+
     // Navigation
     public volatile Screen currentScreen = Screen.WELCOME;
 
@@ -42,6 +51,10 @@ public class AppState {
     // Scan progress (updated from background thread)
     public final AtomicInteger scanProgress = new AtomicInteger(0);
     public final AtomicReference<String> scanMessage = new AtomicReference<>("Waiting...");
+    public final AtomicReference<Phase> currentPhase = new AtomicReference<>(Phase.SCAN_FILES);
+    public final AtomicInteger streamedChunks = new AtomicInteger(0);
+    public final AtomicLong phaseStartedAtMs = new AtomicLong(0);
+    public final AtomicReference<String> streamTail = new AtomicReference<>("");
     public volatile boolean scanComplete = false;
     public volatile boolean scanError = false;
     public volatile String scanErrorMessage = null;
@@ -49,6 +62,10 @@ public class AppState {
     // Generated output
     public volatile List<GeneratedFile> generatedFiles = new ArrayList<>();
     public volatile int reviewFileIndex = 0;
+
+    // Review screen: save-all feedback (shown in the action bar)
+    public final AtomicReference<String> reviewSaveStatus = new AtomicReference<>("");
+    public volatile boolean reviewSaveError = false;
 
     // Text input cursor for path input
     public volatile int inputCursorPos = 0;

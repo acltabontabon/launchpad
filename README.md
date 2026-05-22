@@ -21,7 +21,16 @@ Depending on the assistant you choose, Launchpad writes:
 - **For Claude Code** - a `CLAUDE.md` at your project root plus an `.ai/` folder with supporting notes.
 - **For Cursor** - a `.cursorrules` file plus a `.cursor/rules/` folder with focused rule files.
 
-Each file describes your project in plain language and includes a baseline set of engineering principles (clean code, SOLID, fail-fast, and so on) so the assistant follows sensible defaults from the start.
+Each file describes your project in plain language and includes a baseline set of engineering principles and workflow skills so the assistant follows sensible defaults from the start.
+
+## Standards live with your project
+
+Launchpad treats engineering rules and workflow skills as your team's durable knowledge. They are defined in YAML, not embedded in a vendor's tool.
+
+- **Bundled defaults** ship inside Launchpad: 10 engineering rules (clean code, SOLID, fail-fast, and so on) and a handful of generic workflow skills (add-feature, fix-bug, add-test, refactor-module, review-pr).
+- **Override per project** by creating `.launchpad/standards/rules.yml` and/or `.launchpad/standards/skills.yml` inside the target project. When those files are present, Launchpad uses them in place of the bundled defaults. Check them into the repo so everyone on the team shares the same standards.
+
+Because the standards are vendor-neutral, switching from Claude to Cursor (or to the next tool) does not require rewriting them - Launchpad re-renders the same source into whatever shape the new assistant expects.
 
 ## How you'll use it
 

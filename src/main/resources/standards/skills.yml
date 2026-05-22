@@ -1,0 +1,44 @@
+version: 1
+skills:
+  - id: add-feature
+    trigger: When adding a new user-facing capability or endpoint
+    steps:
+      - Identify the entry point (controller, view, service, or CLI command)
+      - Reuse existing utilities and patterns instead of introducing new ones
+      - Wire the change through the same layers existing features use
+      - Add tests that describe the new behavior before broadening scope
+    notes: Keep new types package-private until a cross-package caller exists.
+
+  - id: fix-bug
+    trigger: When a defect is reported or a test fails
+    steps:
+      - Reproduce the failure locally with the smallest possible input
+      - Write a failing test that captures the bug
+      - Fix the root cause, not the symptom
+      - Confirm the new test passes and no others regress
+    notes: A bug fix without a regression test invites the bug to come back.
+
+  - id: add-test
+    trigger: When extending coverage or pinning behavior before refactor
+    steps:
+      - Name the test after the behavior under test, not the method called
+      - Arrange minimal fixtures, exercise once, assert one observable outcome
+      - Avoid mocking internal collaborators - prefer real wiring when fast
+    notes: Tests are specs. If the test reads like an implementation transcript, rewrite it.
+
+  - id: refactor-module
+    trigger: When restructuring code without changing observable behavior
+    steps:
+      - Confirm existing tests cover the behavior you intend to preserve
+      - Make the refactor in small reversible steps, compiling between each
+      - Do not mix refactor with behavior change in the same commit
+    notes: If tests are missing, write them first - never refactor on unverified ground.
+
+  - id: review-pr
+    trigger: Before submitting or approving a pull request
+    steps:
+      - Read the diff end to end, not just the parts you are familiar with
+      - Check that the change matches its stated scope (no drive-by edits)
+      - Verify tests describe the intended behavior, not the implementation
+      - Confirm naming, error paths, and public API surface are intentional
+    notes: A PR that does two things should be two PRs.

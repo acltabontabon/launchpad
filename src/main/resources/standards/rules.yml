@@ -1,0 +1,61 @@
+version: 1
+rules:
+  - id: clean-code
+    title: Clean Code
+    description: |
+      Write self-documenting code. Prefer clear naming over comments.
+      Functions do one thing. Classes have a single responsibility.
+
+  - id: solid
+    title: SOLID Principles
+    description: |
+      Follow SOLID: single responsibility, open/closed, Liskov substitution,
+      interface segregation, dependency inversion.
+
+  - id: no-premature-abstraction
+    title: No Premature Abstraction
+    description: |
+      Do not introduce abstractions for hypothetical future requirements.
+      Three similar implementations before extracting a shared abstraction.
+
+  - id: minimal-surface-area
+    title: Minimal Surface Area
+    description: |
+      Keep public APIs small. Prefer package-private over public.
+      Expose only what callers genuinely need.
+
+  - id: no-defensive-coding
+    title: No Defensive Coding
+    description: |
+      Do not add error handling for scenarios that cannot happen.
+      Validate only at system boundaries (user input, external APIs).
+
+  - id: tests-as-spec
+    title: Tests Are Specs
+    description: |
+      Tests document expected behavior, not implementation details.
+      Name tests after the behavior they verify, not the method they call.
+
+  - id: immutability-first
+    title: Immutability First
+    description: |
+      Prefer immutable data structures. Use records, final fields, and
+      value objects. Mutation should be explicit and localized.
+
+  - id: fail-fast
+    title: Fail Fast
+    description: |
+      Surface errors early and loudly. Throw at the point of violation,
+      not downstream. Never swallow exceptions silently.
+
+  - id: dependency-direction
+    title: Dependency Direction
+    description: |
+      Dependencies point inward: domain has no dependencies on infrastructure.
+      Infrastructure depends on domain interfaces, not the reverse.
+
+  - id: commit-discipline
+    title: Commit Discipline
+    description: |
+      Each commit is a single logical change. Commit messages explain why,
+      not what. The diff explains what.

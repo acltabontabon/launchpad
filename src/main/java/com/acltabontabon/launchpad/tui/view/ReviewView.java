@@ -74,16 +74,21 @@ public class ReviewView implements View {
 
         frame.renderStatefulWidget(fileList, rows.get(0), listState);
 
-        // Action bar
+        // Action bar - first line shows controls, second shows save status (if any).
+        var status = state.reviewSaveStatus.get();
+        var statusColor = state.reviewSaveError ? Color.RED : Color.GREEN;
         var actions = Paragraph.builder()
-            .text(Text.from(Line.from(
-                Span.styled(" s ", Style.create().fg(Color.BLACK).bg(Color.GREEN)),
-                Span.styled(" save all\n", Style.create().fg(Color.DARK_GRAY)),
-                Span.styled(" ↑↓ ", Style.create().fg(Color.BLACK).bg(Color.DARK_GRAY)),
-                Span.styled(" navigate\n", Style.create().fg(Color.DARK_GRAY)),
-                Span.styled(" q ", Style.create().fg(Color.BLACK).bg(Color.RED)),
-                Span.styled(" quit", Style.create().fg(Color.DARK_GRAY))
-            )))
+            .text(Text.from(
+                Line.from(
+                    Span.styled(" s ", Style.create().fg(Color.BLACK).bg(Color.GREEN)),
+                    Span.styled(" save all  ", Style.create().fg(Color.DARK_GRAY)),
+                    Span.styled(" ↑↓ ", Style.create().fg(Color.BLACK).bg(Color.DARK_GRAY)),
+                    Span.styled(" navigate  ", Style.create().fg(Color.DARK_GRAY)),
+                    Span.styled(" q ", Style.create().fg(Color.BLACK).bg(Color.RED)),
+                    Span.styled(" quit", Style.create().fg(Color.DARK_GRAY))
+                ),
+                Line.from(Span.styled(status.isEmpty() ? "" : status, Style.create().fg(statusColor).bold()))
+            ))
             .block(Block.builder()
                 .borders(Borders.ALL)
                 .borderStyle(Style.create().fg(Color.DARK_GRAY))
@@ -152,15 +157,30 @@ public class ReviewView implements View {
     }
 
     private void saveAllFiles(AppState state) {
-        var root = Path.of(state.projectPath);
+        var root = Path.of(state.projectPath).toAbsolutePath();
+        int saved = 0;
+        String firstError = null;
         for (var file : state.generatedFiles) {
             try {
                 var target = root.resolve(file.relativePath());
-                Files.createDirectories(target.getParent());
+                var parent = target.getParent();
+                if (parent != null) Files.createDirectories(parent);
                 Files.writeString(target, file.content());
-            } catch (IOException e) {
-                // TODO: surface write errors in the TUI status bar
+                saved++;
+            } catch (IOException | RuntimeException e) {
+                if (firstError == null) {
+                    firstError = file.relativePath() + ": " + e.getMessage();
+                }
             }
+        }
+
+        if (firstError != null) {
+            state.reviewSaveError = true;
+            state.reviewSaveStatus.set("✗ Saved " + saved + "/" + state.generatedFiles.size()
+                + " - error: " + firstError);
+        } else {
+            state.reviewSaveError = false;
+            state.reviewSaveStatus.set("✓ Saved " + saved + " files to " + root);
         }
     }
 }

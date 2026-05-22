@@ -2,6 +2,7 @@ package com.acltabontabon.launchpad.ai;
 
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.template.ContextTarget;
+import java.util.function.Consumer;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
@@ -57,27 +58,32 @@ public class ContextGeneratorService {
         this.chatClient = builder.build();
     }
 
-    public String generateProjectSummary(ProjectContext ctx) {
-        return chatClient.prompt()
-            .user(u -> u.text(PROJECT_SUMMARY_PROMPT).param("context", ctx.toPromptString()))
-            .call()
-            .content();
+    public String generateProjectSummary(ProjectContext ctx, Consumer<String> onChunk) {
+        return streamPrompt(PROJECT_SUMMARY_PROMPT, ctx, onChunk);
     }
 
-    public String generateSkills(ProjectContext ctx) {
-        return chatClient.prompt()
-            .user(u -> u.text(SKILLS_PROMPT).param("context", ctx.toPromptString()))
-            .call()
-            .content();
+    public String generateSkills(ProjectContext ctx, Consumer<String> onChunk) {
+        return streamPrompt(SKILLS_PROMPT, ctx, onChunk);
     }
 
-    public String generateTargetSpecificContent(ProjectContext ctx, ContextTarget target) {
+    public String generateTargetSpecificContent(ProjectContext ctx, ContextTarget target, Consumer<String> onChunk) {
         return switch (target) {
-            case CURSOR -> chatClient.prompt()
-                .user(u -> u.text(CURSOR_RULES_PROMPT).param("context", ctx.toPromptString()))
-                .call()
-                .content();
-            case CLAUDE -> generateSkills(ctx);
+            case CURSOR -> streamPrompt(CURSOR_RULES_PROMPT, ctx, onChunk);
+            case CLAUDE -> generateSkills(ctx, onChunk);
         };
+    }
+
+    private String streamPrompt(String template, ProjectContext ctx, Consumer<String> onChunk) {
+        var sb = new StringBuilder();
+        chatClient.prompt()
+            .user(u -> u.text(template).param("context", ctx.toPromptString()))
+            .stream()
+            .content()
+            .doOnNext(chunk -> {
+                sb.append(chunk);
+                onChunk.accept(chunk);
+            })
+            .blockLast();
+        return sb.toString();
     }
 }

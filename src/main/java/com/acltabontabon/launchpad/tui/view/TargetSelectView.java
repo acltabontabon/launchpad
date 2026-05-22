@@ -106,8 +106,8 @@ public class TargetSelectView implements View {
 
     private String outputFileList(ContextTarget target) {
         return switch (target) {
-            case CLAUDE -> "Generates:\n  · CLAUDE.md\n  · .ai/index.md\n  · .ai/engineering-rules.md\n  · .ai/stack.md";
-            case CURSOR -> "Generates:\n  · .cursorrules\n  · .cursor/rules/engineering.mdc\n  · .cursor/rules/stack.mdc";
+            case CLAUDE -> "Generates:\n  · CLAUDE.md\n  · .ai/index.md\n  · .ai/engineering-rules.md\n  · .ai/stack.md\n  · .claude/skills/<id>/SKILL.md (one per skill)";
+            case CURSOR -> "Generates:\n  · .cursorrules\n  · .cursor/rules/engineering.mdc\n  · .cursor/rules/skills.mdc\n  · .cursor/rules/stack.mdc";
         };
     }
 

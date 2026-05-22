@@ -58,6 +58,12 @@
             <artifactId>spring-ai-starter-model-ollama</artifactId>
         </dependency>
 
+        <!-- YAML parsing for engineering standards (rules.yml, skills.yml) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+
         <!-- TamboUI - interactive terminal UI -->
         <dependency>
             <groupId>dev.tamboui</groupId>

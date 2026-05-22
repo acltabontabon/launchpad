@@ -1,16 +1,26 @@
 package com.acltabontabon.launchpad.template;
 
-import com.acltabontabon.launchpad.rules.EngineeringRule;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
+import com.acltabontabon.launchpad.standards.Rule;
+import com.acltabontabon.launchpad.standards.Skill;
+import com.acltabontabon.launchpad.standards.StandardsLoader;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
+import org.springframework.stereotype.Component;
 
 /**
- * Assembles final file content from AI-generated summaries and predefined engineering rules.
+ * Assembles final file content from AI-generated summaries and standards loaded from YAML.
  */
+@Component
 public class ContextTemplateEngine {
+
+    private final StandardsLoader standardsLoader;
+
+    public ContextTemplateEngine(StandardsLoader standardsLoader) {
+        this.standardsLoader = standardsLoader;
+    }
 
     public List<GeneratedFile> buildFiles(
         ProjectContext ctx,
@@ -18,34 +28,52 @@ public class ContextTemplateEngine {
         String projectSummary,
         String targetSpecificContent
     ) {
+        var projectRoot = Path.of(ctx.rootPath());
+        var rules = standardsLoader.loadRules(projectRoot);
+        var skills = standardsLoader.loadSkills(projectRoot);
+
         return switch (target) {
-            case CLAUDE -> buildClaudeFiles(ctx, projectSummary, targetSpecificContent);
-            case CURSOR -> buildCursorFiles(ctx, projectSummary, targetSpecificContent);
+            case CLAUDE -> buildClaudeFiles(ctx, projectSummary, targetSpecificContent, rules, skills);
+            case CURSOR -> buildCursorFiles(ctx, projectSummary, targetSpecificContent, rules, skills);
         };
     }
 
-    private List<GeneratedFile> buildClaudeFiles(ProjectContext ctx, String summary, String skills) {
+    private List<GeneratedFile> buildClaudeFiles(
+        ProjectContext ctx,
+        String summary,
+        String llmSkills,
+        List<Rule> rules,
+        List<Skill> skills
+    ) {
         var files = new ArrayList<GeneratedFile>();
-
-        files.add(new GeneratedFile("CLAUDE.md", buildClaudeMd(ctx, summary, skills), GeneratedFile.FileKind.CONTEXT));
-        files.add(new GeneratedFile(".ai/index.md", buildAiIndex(ctx), GeneratedFile.FileKind.INDEX));
-        files.add(new GeneratedFile(".ai/engineering-rules.md", buildEngineeringRulesMd(), GeneratedFile.FileKind.RULES));
+        files.add(new GeneratedFile("CLAUDE.md", buildClaudeMd(ctx, summary, llmSkills), GeneratedFile.FileKind.CONTEXT));
+        files.add(new GeneratedFile(".ai/index.md", buildAiIndex(ctx, skills), GeneratedFile.FileKind.INDEX));
+        files.add(new GeneratedFile(".ai/engineering-rules.md", buildEngineeringRulesMd(rules), GeneratedFile.FileKind.RULES));
         files.add(new GeneratedFile(".ai/stack.md", buildStackMd(ctx), GeneratedFile.FileKind.CONTEXT));
-
+        skills.forEach(s -> files.add(new GeneratedFile(
+            ".claude/skills/" + s.id() + "/SKILL.md",
+            buildClaudeSkillFile(s),
+            GeneratedFile.FileKind.SKILL
+        )));
         return files;
     }
 
-    private List<GeneratedFile> buildCursorFiles(ProjectContext ctx, String summary, String rules) {
+    private List<GeneratedFile> buildCursorFiles(
+        ProjectContext ctx,
+        String summary,
+        String llmRules,
+        List<Rule> rules,
+        List<Skill> skills
+    ) {
         var files = new ArrayList<GeneratedFile>();
-
-        files.add(new GeneratedFile(".cursorrules", buildCursorRules(ctx, summary, rules), GeneratedFile.FileKind.CONTEXT));
-        files.add(new GeneratedFile(".cursor/rules/engineering.mdc", buildCursorEngineeringRules(), GeneratedFile.FileKind.RULES));
+        files.add(new GeneratedFile(".cursorrules", buildCursorRules(ctx, summary, llmRules), GeneratedFile.FileKind.CONTEXT));
+        files.add(new GeneratedFile(".cursor/rules/engineering.mdc", buildCursorEngineeringRules(rules), GeneratedFile.FileKind.RULES));
+        files.add(new GeneratedFile(".cursor/rules/skills.mdc", buildCursorSkills(skills), GeneratedFile.FileKind.RULES));
         files.add(new GeneratedFile(".cursor/rules/stack.mdc", buildCursorStackRules(ctx), GeneratedFile.FileKind.CONTEXT));
-
         return files;
     }
 
-    private String buildClaudeMd(ProjectContext ctx, String summary, String skills) {
+    private String buildClaudeMd(ProjectContext ctx, String summary, String llmSkills) {
         return """
             # %s
 
@@ -65,6 +93,14 @@ public class ContextTemplateEngine {
 
             ## Skills
 
+            Curated workflow skills for this project live as invocable Claude Code skills under
+            `.claude/skills/`. Type `/<skill-id>` to invoke one, or describe a matching task and
+            Claude will activate the relevant skill automatically.
+
+            ### Project-Specific Skills
+
+            Generated from this project's context by the local AI model.
+
             %s
 
             ## Engineering Rules
@@ -75,20 +111,79 @@ public class ContextTemplateEngine {
                 summary,
                 ctx.detectedStack(),
                 formatFileList(ctx.sourceFiles(), 20),
-                skills
+                llmSkills == null || llmSkills.isBlank() ? "_(none generated)_" : llmSkills
             );
     }
 
-    private String buildAiIndex(ProjectContext ctx) {
-        return """
-            # Project Index - %s
+    private String buildClaudeSkillFile(Skill skill) {
+        var sb = new StringBuilder();
+        sb.append("---\n");
+        sb.append("name: ").append(skill.id()).append("\n");
+        if (skill.trigger() != null && !skill.trigger().isBlank()) {
+            sb.append("description: ").append(skill.trigger()).append("\n");
+        }
+        sb.append("---\n\n");
+        sb.append("# ").append(titleFromId(skill.id())).append("\n\n");
+        if (skill.steps() != null && !skill.steps().isEmpty()) {
+            sb.append("## Steps\n\n");
+            int i = 1;
+            for (var step : skill.steps()) {
+                sb.append(i++).append(". ").append(step).append("\n");
+            }
+            sb.append("\n");
+        }
+        if (skill.notes() != null && !skill.notes().isBlank()) {
+            sb.append("## Notes\n\n");
+            sb.append(skill.notes()).append("\n");
+        }
+        return sb.toString();
+    }
 
-            | File | Purpose |
-            |------|---------|
-            | `CLAUDE.md` | Main context file - start here |
-            | `.ai/engineering-rules.md` | Engineering rules for this project |
-            | `.ai/stack.md` | Stack details and dependency notes |
-            """.formatted(ctx.name());
+    private static String titleFromId(String id) {
+        var parts = id.split("-");
+        var sb = new StringBuilder();
+        for (var p : parts) {
+            if (p.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1));
+        }
+        return sb.toString();
+    }
+
+    private void appendSkill(StringBuilder sb, Skill skill) {
+        sb.append("#### ").append(skill.id()).append("\n\n");
+        if (skill.trigger() != null && !skill.trigger().isBlank()) {
+            sb.append("**Trigger:** ").append(skill.trigger()).append("\n\n");
+        }
+        if (skill.steps() != null && !skill.steps().isEmpty()) {
+            sb.append("**Steps:**\n");
+            int i = 1;
+            for (var step : skill.steps()) {
+                sb.append(i++).append(". ").append(step).append("\n");
+            }
+            sb.append("\n");
+        }
+        if (skill.notes() != null && !skill.notes().isBlank()) {
+            sb.append("**Notes:** ").append(skill.notes()).append("\n\n");
+        }
+    }
+
+    private String buildAiIndex(ProjectContext ctx, List<Skill> skills) {
+        var sb = new StringBuilder();
+        sb.append("# Project Index - ").append(ctx.name()).append("\n\n");
+        sb.append("| File | Purpose |\n");
+        sb.append("|------|---------|\n");
+        sb.append("| `CLAUDE.md` | Main context file - start here |\n");
+        sb.append("| `.ai/engineering-rules.md` | Engineering rules for this project |\n");
+        sb.append("| `.ai/stack.md` | Stack details and dependency notes |\n");
+        sb.append("| `.claude/skills/` | Curated workflow skills (invocable via `/<skill-id>`) |\n");
+        if (!skills.isEmpty()) {
+            sb.append("\n## Available Skills\n\n");
+            skills.forEach(s -> sb.append("- `/").append(s.id()).append("` - ").append(
+                s.trigger() == null ? "" : s.trigger()
+            ).append("\n"));
+        }
+        return sb.toString();
     }
 
     private String buildStackMd(ProjectContext ctx) {
@@ -126,27 +221,35 @@ public class ContextTemplateEngine {
 
             ## Engineering Rules
 
-            See `.cursor/rules/engineering.mdc` for the full engineering rule set.
+            See `.cursor/rules/engineering.mdc` for the full engineering rule set,
+            and `.cursor/rules/skills.mdc` for curated workflow skills.
             """.formatted(ctx.name(), summary, ctx.detectedStack(), generatedRules);
     }
 
-    private String buildEngineeringRulesMd() {
+    private String buildEngineeringRulesMd(List<Rule> rules) {
         var sb = new StringBuilder();
         sb.append("# Engineering Rules\n\n");
         sb.append("These rules apply to all work in this project, regardless of feature or task.\n\n");
-        Arrays.stream(EngineeringRule.values()).forEach(rule -> {
-            sb.append("## ").append(rule.title).append("\n\n");
-            sb.append(rule.description).append("\n\n");
+        rules.forEach(rule -> {
+            sb.append("## ").append(rule.title()).append("\n\n");
+            sb.append(rule.description()).append("\n\n");
         });
         return sb.toString();
     }
 
-    private String buildCursorEngineeringRules() {
+    private String buildCursorEngineeringRules(List<Rule> rules) {
         var sb = new StringBuilder();
         sb.append("---\ndescription: Engineering rules for this project\nglobs: **/*\n---\n\n");
-        Arrays.stream(EngineeringRule.values()).forEach(rule ->
-            sb.append("- **").append(rule.title).append(":** ").append(rule.description).append("\n")
+        rules.forEach(rule ->
+            sb.append("- **").append(rule.title()).append(":** ").append(rule.description()).append("\n")
         );
+        return sb.toString();
+    }
+
+    private String buildCursorSkills(List<Skill> skills) {
+        var sb = new StringBuilder();
+        sb.append("---\ndescription: Curated workflow skills for this project\nglobs: **/*\n---\n\n");
+        skills.forEach(s -> appendSkill(sb, s));
         return sb.toString();
     }
 

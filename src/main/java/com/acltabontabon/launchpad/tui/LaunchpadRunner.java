@@ -25,6 +25,7 @@ import dev.tamboui.tui.TuiConfig;
 import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyEvent;
+import dev.tamboui.tui.event.TickEvent;
 import dev.tamboui.widgets.block.Block;
 import dev.tamboui.widgets.block.Borders;
 import dev.tamboui.widgets.block.Title;
@@ -56,7 +57,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final ProjectScanner scanner;
     private final ContextGeneratorService generatorService;
     private final OllamaHealthChecker healthChecker;
-    private final ContextTemplateEngine templateEngine = new ContextTemplateEngine();
+    private final ContextTemplateEngine templateEngine;
 
     private boolean scanStarted = false;
 
@@ -69,7 +70,8 @@ public class LaunchpadRunner implements ApplicationRunner {
         SettingsView settingsView,
         ProjectScanner scanner,
         ContextGeneratorService generatorService,
-        OllamaHealthChecker healthChecker
+        OllamaHealthChecker healthChecker,
+        ContextTemplateEngine templateEngine
     ) {
         this.welcomeView = welcomeView;
         this.projectSelectView = projectSelectView;
@@ -80,6 +82,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         this.scanner = scanner;
         this.generatorService = generatorService;
         this.healthChecker = healthChecker;
+        this.templateEngine = templateEngine;
     }
 
     @Override
@@ -95,6 +98,12 @@ public class LaunchpadRunner implements ApplicationRunner {
     // ── Event handling ────────────────────────────────────────────────────────
 
     private boolean handleEvent(Event event, TuiRunner runner) {
+        // Tick events drive animation - always redraw so spinners, progress bars,
+        // and background-thread state changes (scan/AI) become visible.
+        if (event instanceof TickEvent) {
+            return true;
+        }
+
         // Global quit - q from any screen except text input (PROJECT_SELECT, SETTINGS)
         if (event instanceof KeyEvent key
                 && key.isChar('q')
@@ -103,7 +112,9 @@ public class LaunchpadRunner implements ApplicationRunner {
             runner.quit();
             return true;
         }
-        return currentView().handleEvent(event, runner, state);
+        boolean handled = currentView().handleEvent(event, runner, state);
+        // Any input event should refresh the screen (e.g. typing in path input).
+        return handled || event instanceof KeyEvent;
     }
 
     // ── Rendering ─────────────────────────────────────────────────────────────
@@ -180,32 +191,33 @@ public class LaunchpadRunner implements ApplicationRunner {
 
         CompletableFuture.runAsync(() -> {
             try {
-                // Phase 1 - file scan
-                state.scanProgress.set(5);
-                state.scanMessage.set("Scanning project files...");
+                // Phase 1 - file scan  (eases 5 -> 25 as scanner emits progress)
+                beginPhase(AppState.Phase.SCAN_FILES, 5, "Scanning project files...");
                 var ctx = scanner.scan(state.projectPath, msg -> {
                     state.scanMessage.set(msg);
+                    int n = state.streamedChunks.incrementAndGet();
+                    int p = 5 + (int) (20 * (1 - Math.exp(-n / 30.0)));
+                    state.scanProgress.set(Math.min(25, p));
                 });
 
-                // Phase 2 - AI: project summary
-                state.scanProgress.set(30);
-                state.scanMessage.set("Generating project summary with local AI...");
-                var summary = generatorService.generateProjectSummary(ctx);
+                // Phase 2 - AI: project summary  (eases 30 -> 55 as tokens stream)
+                beginPhase(AppState.Phase.GENERATE_SUMMARY, 30, "Generating project summary with local AI...");
+                var summary = generatorService.generateProjectSummary(ctx,
+                    chunk -> onAiChunk(chunk, 30, 55));
 
-                // Phase 3 - AI: target-specific content
-                state.scanProgress.set(60);
-                state.scanMessage.set("Generating " + state.selectedTarget.displayName + " content...");
-                var targetContent = generatorService.generateTargetSpecificContent(ctx, state.selectedTarget);
+                // Phase 3 - AI: target-specific content  (eases 60 -> 85)
+                beginPhase(AppState.Phase.GENERATE_TARGET, 60,
+                    "Generating " + state.selectedTarget.displayName + " content...");
+                var targetContent = generatorService.generateTargetSpecificContent(ctx, state.selectedTarget,
+                    chunk -> onAiChunk(chunk, 60, 85));
 
                 // Phase 4 - assemble files
-                state.scanProgress.set(85);
-                state.scanMessage.set("Assembling output files...");
+                beginPhase(AppState.Phase.ASSEMBLE, 90, "Assembling output files...");
                 var files = templateEngine.buildFiles(ctx, state.selectedTarget, summary, targetContent);
                 state.generatedFiles = files;
 
                 // Done
-                state.scanProgress.set(100);
-                state.scanMessage.set("Done! " + files.size() + " files generated.");
+                beginPhase(AppState.Phase.DONE, 100, "Done! " + files.size() + " files generated.");
                 state.scanComplete = true;
 
             } catch (Exception e) {
@@ -214,6 +226,29 @@ public class LaunchpadRunner implements ApplicationRunner {
                 state.scanComplete = true;
             }
         });
+    }
+
+    private void beginPhase(AppState.Phase phase, int baseProgress, String message) {
+        state.currentPhase.set(phase);
+        state.scanProgress.set(baseProgress);
+        state.scanMessage.set(message);
+        state.streamedChunks.set(0);
+        state.streamTail.set("");
+        state.phaseStartedAtMs.set(System.currentTimeMillis());
+    }
+
+    private void onAiChunk(String chunk, int from, int to) {
+        int n = state.streamedChunks.incrementAndGet();
+        int range = to - from;
+        // diminishing returns: approaches `to` asymptotically so the bar always advances
+        int p = from + (int) (range * (1 - Math.exp(-n / 80.0)));
+        state.scanProgress.set(Math.min(to, p));
+        state.streamTail.set(appendTail(state.streamTail.get(), chunk, 120));
+    }
+
+    private static String appendTail(String prev, String chunk, int max) {
+        var combined = (prev + chunk).replaceAll("\\s+", " ");
+        return combined.length() <= max ? combined : combined.substring(combined.length() - max);
     }
 
     private View currentView() {
