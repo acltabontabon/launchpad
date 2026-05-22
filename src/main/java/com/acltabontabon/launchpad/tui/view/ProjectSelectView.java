@@ -90,7 +90,11 @@ public class ProjectSelectView implements View {
             if (isValidProjectPath(state.projectPath)) {
                 state.launchpadAware = Files.isDirectory(
                     Path.of(state.projectPath, ".launchpad", "standards"));
-                state.currentScreen = AppState.Screen.TARGET_SELECT;
+                // /new-task skips target selection - it doesn't generate context files
+                // for a specific target, just an LLM-ready prompt. Go straight to scan.
+                state.currentScreen = state.taskFlow
+                    ? AppState.Screen.SCANNING
+                    : AppState.Screen.TARGET_SELECT;
                 return true;
             }
             return false;

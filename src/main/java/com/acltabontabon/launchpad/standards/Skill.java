@@ -11,5 +11,10 @@ public record Skill(
     String trigger,
     List<String> steps,
     @JsonAlias("output_expectations") List<String> outputExpectations,
-    String notes
-) {}
+    String notes,
+    Scope scope
+) {
+    public Skill {
+        if (scope == null) scope = Scope.empty();
+    }
+}

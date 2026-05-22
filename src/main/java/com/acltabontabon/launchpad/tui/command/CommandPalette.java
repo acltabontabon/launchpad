@@ -11,13 +11,22 @@ public final class CommandPalette {
             "/init",
             "Initialize project",
             "Generate AI context files for a project",
-            (state, runner) -> state.currentScreen = AppState.Screen.PROJECT_SELECT
+            (state, runner) -> {
+                state.resetTaskFlow();
+                state.resetScanLatch();
+                state.currentScreen = AppState.Screen.PROJECT_SELECT;
+            }
         ),
         new Command(
-            "/new-feature",
-            "New feature",
-            "Coming soon",
-            (state, runner) -> state.welcomeFlashMessage = "Coming soon"
+            "/new-task",
+            "New task",
+            "Interview-driven prompt builder for Claude / Cursor (local AI)",
+            (state, runner) -> {
+                state.resetTaskFlow();
+                state.resetScanLatch();
+                state.taskFlow = true;
+                state.currentScreen = AppState.Screen.PROJECT_SELECT;
+            }
         ),
         new Command(
             "/settings",

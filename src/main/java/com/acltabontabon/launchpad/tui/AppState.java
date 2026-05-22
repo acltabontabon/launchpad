@@ -1,7 +1,9 @@
 package com.acltabontabon.launchpad.tui;
 
 import com.acltabontabon.launchpad.ai.OllamaStatus;
+import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
+import com.acltabontabon.launchpad.task.TaskTurn;
 import com.acltabontabon.launchpad.template.ContextTarget;
 import com.acltabontabon.launchpad.template.FilePlan;
 import com.acltabontabon.launchpad.template.GeneratedFile;
@@ -26,6 +28,9 @@ public class AppState {
         TARGET_SELECT,
         SCANNING,
         REVIEW,
+        TASK_INPUT,
+        TASK_INTERVIEW,
+        TASK_RESULT,
         // SETTINGS is off the linear flow - reached from WELCOME via 'c'. Keep last
         // so the stepper's ordinal-indexed highlight covers only the in-flow screens.
         SETTINGS
@@ -114,6 +119,85 @@ public class AppState {
     public volatile String commandInput = "";
     public volatile int commandCursorIndex = 0;
     public volatile String welcomeFlashMessage = "";
+
+    // /new-task flow state. taskFlow gates the post-scan branch in LaunchpadRunner -
+    // when true, the pipeline scans only and routes to TASK_INPUT instead of generating
+    // context files. The ProjectContext from the scan is stashed here so the advisor
+    // service has codebase grounding without re-scanning.
+    public volatile boolean taskFlow = false;
+    public volatile ProjectContext taskProjectContext = null;
+    public volatile String taskDescription = "";
+    public volatile String taskCurrentAnswer = "";
+    public volatile int taskRound = 0;
+    public final AtomicReference<List<TaskTurn>> taskTurns = new AtomicReference<>(new ArrayList<>());
+    public final AtomicReference<String> taskCurrentQuestion = new AtomicReference<>("");
+    public final AtomicReference<String> taskStatus = new AtomicReference<>("");
+    public volatile String taskFinalPrompt = "";
+    public volatile String taskSavedPath = "";
+    // True while a background LLM call (askNextQuestion / finalize) is in flight.
+    // Views read this to lock input and show "thinking..." status.
+    public volatile boolean taskThinking = false;
+    // True once the interview has reached __DONE__ or the user pressed `f` - the next
+    // tick should transition to TASK_RESULT and kick off finalize().
+    public volatile boolean taskReadyToFinalize = false;
+    // True when the last LLM call failed. Views render this distinctly (red, no
+    // spinner) and surface taskStatus as the error message.
+    public volatile boolean taskError = false;
+    // When the currently-active LLM op started; used by views to render elapsed time
+    // so the user knows the call isn't hung. 0 = no op active.
+    public volatile long taskOpStartedAtMs = 0L;
+
+    // Scan-trigger latch consulted by LaunchpadRunner.triggerScanIfNeeded(). The
+    // runner sets it true when a scan starts so subsequent ticks don't fire a
+    // second one; flows that need a fresh scan (e.g. starting /init or /new-task
+    // from the command palette) reset it via resetScanLatch().
+    public volatile boolean scanStarted = false;
+
+    public void resetScanLatch() {
+        scanStarted = false;
+        scanComplete = false;
+        scanError = false;
+        scanErrorMessage = null;
+        scanProgress.set(0);
+        currentPhase.set(Phase.SCAN_FILES);
+        streamedChunks.set(0);
+        streamTail.set("");
+        scanMessage.set("Waiting...");
+    }
+
+    public void resetTaskFlow() {
+        taskFlow = false;
+        taskProjectContext = null;
+        taskDescription = "";
+        taskCurrentAnswer = "";
+        taskRound = 0;
+        taskTurns.set(new ArrayList<>());
+        taskCurrentQuestion.set("");
+        taskStatus.set("");
+        taskFinalPrompt = "";
+        taskSavedPath = "";
+        taskThinking = false;
+        taskReadyToFinalize = false;
+        taskError = false;
+        taskOpStartedAtMs = 0L;
+    }
+
+    /** Clear per-task state but keep the scanned ProjectContext so a follow-up task
+     *  on the same project doesn't trigger a re-scan. */
+    public void resetTaskForReuse() {
+        taskDescription = "";
+        taskCurrentAnswer = "";
+        taskRound = 0;
+        taskTurns.set(new ArrayList<>());
+        taskCurrentQuestion.set("");
+        taskStatus.set("");
+        taskFinalPrompt = "";
+        taskSavedPath = "";
+        taskThinking = false;
+        taskReadyToFinalize = false;
+        taskError = false;
+        taskOpStartedAtMs = 0L;
+    }
 
     public void nextReviewFile() {
         if (!generatedFiles.isEmpty()) {

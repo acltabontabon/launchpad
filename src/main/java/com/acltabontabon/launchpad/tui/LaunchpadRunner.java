@@ -6,12 +6,17 @@ import com.acltabontabon.launchpad.ai.OllamaStatus;
 import com.acltabontabon.launchpad.scanner.ProjectScanner;
 import com.acltabontabon.launchpad.standards.RemoteStandardsChecker;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
+import com.acltabontabon.launchpad.standards.StandardsLoader;
+import com.acltabontabon.launchpad.task.TaskAdvisorService;
 import com.acltabontabon.launchpad.template.ContextTemplateEngine;
 import com.acltabontabon.launchpad.tui.view.ProjectSelectView;
 import com.acltabontabon.launchpad.tui.view.ReviewView;
 import com.acltabontabon.launchpad.tui.view.ScanProgressView;
 import com.acltabontabon.launchpad.tui.view.SettingsView;
 import com.acltabontabon.launchpad.tui.view.TargetSelectView;
+import com.acltabontabon.launchpad.tui.view.TaskInputView;
+import com.acltabontabon.launchpad.tui.view.TaskInterviewView;
+import com.acltabontabon.launchpad.tui.view.TaskResultView;
 import com.acltabontabon.launchpad.tui.view.View;
 import com.acltabontabon.launchpad.tui.view.WelcomeView;
 import dev.tamboui.layout.Constraint;
@@ -33,7 +38,11 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CompletableFuture;
 
 @Component
@@ -50,14 +59,20 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final ScanProgressView scanProgressView;
     private final ReviewView reviewView;
     private final SettingsView settingsView;
+    private final TaskInputView taskInputView;
+    private final TaskInterviewView taskInterviewView;
+    private final TaskResultView taskResultView;
 
     private final ProjectScanner scanner;
     private final ContextGeneratorService generatorService;
     private final OllamaHealthChecker healthChecker;
     private final RemoteStandardsChecker remoteStandardsChecker;
     private final ContextTemplateEngine templateEngine;
+    private final TaskAdvisorService taskAdvisor;
+    private final StandardsLoader standardsLoader;
 
-    private boolean scanStarted = false;
+    private static final DateTimeFormatter TASK_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+    private static final int TASK_RUNAWAY_CAP = 15;
 
     public LaunchpadRunner(
         WelcomeView welcomeView,
@@ -66,11 +81,16 @@ public class LaunchpadRunner implements ApplicationRunner {
         ScanProgressView scanProgressView,
         ReviewView reviewView,
         SettingsView settingsView,
+        TaskInputView taskInputView,
+        TaskInterviewView taskInterviewView,
+        TaskResultView taskResultView,
         ProjectScanner scanner,
         ContextGeneratorService generatorService,
         OllamaHealthChecker healthChecker,
         RemoteStandardsChecker remoteStandardsChecker,
-        ContextTemplateEngine templateEngine
+        ContextTemplateEngine templateEngine,
+        TaskAdvisorService taskAdvisor,
+        StandardsLoader standardsLoader
     ) {
         this.welcomeView = welcomeView;
         this.projectSelectView = projectSelectView;
@@ -78,11 +98,16 @@ public class LaunchpadRunner implements ApplicationRunner {
         this.scanProgressView = scanProgressView;
         this.reviewView = reviewView;
         this.settingsView = settingsView;
+        this.taskInputView = taskInputView;
+        this.taskInterviewView = taskInterviewView;
+        this.taskResultView = taskResultView;
         this.scanner = scanner;
         this.generatorService = generatorService;
         this.healthChecker = healthChecker;
         this.remoteStandardsChecker = remoteStandardsChecker;
         this.templateEngine = templateEngine;
+        this.taskAdvisor = taskAdvisor;
+        this.standardsLoader = standardsLoader;
     }
 
     @Override
@@ -104,13 +129,18 @@ public class LaunchpadRunner implements ApplicationRunner {
             return true;
         }
 
-        // Global quit - q from any screen except text input (PROJECT_SELECT, SETTINGS, WELCOME).
-        // WELCOME accepts text now (slash-command palette) - quitting from there goes through /quit.
+        // Global quit - q from any screen except text-input screens.
+        // WELCOME accepts text (slash-command palette) - quitting goes through /quit.
+        // TASK_INPUT / TASK_INTERVIEW accept text (description, answers); TASK_RESULT
+        // uses q as "back to welcome" instead of quit so the user can start another task.
         if (event instanceof KeyEvent key
                 && key.isChar('q')
                 && state.currentScreen != AppState.Screen.PROJECT_SELECT
                 && state.currentScreen != AppState.Screen.SETTINGS
-                && state.currentScreen != AppState.Screen.WELCOME) {
+                && state.currentScreen != AppState.Screen.WELCOME
+                && state.currentScreen != AppState.Screen.TASK_INPUT
+                && state.currentScreen != AppState.Screen.TASK_INTERVIEW
+                && state.currentScreen != AppState.Screen.TASK_RESULT) {
             runner.quit();
             return true;
         }
@@ -125,6 +155,8 @@ public class LaunchpadRunner implements ApplicationRunner {
         triggerHealthCheckIfNeeded();
         triggerRemoteStandardsCheckIfNeeded();
         triggerScanIfNeeded();
+        triggerTaskQuestionIfNeeded();
+        triggerTaskFinalizeIfNeeded();
 
         var area = frame.area();
         var rows = Layout.vertical()
@@ -209,10 +241,12 @@ public class LaunchpadRunner implements ApplicationRunner {
     /**
      * Triggered once when the user enters the SCANNING screen.
      * Runs the full pipeline in a background thread, updating AppState for the TUI to read.
+     * When {@code state.taskFlow} is true, only the scan phase runs and the next screen
+     * is TASK_INPUT - the /new-task flow doesn't generate context files.
      */
     private void triggerScanIfNeeded() {
-        if (state.currentScreen != AppState.Screen.SCANNING || scanStarted) return;
-        scanStarted = true;
+        if (state.currentScreen != AppState.Screen.SCANNING || state.scanStarted) return;
+        state.scanStarted = true;
 
         CompletableFuture.runAsync(() -> {
             try {
@@ -224,6 +258,17 @@ public class LaunchpadRunner implements ApplicationRunner {
                     int p = 5 + (int) (20 * (1 - Math.exp(-n / 30.0)));
                     state.scanProgress.set(Math.min(25, p));
                 });
+
+                if (state.taskFlow) {
+                    // /new-task: scan-only. Stash the context and jump straight to the
+                    // task input screen. No LLM summary / target / assemble phases here -
+                    // those are for /init only.
+                    state.taskProjectContext = ctx;
+                    beginPhase(AppState.Phase.DONE, 100, "Project scanned. Describe your task next.");
+                    state.scanComplete = true;
+                    state.currentScreen = AppState.Screen.TASK_INPUT;
+                    return;
+                }
 
                 // Phase 2 - AI: project summary  (eases 30 -> 55 as tokens stream)
                 beginPhase(AppState.Phase.GENERATE_SUMMARY, 30, "Generating project summary with local AI...");
@@ -265,6 +310,198 @@ public class LaunchpadRunner implements ApplicationRunner {
         });
     }
 
+    // ── /new-task background dispatch ──────────────────────────────────────────
+
+    /**
+     * Fires when the interview screen needs a new question: no thinking in flight,
+     * no current question on screen, and the user hasn't asked to finalize. Caps
+     * iterations at TASK_RUNAWAY_CAP as a safety net against a misbehaving model -
+     * the primary stop signal is the model returning {@link TaskAdvisorService#DONE_TOKEN}.
+     */
+    private void triggerTaskQuestionIfNeeded() {
+        if (state.currentScreen != AppState.Screen.TASK_INTERVIEW) return;
+        if (state.taskThinking || state.taskReadyToFinalize) return;
+        if (!state.taskCurrentQuestion.get().isEmpty()) return;
+        if (state.taskProjectContext == null) return;
+
+        if (state.taskRound >= TASK_RUNAWAY_CAP) {
+            state.taskReadyToFinalize = true;
+            state.currentScreen = AppState.Screen.TASK_RESULT;
+            return;
+        }
+
+        state.taskThinking = true;
+        state.taskError = false;
+        state.taskOpStartedAtMs = System.currentTimeMillis();
+        state.taskStatus.set("asking the local model for the next clarifying question...");
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                var projectRoot = Path.of(state.projectPath).toAbsolutePath();
+                var rules = standardsLoader.loadRules(projectRoot);
+                var skills = standardsLoader.loadSkills(projectRoot);
+                var checklists = standardsLoader.loadChecklists(projectRoot);
+
+                // If the project has no standards configured at all, there's nothing
+                // worth interviewing about - skip straight to finalize. The synthesised
+                // prompt will still benefit from the codebase scan in the Constraints /
+                // Context sections; the interview is purely a standards-driven phase.
+                boolean noStandards = rules.isEmpty() && skills.isEmpty() && checklists.isEmpty();
+                if (noStandards && state.taskRound == 0) {
+                    state.taskStatus.set("no engineering standards found - skipping interview");
+                    state.taskReadyToFinalize = true;
+                    state.currentScreen = AppState.Screen.TASK_RESULT;
+                    return;
+                }
+
+                var response = taskAdvisor.askNextQuestion(
+                    state.taskProjectContext.stack(),
+                    state.taskDescription,
+                    state.taskTurns.get(),
+                    rules,
+                    skills,
+                    checklists
+                );
+                if (response.equals(TaskAdvisorService.DONE_TOKEN)
+                        || response.contains(TaskAdvisorService.DONE_TOKEN)) {
+                    state.taskReadyToFinalize = true;
+                    state.currentScreen = AppState.Screen.TASK_RESULT;
+                } else {
+                    state.taskCurrentQuestion.set(response);
+                }
+                state.taskStatus.set("");
+            } catch (Exception e) {
+                state.taskError = true;
+                state.taskStatus.set(buildLlmErrorMessage("interview", e));
+            } finally {
+                state.taskThinking = false;
+                state.taskOpStartedAtMs = 0L;
+            }
+        });
+    }
+
+    /**
+     * Fires when the user lands on the result screen with no synthesised prompt yet.
+     * Runs finalize() on a background thread and writes the result to
+     * {@code <projectRoot>/.launchpad/tasks/<ts>-<slug>.md}.
+     */
+    private void triggerTaskFinalizeIfNeeded() {
+        if (state.currentScreen != AppState.Screen.TASK_RESULT) return;
+        if (state.taskThinking || !state.taskFinalPrompt.isEmpty()) return;
+        if (state.taskProjectContext == null) return;
+
+        state.taskThinking = true;
+        state.taskError = false;
+        state.taskOpStartedAtMs = System.currentTimeMillis();
+        state.taskStatus.set("streaming the synthesised prompt from the local model...");
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                var projectRoot = Path.of(state.projectPath).toAbsolutePath();
+                var rules = standardsLoader.loadRules(projectRoot);
+                var skills = standardsLoader.loadSkills(projectRoot);
+                var checklists = standardsLoader.loadChecklists(projectRoot);
+                // Stream chunks into taskFinalPrompt so the user watches it materialise
+                // rather than staring at a spinner for 30+ seconds.
+                var prompt = taskAdvisor.finalize(
+                    state.taskProjectContext,
+                    state.taskDescription,
+                    state.taskTurns.get(),
+                    rules,
+                    skills,
+                    checklists,
+                    chunk -> state.taskFinalPrompt = state.taskFinalPrompt + chunk
+                );
+                state.taskFinalPrompt = prompt;
+
+                // Save the prompt to disk + an `<!-- interview -->` appendix that
+                // captures the raw task description and Q/A transcript so the
+                // source of the synthesised prompt is preserved. Failures here
+                // are non-fatal; the user can still copy from the TUI.
+                try {
+                    var taskDir = projectRoot.resolve(".launchpad").resolve("tasks");
+                    Files.createDirectories(taskDir);
+                    var ts = LocalDateTime.now().format(TASK_TS_FMT);
+                    var slug = slugify(state.taskDescription);
+                    var file = taskDir.resolve(ts + "-" + slug + ".md");
+                    var fullContent = prompt + "\n\n" + renderInterviewAppendix(
+                        state.taskDescription, state.taskTurns.get(), ts);
+                    Files.writeString(file, fullContent);
+                    state.taskSavedPath = file.toString();
+                    state.taskStatus.set("");
+                } catch (Exception writeFail) {
+                    state.taskStatus.set("displayed but could not save: " + writeFail.getMessage());
+                }
+            } catch (Exception e) {
+                state.taskError = true;
+                state.taskStatus.set(buildLlmErrorMessage("finalize", e));
+                // Clear any partial stream so the user sees the error instead of a half-prompt.
+                state.taskFinalPrompt = "";
+            } finally {
+                state.taskThinking = false;
+                state.taskOpStartedAtMs = 0L;
+            }
+        });
+    }
+
+    /**
+     * Heuristic error formatter. Local models behind Ollama fail in two distinctive
+     * ways worth calling out to the user: context-window truncation (the prompt was
+     * bigger than the model's loaded `num_ctx`, often manifests as a 500), and the
+     * daemon being unreachable. Anything else passes through as-is.
+     */
+    private static String buildLlmErrorMessage(String phase, Throwable e) {
+        var msg = e.getMessage() == null ? e.toString() : e.getMessage();
+        var lower = msg.toLowerCase();
+        var base = phase + " failed: " + msg;
+        if (lower.contains("500") || lower.contains("truncat") || lower.contains("context")) {
+            return base + "  -  hint: the prompt may have exceeded Ollama's loaded context window "
+                + "(check the Ollama log for 'truncating input prompt'). Try a model with a larger "
+                + "num_ctx, or simplify the task.";
+        }
+        if (lower.contains("connect") || lower.contains("refused") || lower.contains("unreachable")) {
+            return base + "  -  hint: Ollama may not be running. Check the Welcome screen's status badge.";
+        }
+        return base;
+    }
+
+    /**
+     * Builds the HTML-commented interview appendix appended to every saved task
+     * file. Captures the raw task description + Q/A transcript so the source
+     * of the synthesised prompt is traceable later. Markdown comment delimiters
+     * (`<!-- ... -->`) keep this invisible when the file is rendered, while
+     * still being plain text the user can read in any editor.
+     */
+    private static String renderInterviewAppendix(String taskDescription,
+            java.util.List<com.acltabontabon.launchpad.task.TaskTurn> turns, String timestamp) {
+        var sb = new StringBuilder();
+        sb.append("<!-- launchpad-interview\n");
+        sb.append("generated: ").append(timestamp).append("\n\n");
+        sb.append("Original task (as the user typed it):\n");
+        sb.append("  ").append(taskDescription.replace("\n", "\n  ")).append("\n\n");
+        if (turns == null || turns.isEmpty()) {
+            sb.append("Interview: (none - no questions were asked)\n");
+        } else {
+            sb.append("Interview Q&A:\n");
+            int i = 1;
+            for (var turn : turns) {
+                sb.append("  Q").append(i).append(": ").append(turn.question()).append("\n");
+                sb.append("  A").append(i).append(": ").append(turn.answer()).append("\n\n");
+                i++;
+            }
+        }
+        sb.append("-->\n");
+        return sb.toString();
+    }
+
+    private static String slugify(String text) {
+        if (text == null) return "task";
+        var lower = text.toLowerCase().strip();
+        var trimmed = lower.length() > 60 ? lower.substring(0, 60) : lower;
+        var s = trimmed.replaceAll("[^a-z0-9]+", "-").replaceAll("(^-+|-+$)", "");
+        return s.isEmpty() ? "task" : s;
+    }
+
     private void beginPhase(AppState.Phase phase, int baseProgress, String message) {
         state.currentPhase.set(phase);
         state.scanProgress.set(baseProgress);
@@ -295,6 +532,9 @@ public class LaunchpadRunner implements ApplicationRunner {
             case TARGET_SELECT  -> targetSelectView;
             case SCANNING       -> scanProgressView;
             case REVIEW         -> reviewView;
+            case TASK_INPUT     -> taskInputView;
+            case TASK_INTERVIEW -> taskInterviewView;
+            case TASK_RESULT    -> taskResultView;
             case SETTINGS       -> settingsView;
         };
     }

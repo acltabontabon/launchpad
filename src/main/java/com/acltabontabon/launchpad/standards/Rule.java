@@ -9,5 +9,16 @@ public record Rule(
     String title,
     String severity,
     @JsonAlias("content") String description,
-    String rationale
-) {}
+    String rationale,
+    Scope scope,
+    Integer priority
+) {
+    public Rule {
+        if (scope == null) scope = Scope.empty();
+    }
+
+    /** Priority for sorting; lower = more important. Defaults to 99 if not set in YAML. */
+    public int priorityValue() {
+        return priority == null ? 99 : priority;
+    }
+}

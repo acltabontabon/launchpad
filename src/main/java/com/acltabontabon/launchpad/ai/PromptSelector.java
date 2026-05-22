@@ -18,7 +18,9 @@ public class PromptSelector {
     public enum Kind {
         SUMMARY("summary"),
         SKILLS("skills"),
-        CURSOR_RULES("cursor-rules");
+        CURSOR_RULES("cursor-rules"),
+        TASK_INTERVIEW("task/interview"),
+        TASK_FINALIZE("task/finalize");
 
         final String dir;
         Kind(String dir) { this.dir = dir; }

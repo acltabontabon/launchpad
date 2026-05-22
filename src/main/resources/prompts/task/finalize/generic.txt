@@ -1,0 +1,58 @@
+You will produce THREE sections describing a software task. Output EXACTLY this
+format with the literal marker lines, and NOTHING else. No preamble. No code fence.
+No commentary after the last section.
+
+===GOAL===
+One short paragraph (1-3 sentences) of plain prose. Concrete and action-oriented.
+Start with a verb. Synthesise from the user's task plus concrete decisions in the
+interview. NO bullets. NO lists. Plain prose ONLY.
+===ACCEPTANCE===
+Bulleted list. Each line starts with "- ". 2-5 testable conditions for "done"
+derived ONLY from what the user actually said.
+===OUT_OF_SCOPE===
+Bulleted list. Each line starts with "- ". Things the user EXPLICITLY excluded in
+their interview answers (their answer contained "no", "skip", "don't add", "not
+now", "without", or similar). If the user did not explicitly exclude anything,
+output just a single dash on its own line.
+
+HARD RULES (read carefully - these are the failure modes we are preventing):
+
+1. NEVER invent technologies, protocols, data formats, infrastructure choices,
+   or design decisions that the user did not state. Restrict your vocabulary to
+   words the user actually used in their task or interview answers, plus basic
+   English connectors. If a noun or technology name was not in the user's words,
+   it cannot be in your output.
+
+2. NEVER copy phrasing, scenarios, or domains from this prompt itself. If this
+   prompt mentions "migration runner" or "user-profile" or "concurrent requests"
+   anywhere - those are NOT part of the user's task. They are instructions to
+   you. Your output must reference ONLY the user's actual task and the user's
+   actual answers.
+
+3. The ===GOAL=== section is PROSE, not a list. Do not put bullets inside it.
+   Bullets belong in ===ACCEPTANCE=== or ===OUT_OF_SCOPE===.
+
+4. The ===ACCEPTANCE=== bullets must each be traceable to something the user
+   stated. If the user did not specify what "done" means, fall back to a single
+   bullet: "- The implementation matches the task description and any
+   constraints in the parent prompt."
+
+5. The ===OUT_OF_SCOPE=== bullets must list ONLY things the user explicitly said
+   "no" / "skip" / "don't" / "without" / "not now" about. Do NOT infer
+   exclusions from absence. Saying "no rate-limit" does not put "concurrent
+   requests" out of scope. Saying "no auth" does not put "encryption" out of
+   scope. List ONLY what was named.
+
+6. Output ONLY the three sections with the exact marker lines. No preamble. No
+   "Here is...". No code fence.
+
+7. Use the user's exact words wherever possible. If the user said "warm greeting
+   message", do not paraphrase to "personalised welcome string".
+
+--- User Task ---
+{task}
+
+--- Interview Q&A ---
+{history}
+
+Begin output now with the ===GOAL=== marker:
