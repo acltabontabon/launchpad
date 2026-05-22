@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.tui.view;
 
 import com.acltabontabon.launchpad.ai.OllamaStatus;
+import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.tui.AppState;
 import dev.tamboui.layout.Alignment;
 import dev.tamboui.layout.Constraint;
@@ -25,6 +26,12 @@ public class WelcomeView implements View {
 
     private static final String[] SPINNER = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
     private int spinnerFrame = 0;
+
+    private final LaunchpadSettings settings;
+
+    public WelcomeView(LaunchpadSettings settings) {
+        this.settings = settings;
+    }
 
     private static final String ASCII_LOGO = """
          ██╗      █████╗ ██╗   ██╗███╗   ██╗ ██████╗██╗  ██╗██████╗  █████╗ ██████╗
@@ -52,6 +59,7 @@ public class WelcomeView implements View {
                 Constraint.length(7),   // logo
                 Constraint.length(2),   // tagline
                 Constraint.length(1),   // ollama status badge
+                Constraint.length(1),   // ollama target (baseUrl · model)
                 Constraint.length(1),   // ollama status hint
                 Constraint.min(0),      // spacer
                 Constraint.length(1),   // version
@@ -87,13 +95,24 @@ public class WelcomeView implements View {
             .build();
         frame.renderWidget(badge, rows.get(2));
 
+        // Current Ollama target
+        var snap = settings.snapshot();
+        var target = Paragraph.builder()
+            .text(Text.styled(
+                snap.baseUrl() + "  ·  " + snap.model(),
+                Style.create().fg(Color.DARK_GRAY)
+            ))
+            .alignment(Alignment.CENTER)
+            .build();
+        frame.renderWidget(target, rows.get(3));
+
         // Status hint (only when not ready)
         if (status.hint() != null) {
             var hint = Paragraph.builder()
                 .text(Text.styled(status.hint(), Style.create().fg(Color.DARK_GRAY)))
                 .alignment(Alignment.CENTER)
                 .build();
-            frame.renderWidget(hint, rows.get(3));
+            frame.renderWidget(hint, rows.get(4));
         }
 
         // Version
@@ -104,21 +123,21 @@ public class WelcomeView implements View {
             ))
             .alignment(Alignment.CENTER)
             .build();
-        frame.renderWidget(version, rows.get(5));
+        frame.renderWidget(version, rows.get(6));
 
         // Prompt
         var prompt = Paragraph.builder()
             .text(Text.styled(promptText(status), Style.create().fg(Color.YELLOW).bold()))
             .alignment(Alignment.CENTER)
             .build();
-        frame.renderWidget(prompt, rows.get(6));
+        frame.renderWidget(prompt, rows.get(7));
 
         // Bottom hint
         var bottomHint = Paragraph.builder()
             .text(Text.styled(bottomHintText(status), Style.create().fg(Color.DARK_GRAY)))
             .alignment(Alignment.CENTER)
             .build();
-        frame.renderWidget(bottomHint, rows.get(7));
+        frame.renderWidget(bottomHint, rows.get(8));
     }
 
     private String badgeText(OllamaStatus status) {
@@ -142,7 +161,9 @@ public class WelcomeView implements View {
     }
 
     private static String bottomHintText(OllamaStatus status) {
-        return status.isReady() ? "q · quit" : "r · re-check    q · quit";
+        return status.isReady()
+            ? "c · configure    q · quit"
+            : "r · re-check    c · configure    q · quit";
     }
 
     @Override
@@ -161,6 +182,16 @@ public class WelcomeView implements View {
 
         if (key.isChar('r')) {
             state.healthCheckRequested = true;
+            return true;
+        }
+
+        if (key.isChar('c')) {
+            var snap = settings.snapshot();
+            state.settingsBaseUrlInput = snap.baseUrl();
+            state.settingsModelInput = snap.model();
+            state.settingsFocusIndex = 0;
+            state.settingsErrorMessage = null;
+            state.currentScreen = AppState.Screen.SETTINGS;
             return true;
         }
 

@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.ai;
 
+import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -7,7 +8,6 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -16,20 +16,19 @@ public class OllamaHealthChecker {
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
     private static final Pattern MODEL_NAME = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"");
 
-    private final String baseUrl;
-    private final String configuredModel;
+    private final LaunchpadSettings settings;
     private final HttpClient http;
 
-    public OllamaHealthChecker(
-        @Value("${spring.ai.ollama.base-url}") String baseUrl,
-        @Value("${spring.ai.ollama.chat.options.model}") String configuredModel
-    ) {
-        this.baseUrl = baseUrl;
-        this.configuredModel = configuredModel;
+    public OllamaHealthChecker(LaunchpadSettings settings) {
+        this.settings = settings;
         this.http = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
     }
 
     public OllamaStatus check() {
+        var snap = settings.snapshot();
+        var baseUrl = snap.baseUrl();
+        var configuredModel = snap.model();
+
         var request = HttpRequest.newBuilder()
             .uri(URI.create(baseUrl + "/api/tags"))
             .timeout(TIMEOUT)

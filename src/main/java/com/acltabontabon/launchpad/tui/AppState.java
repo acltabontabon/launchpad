@@ -20,7 +20,10 @@ public class AppState {
         PROJECT_SELECT,
         TARGET_SELECT,
         SCANNING,
-        REVIEW
+        REVIEW,
+        // SETTINGS is off the linear flow - reached from WELCOME via 'c'. Keep last
+        // so the stepper's ordinal-indexed highlight covers only the in-flow screens.
+        SETTINGS
     }
 
     // Navigation
@@ -48,6 +51,12 @@ public class AppState {
 
     // Text input cursor for path input
     public volatile int inputCursorPos = 0;
+
+    // Settings screen input state (Ollama base URL + model)
+    public volatile String settingsBaseUrlInput = "";
+    public volatile String settingsModelInput = "";
+    public volatile int settingsFocusIndex = 0; // 0 = base URL, 1 = model
+    public volatile String settingsErrorMessage = null;
 
     public void nextReviewFile() {
         if (!generatedFiles.isEmpty()) {

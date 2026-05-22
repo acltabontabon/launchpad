@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Runtime Ollama configuration via TUI settings screen (press `c` from the Welcome screen). Persists to `~/.launchpad/config.properties` and hot-reloads the live `ChatClient` without restarting the app.
+
 ## [0.1.0] - 2026-05-22
 
 ### Added

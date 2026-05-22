@@ -8,6 +8,7 @@ import com.acltabontabon.launchpad.template.ContextTemplateEngine;
 import com.acltabontabon.launchpad.tui.view.ProjectSelectView;
 import com.acltabontabon.launchpad.tui.view.ReviewView;
 import com.acltabontabon.launchpad.tui.view.ScanProgressView;
+import com.acltabontabon.launchpad.tui.view.SettingsView;
 import com.acltabontabon.launchpad.tui.view.TargetSelectView;
 import com.acltabontabon.launchpad.tui.view.View;
 import com.acltabontabon.launchpad.tui.view.WelcomeView;
@@ -50,6 +51,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final TargetSelectView targetSelectView;
     private final ScanProgressView scanProgressView;
     private final ReviewView reviewView;
+    private final SettingsView settingsView;
 
     private final ProjectScanner scanner;
     private final ContextGeneratorService generatorService;
@@ -64,6 +66,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         TargetSelectView targetSelectView,
         ScanProgressView scanProgressView,
         ReviewView reviewView,
+        SettingsView settingsView,
         ProjectScanner scanner,
         ContextGeneratorService generatorService,
         OllamaHealthChecker healthChecker
@@ -73,6 +76,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         this.targetSelectView = targetSelectView;
         this.scanProgressView = scanProgressView;
         this.reviewView = reviewView;
+        this.settingsView = settingsView;
         this.scanner = scanner;
         this.generatorService = generatorService;
         this.healthChecker = healthChecker;
@@ -91,10 +95,11 @@ public class LaunchpadRunner implements ApplicationRunner {
     // ── Event handling ────────────────────────────────────────────────────────
 
     private boolean handleEvent(Event event, TuiRunner runner) {
-        // Global quit - q from any screen except text input
+        // Global quit - q from any screen except text input (PROJECT_SELECT, SETTINGS)
         if (event instanceof KeyEvent key
                 && key.isChar('q')
-                && state.currentScreen != AppState.Screen.PROJECT_SELECT) {
+                && state.currentScreen != AppState.Screen.PROJECT_SELECT
+                && state.currentScreen != AppState.Screen.SETTINGS) {
             runner.quit();
             return true;
         }
@@ -122,6 +127,22 @@ public class LaunchpadRunner implements ApplicationRunner {
     }
 
     private void renderHeader(Frame frame, Rect area) {
+        // SETTINGS sits off the linear flow - render a plain title bar instead of the stepper.
+        if (state.currentScreen == AppState.Screen.SETTINGS) {
+            var settingsHeader = Paragraph.builder()
+                .text(Text.from(Line.from(
+                    Span.styled(HEADER_TITLE, Style.create().fg(Color.CYAN).bold()),
+                    Span.styled(" Settings ", Style.create().fg(Color.YELLOW).bold())
+                )))
+                .block(Block.builder()
+                    .borders(Borders.ALL)
+                    .borderStyle(Style.create().fg(Color.CYAN))
+                    .build())
+                .build();
+            frame.renderWidget(settingsHeader, area);
+            return;
+        }
+
         var stepIndex = state.currentScreen.ordinal();
 
         var tabsState = new TabsState(stepIndex);
@@ -221,6 +242,7 @@ public class LaunchpadRunner implements ApplicationRunner {
             case TARGET_SELECT  -> targetSelectView;
             case SCANNING       -> scanProgressView;
             case REVIEW         -> reviewView;
+            case SETTINGS       -> settingsView;
         };
     }
 }

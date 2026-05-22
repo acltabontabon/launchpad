@@ -39,6 +39,21 @@ That's the whole loop. No accounts, no cloud, no API keys.
 - [Ollama](https://ollama.com) installed and running locally - this is the engine that powers the writing. Launchpad talks to it on your machine; nothing is sent anywhere else.
 - A pulled model (the default is `llama3.2`, but you can switch to any model Ollama supports).
 
+## Configuration
+
+Out of the box Launchpad talks to Ollama at `http://localhost:11434` using the `llama3.2` model. If Ollama lives somewhere else - a homelab box, a remote dev machine, or just a different port - you can point Launchpad at it in any of three ways:
+
+1. **In the TUI (recommended)** - press `c` on the Welcome screen. Edit the base URL and model, hit Enter to save. Changes apply immediately, no restart, and persist to `~/.launchpad/config.properties`.
+2. **Edit the config file directly** - `~/.launchpad/config.properties` (created on first save). Keys are `spring.ai.ollama.base-url` and `spring.ai.ollama.chat.options.model`. Note: Java's properties format escapes `:` in URLs, so the file shows `http\://host\:11434`; that round-trips correctly when read back.
+3. **Environment variable or CLI argument** - useful for one-off overrides or running in CI:
+   ```bash
+   SPRING_AI_OLLAMA_BASE_URL=http://remote:11434 ./mvnw spring-boot:run
+   # or
+   ./mvnw spring-boot:run -Dspring-boot.run.arguments=--spring.ai.ollama.base-url=http://remote:11434
+   ```
+
+The TUI config file takes precedence over the bundled defaults; env vars and CLI args feed the defaults, so they win only when no user file exists.
+
 ## Who it's for
 
 - Developers who want their AI assistant to actually understand the project, not just the file on screen.
