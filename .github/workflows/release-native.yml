@@ -40,6 +40,13 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache: 'maven'
 
+      - name: Set version from release tag
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          ${{ matrix.mvn }} versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false -B
+
       - name: Build native image
         shell: bash
         run: ${{ matrix.mvn }} -Pnative native:compile -DskipTests -B
