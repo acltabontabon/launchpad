@@ -30,21 +30,10 @@ public class TargetSelectView implements View {
     public void render(Frame frame, Rect area, AppState state) {
         var rows = Layout.vertical()
             .constraints(
-                Constraint.length(3),   // title
                 Constraint.min(0),      // target cards
                 Constraint.length(1)    // hints
             )
             .split(area);
-
-        // Title
-        var title = Paragraph.builder()
-            .text(Text.styled(" Step 2 of 3 - Select Target", Style.create().fg(Color.CYAN).bold()))
-            .block(Block.builder()
-                .borders(Borders.BOTTOM_ONLY)
-                .borderStyle(Style.create().fg(Color.DARK_GRAY))
-                .build())
-            .build();
-        frame.renderWidget(title, rows.get(0));
 
         // Target cards split horizontally
         var cols = Layout.horizontal()
@@ -52,7 +41,7 @@ public class TargetSelectView implements View {
                 Constraint.percentage(50),
                 Constraint.percentage(50)
             )
-            .split(rows.get(1));
+            .split(rows.get(0));
 
         for (int i = 0; i < TARGETS.length; i++) {
             renderTargetCard(frame, cols.get(i), TARGETS[i], i == state.targetCursorIndex);
@@ -69,7 +58,7 @@ public class TargetSelectView implements View {
                 Span.styled(" back", Style.create().fg(Color.DARK_GRAY))
             )))
             .build();
-        frame.renderWidget(hints, rows.get(2));
+        frame.renderWidget(hints, rows.get(1));
     }
 
     private void renderTargetCard(Frame frame, Rect area, ContextTarget target, boolean selected) {

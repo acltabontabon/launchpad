@@ -48,6 +48,9 @@ public class AppState {
     public volatile ContextTarget selectedTarget = ContextTarget.CLAUDE;
     public volatile int targetCursorIndex = 0;
 
+    // Set by ProjectSelectView on ENTER if <projectPath>/.launchpad/standards/ exists.
+    public volatile boolean launchpadAware = false;
+
     // Scan progress (updated from background thread)
     public final AtomicInteger scanProgress = new AtomicInteger(0);
     public final AtomicReference<String> scanMessage = new AtomicReference<>("Waiting...");

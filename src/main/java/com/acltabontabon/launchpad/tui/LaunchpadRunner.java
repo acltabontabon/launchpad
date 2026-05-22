@@ -26,12 +26,7 @@ import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.TickEvent;
-import dev.tamboui.widgets.block.Block;
-import dev.tamboui.widgets.block.Borders;
-import dev.tamboui.widgets.block.Title;
 import dev.tamboui.widgets.paragraph.Paragraph;
-import dev.tamboui.widgets.tabs.Tabs;
-import dev.tamboui.widgets.tabs.TabsState;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -42,8 +37,8 @@ import java.util.concurrent.CompletableFuture;
 @Component
 public class LaunchpadRunner implements ApplicationRunner {
 
-    private static final String HEADER_TITLE = " ◆ LAUNCHPAD - AI Context Generator ";
-    private static final String[] STEP_LABELS = {"Welcome", "Project", "Target", "Scanning", "Review"};
+    private static final String BRAND = "◆ Launchpad";
+    private static final String USER_HOME = System.getProperty("user.home");
 
     private final AppState state = new AppState();
 
@@ -128,7 +123,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         var area = frame.area();
         var rows = Layout.vertical()
             .constraints(
-                Constraint.length(3),   // header
+                Constraint.length(1),   // header
                 Constraint.min(0)       // content
             )
             .split(area);
@@ -138,37 +133,47 @@ public class LaunchpadRunner implements ApplicationRunner {
     }
 
     private void renderHeader(Frame frame, Rect area) {
-        // SETTINGS sits off the linear flow - render a plain title bar instead of the stepper.
-        if (state.currentScreen == AppState.Screen.SETTINGS) {
-            var settingsHeader = Paragraph.builder()
-                .text(Text.from(Line.from(
-                    Span.styled(HEADER_TITLE, Style.create().fg(Color.CYAN).bold()),
-                    Span.styled(" Settings ", Style.create().fg(Color.YELLOW).bold())
-                )))
-                .block(Block.builder()
-                    .borders(Borders.ALL)
-                    .borderStyle(Style.create().fg(Color.CYAN))
-                    .build())
-                .build();
-            frame.renderWidget(settingsHeader, area);
-            return;
+        var spans = new java.util.ArrayList<Span>();
+        spans.add(Span.styled(" " + BRAND, Style.create().fg(Color.CYAN).bold()));
+
+        var screen = state.currentScreen;
+        var dim = Style.create().fg(Color.DARK_GRAY);
+
+        if (screen == AppState.Screen.WELCOME) {
+            spans.add(Span.styled("  ·  ", dim));
+            spans.add(Span.styled("AI Context Generator", dim));
+        } else if (screen == AppState.Screen.SETTINGS) {
+            spans.add(Span.styled("  ·  ", dim));
+            spans.add(Span.styled("Settings", Style.create().fg(Color.YELLOW).bold()));
+        } else {
+            if (!state.projectPath.isEmpty()) {
+                spans.add(Span.styled("  ·  ", dim));
+                spans.add(Span.styled(shortenPath(state.projectPath), Style.create().fg(Color.WHITE)));
+            }
+            if (state.launchpadAware) {
+                spans.add(Span.styled("  ", dim));
+                spans.add(Span.styled("✨ launchpad-aware", Style.create().fg(Color.YELLOW).bold()));
+            }
+            if (screen != AppState.Screen.PROJECT_SELECT) {
+                spans.add(Span.styled("  ·  ", dim));
+                spans.add(Span.styled("→ " + state.selectedTarget.displayName,
+                    Style.create().fg(Color.GREEN)));
+            }
         }
 
-        var stepIndex = state.currentScreen.ordinal();
-
-        var tabsState = new TabsState(stepIndex);
-        var tabs = Tabs.builder()
-            .titles(STEP_LABELS)
-            .block(Block.builder()
-                .title(Title.from(Span.styled(HEADER_TITLE, Style.create().fg(Color.CYAN).bold())))
-                .borders(Borders.ALL)
-                .borderStyle(Style.create().fg(Color.CYAN))
-                .build())
-            .highlightStyle(Style.create().fg(Color.YELLOW).bold())
-            .divider("|")
+        var header = Paragraph.builder()
+            .text(Text.from(Line.from(spans.toArray(new Span[0]))))
             .build();
+        frame.renderWidget(header, area);
+    }
 
-        frame.renderStatefulWidget(tabs, area, tabsState);
+    private static String shortenPath(String path) {
+        var display = path.startsWith(USER_HOME) ? "~" + path.substring(USER_HOME.length()) : path;
+        if (display.length() <= 40) return display;
+        // Keep the last segment + ellipsis prefix for long paths.
+        var slash = display.lastIndexOf('/');
+        var tail = slash >= 0 ? display.substring(slash) : display;
+        return "…" + tail;
     }
 
     // ── Background health check ────────────────────────────────────────────────

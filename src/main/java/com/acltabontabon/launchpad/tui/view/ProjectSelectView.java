@@ -30,23 +30,12 @@ public class ProjectSelectView implements View {
     public void render(Frame frame, Rect area, AppState state) {
         var rows = Layout.vertical()
             .constraints(
-                Constraint.length(3),  // title
                 Constraint.length(3),  // input box
                 Constraint.length(2),  // validation message
                 Constraint.min(0),     // spacer
                 Constraint.length(1)   // hints
             )
             .split(area);
-
-        // Title
-        var title = Paragraph.builder()
-            .text(Text.styled(" Step 1 of 3 - Select Project", Style.create().fg(Color.CYAN).bold()))
-            .block(Block.builder()
-                .borders(Borders.BOTTOM_ONLY)
-                .borderStyle(Style.create().fg(Color.DARK_GRAY))
-                .build())
-            .build();
-        frame.renderWidget(title, rows.get(0));
 
         // Path input
         var inputBlock = Block.builder()
@@ -64,7 +53,7 @@ public class ProjectSelectView implements View {
             .text(Text.from(inputLine))
             .block(inputBlock)
             .build();
-        frame.renderWidget(inputParagraph, rows.get(1));
+        frame.renderWidget(inputParagraph, rows.get(0));
 
         // Validation feedback
         var validationText = validatePath(state.projectPath);
@@ -75,7 +64,7 @@ public class ProjectSelectView implements View {
         var validation = Paragraph.builder()
             .text(Text.styled(" " + validationText, validationStyle))
             .build();
-        frame.renderWidget(validation, rows.get(2));
+        frame.renderWidget(validation, rows.get(1));
 
         // Hints
         var hints = Paragraph.builder()
@@ -90,7 +79,7 @@ public class ProjectSelectView implements View {
                 Span.styled(" quit", Style.create().fg(Color.DARK_GRAY))
             )))
             .build();
-        frame.renderWidget(hints, rows.get(4));
+        frame.renderWidget(hints, rows.get(3));
     }
 
     @Override
@@ -99,6 +88,8 @@ public class ProjectSelectView implements View {
 
         if (key.isKey(KeyCode.ENTER)) {
             if (isValidProjectPath(state.projectPath)) {
+                state.launchpadAware = Files.isDirectory(
+                    Path.of(state.projectPath, ".launchpad", "standards"));
                 state.currentScreen = AppState.Screen.TARGET_SELECT;
                 return true;
             }

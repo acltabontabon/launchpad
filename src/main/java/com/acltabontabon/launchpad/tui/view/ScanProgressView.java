@@ -35,7 +35,6 @@ public class ScanProgressView implements View {
 
         var rows = Layout.vertical()
             .constraints(
-                Constraint.length(3),   // title
                 Constraint.length(1),   // spacer
                 Constraint.length(3),   // progress gauge
                 Constraint.length(3),   // status (line 1: phase + elapsed, line 2: streaming tail)
@@ -43,15 +42,6 @@ public class ScanProgressView implements View {
                 Constraint.length(1)    // hint
             )
             .split(area);
-
-        var title = Paragraph.builder()
-            .text(Text.styled(" Step 3 of 3 - Scanning & Generating", Style.create().fg(Color.CYAN).bold()))
-            .block(Block.builder()
-                .borders(Borders.BOTTOM_ONLY)
-                .borderStyle(Style.create().fg(Color.DARK_GRAY))
-                .build())
-            .build();
-        frame.renderWidget(title, rows.get(0));
 
         var progress = state.scanProgress.get();
         var gauge = Gauge.builder()
@@ -64,9 +54,9 @@ public class ScanProgressView implements View {
             .ratio(progress / 100.0)
             .label(progress + "%")
             .build();
-        frame.renderWidget(gauge, rows.get(2));
+        frame.renderWidget(gauge, rows.get(1));
 
-        frame.renderWidget(buildStatus(state), rows.get(3));
+        frame.renderWidget(buildStatus(state), rows.get(2));
 
         var phases = Paragraph.builder()
             .text(buildPhaseList(state))
@@ -76,7 +66,7 @@ public class ScanProgressView implements View {
                 .borderStyle(Style.create().fg(Color.DARK_GRAY))
                 .build())
             .build();
-        frame.renderWidget(phases, rows.get(4));
+        frame.renderWidget(phases, rows.get(3));
 
         if (state.scanComplete && !state.scanError) {
             var hint = Paragraph.builder()
@@ -86,7 +76,7 @@ public class ScanProgressView implements View {
                 ))
                 .alignment(Alignment.CENTER)
                 .build();
-            frame.renderWidget(hint, rows.get(5));
+            frame.renderWidget(hint, rows.get(4));
         }
     }
 
