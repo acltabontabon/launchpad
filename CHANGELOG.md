@@ -6,9 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
 ### Added
 - Runtime Ollama configuration via TUI settings screen (press `c` from the Welcome screen). Persists to `~/.launchpad/config.properties` and hot-reloads the live `ChatClient` without restarting the app.
+### Removed
+- Project-info footer bar from the TUI. The selected path and target were already implied by the header stepper, and the 3 rows are now reclaimed for the active view's content area.
+
 
 ## [0.1.0] - 2026-05-22
 

@@ -116,14 +116,12 @@ public class LaunchpadRunner implements ApplicationRunner {
         var rows = Layout.vertical()
             .constraints(
                 Constraint.length(3),   // header
-                Constraint.min(0),      // content
-                Constraint.length(3)    // footer
+                Constraint.min(0)       // content
             )
             .split(area);
 
         renderHeader(frame, rows.get(0));
         currentView().render(frame, rows.get(1), state);
-        renderFooter(frame, rows.get(2));
     }
 
     private void renderHeader(Frame frame, Rect area) {
@@ -158,23 +156,6 @@ public class LaunchpadRunner implements ApplicationRunner {
             .build();
 
         frame.renderStatefulWidget(tabs, area, tabsState);
-    }
-
-    private void renderFooter(Frame frame, Rect area) {
-        var projectInfo = state.projectPath.isEmpty()
-            ? "No project selected"
-            : state.projectPath + " → " + state.selectedTarget.displayName;
-
-        var footer = Paragraph.builder()
-            .text(Text.from(Line.from(
-                Span.styled(" " + projectInfo, Style.create().fg(Color.DARK_GRAY))
-            )))
-            .block(Block.builder()
-                .borders(Borders.ALL)
-                .borderStyle(Style.create().fg(Color.DARK_GRAY))
-                .build())
-            .build();
-        frame.renderWidget(footer, area);
     }
 
     // ── Background health check ────────────────────────────────────────────────
