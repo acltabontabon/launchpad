@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed duplicated breadcrumb separators in the header.
 
 ### Fixed
+- Prompt templates are now bundled into the native image; previously the Summary phase failed with `Missing prompt template` under native.
+- Standards record types now carry reflection hints, so `StandardsLoader` can deserialize YAML under native; previously the Assemble phase failed with `Failed to read standards-pack.yml`.
 - Welcome screen no longer freezes on stray keystrokes; `q` correctly quits when palette is closed.
 - Slash-command palette now pads command ids to a uniform column and sizes the card to its content, so descriptions stay aligned and are no longer truncated.
 

@@ -1,6 +1,5 @@
 package com.acltabontabon.launchpad;
 
-import com.acltabontabon.launchpad.mcp.LaunchpadMcpRuntimeHints;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ImportRuntimeHints;
@@ -21,7 +20,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
  */
 @SpringBootApplication
 @EnableAsync
-@ImportRuntimeHints(LaunchpadMcpRuntimeHints.class)
+@ImportRuntimeHints(LaunchpadRuntimeHints.class)
 public class LaunchpadApplication {
 
     public static void main(String[] args) {
