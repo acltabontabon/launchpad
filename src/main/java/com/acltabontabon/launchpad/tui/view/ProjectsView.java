@@ -64,7 +64,7 @@ public class ProjectsView implements View {
         renderHeading(frame, rows.get(1));
         var projects = registry.all();
         clampCursor(state, projects.size());
-        renderList(frame, rows.get(3), projects, state.projectsCursorIndex);
+        renderList(frame, rows.get(3), projects, state.projectsCursorIndex, registry.lastLoadError());
         renderFlash(frame, rows.get(4), state.projectsFlashMessage);
     }
 
@@ -78,18 +78,32 @@ public class ProjectsView implements View {
         frame.renderWidget(Paragraph.builder().text(content).build(), area);
     }
 
-    private static void renderList(Frame frame, Rect area, List<RegisteredProject> projects, int cursor) {
-        var card = Card.of(projects.isEmpty()
-            ? "no projects yet"
-            : projects.size() + " project" + (projects.size() == 1 ? "" : "s")).build();
+    private static void renderList(Frame frame, Rect area, List<RegisteredProject> projects, int cursor, String loadError) {
+        var hasLoadError = loadError != null && !loadError.isBlank();
+        var card = Card.of(hasLoadError && projects.isEmpty()
+            ? "registry unreadable"
+            : projects.isEmpty()
+                ? "no projects yet"
+                : projects.size() + " project" + (projects.size() == 1 ? "" : "s")).build();
         var inner = card.inner(area);
         frame.renderWidget(card, area);
 
         if (projects.isEmpty()) {
-            var line = Line.from(Span.styled(
-                "  Use /init or /new-task on a project. It will be listed here automatically once scanned.",
-                Styles.caption()));
-            frame.renderWidget(Paragraph.builder().text(Text.from(line)).build(), inner);
+            var lines = new ArrayList<Line>();
+            if (hasLoadError) {
+                lines.add(Line.from(Span.styled(
+                    "  Could not read the project registry: " + loadError,
+                    Style.create().fg(Theme.caution))));
+                lines.add(Line.from(Span.raw("")));
+                lines.add(Line.from(Span.styled(
+                    "  Check the log for the full stack trace. Existing entries are not lost - they will reappear once the read succeeds.",
+                    Styles.caption())));
+            } else {
+                lines.add(Line.from(Span.styled(
+                    "  Use /init or /new-task on a project. It will be listed here automatically once scanned.",
+                    Styles.caption())));
+            }
+            frame.renderWidget(Paragraph.builder().text(Text.from(lines.toArray(new Line[0]))).build(), inner);
             return;
         }
 

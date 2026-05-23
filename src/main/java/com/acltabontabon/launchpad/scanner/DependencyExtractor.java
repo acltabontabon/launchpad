@@ -34,7 +34,11 @@ public final class DependencyExtractor {
                 case "requirements.txt" -> parseRequirementsTxt(content).forEach(d -> deps.putIfAbsent(key(d), d));
                 case "pyproject.toml" -> parsePyproject(content).forEach(d -> deps.putIfAbsent(key(d), d));
                 case "Gemfile" -> parseGemfile(content).forEach(d -> deps.putIfAbsent(key(d), d));
-                default -> { }
+                default -> {
+                    if (name.endsWith(".tf")) {
+                        parseTerraformProviders(content).forEach(d -> deps.putIfAbsent(key(d), d));
+                    }
+                }
             }
         });
         return new ArrayList<>(deps.values());
@@ -281,5 +285,48 @@ public final class DependencyExtractor {
     private static String stripComment(String line) {
         int h = line.indexOf('#');
         return h < 0 ? line : line.substring(0, h);
+    }
+
+    // === Terraform (*.tf) ===
+
+    private static final java.util.regex.Pattern TF_REQUIRED_PROVIDERS_BLOCK =
+        java.util.regex.Pattern.compile("required_providers\\s*\\{([^{}]*?(?:\\{[^{}]*?\\}[^{}]*?)*)\\}",
+            java.util.regex.Pattern.DOTALL);
+
+    private static final java.util.regex.Pattern TF_PROVIDER_ENTRY =
+        java.util.regex.Pattern.compile(
+            "([A-Za-z0-9_-]+)\\s*=\\s*\\{([^{}]*?)\\}",
+            java.util.regex.Pattern.DOTALL);
+
+    private static final java.util.regex.Pattern TF_SOURCE_ATTR =
+        java.util.regex.Pattern.compile("source\\s*=\\s*\"([^\"]+)\"");
+
+    private static final java.util.regex.Pattern TF_VERSION_ATTR =
+        java.util.regex.Pattern.compile("version\\s*=\\s*\"([^\"]+)\"");
+
+    /**
+     * Parses {@code terraform { required_providers { ... } }} blocks from
+     * a single .tf file. Regex-based; works for the vast majority of real-world
+     * versions.tf shapes (one block per file, providers as map entries).
+     * Skipped entirely when the file has no required_providers block.
+     */
+    private static List<Dependency> parseTerraformProviders(String tfContent) {
+        var out = new ArrayList<Dependency>();
+        var blockMatcher = TF_REQUIRED_PROVIDERS_BLOCK.matcher(tfContent);
+        while (blockMatcher.find()) {
+            String inner = blockMatcher.group(1);
+            var entryMatcher = TF_PROVIDER_ENTRY.matcher(inner);
+            while (entryMatcher.find()) {
+                String body = entryMatcher.group(2);
+                var src = TF_SOURCE_ATTR.matcher(body);
+                if (!src.find()) continue;
+                String source = src.group(1);   // e.g. "databricks/databricks"
+                String version = "";
+                var ver = TF_VERSION_ATTR.matcher(body);
+                if (ver.find()) version = ver.group(1);
+                out.add(new Dependency(source, version, "provider"));
+            }
+        }
+        return out;
     }
 }

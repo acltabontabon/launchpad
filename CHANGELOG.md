@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Databricks framework path** (Terraform-deployed data pipelines, with
+  DLT / Python / SQL facets)
+  - New `DatabricksProfile` record on `StackProfile`, populated when the
+    project is classified as Databricks. Four facets composed from positive
+    signals: `terraform-deployment` (any `*.tf` files), `dlt-pipeline`
+    (`import dlt` / `@dlt.table` in Python or `CREATE STREAMING LIVE TABLE`
+    in SQL), `python-source` (any `.py`), `sql-source` (any `.sql`).
+  - Classification is a post-walk override: a Python / SQL / Terraform
+    project is promoted to `framework = "Databricks"` when any of
+    `databricks.yml`, the `databricks/databricks` Terraform provider,
+    notebook-magic header (`# Databricks notebook source`), or DLT markers
+    in source files fire. Spring projects are never promoted (Spring wins);
+    Python projects with an existing framework (Django / FastAPI / Flask /
+    ...) are never promoted.
+  - New `databricks/base/{summary,skills,rules}.txt` + four
+    `databricks/facets/*.txt` files. Same `=== SUMMARY/SKILLS/RULES ===`
+    delimited section format as Spring.
+  - New `DependencyExtractor` Terraform support: parses
+    `terraform { required_providers { ... } }` blocks across `*.tf` files
+    and emits `Dependency` records with scope `"provider"` (e.g.
+    `databricks/databricks@1.41.0`). Regex-based; no HCL library dep.
+  - New `databricks-recon` eval fixture under
+    `src/test/resources/fixtures/databricks-recon/` exercises the full
+    pipeline end-to-end (`pyproject.toml`, three `.tf` files declaring the
+    databricks provider, a DLT notebook with `@dlt.table` / `@dlt.expect`,
+    plain Python publish script, two parameterised SQL files).
+  - Existing `spring-boot`, `spring-boot-starter`, `nextjs`, `fastapi`,
+    `rust-cli` fixtures now carry quality-guard assertions: none of them may
+    be misclassified as Databricks. Pairs with the Spring negative-guards
+    to prevent silent regressions when signals expand.
+
+- **`FacetPromptComposer` replaces `SpringPromptComposer`**
+  - Composer is now framework-agnostic: `compose(kind, frameworkSlug, facetIds)`
+    reads `prompts/<slug>/base/<kind>.txt` and inserts matching facet sections.
+    Spring and Databricks use the same instance. Adding the next framework
+    requires no new Java class for the composer - drop a `prompts/<slug>/`
+    tree and a routing branch in `PromptSelector`.
+  - `ScanSignals` consolidates per-walk file-tree signals (previously a pile
+    of `boolean[1]` holders in `ProjectScanner`). Both `SpringProfileDetector`
+    and `DatabricksProfileDetector` read from it.
+
 - **Composable Spring prompt system**
   - New `SpringProfile` record on `StackProfile`, populated from the dependency
     list when the framework is Spring. Carries sub-stack signals: web (mvc /
@@ -92,6 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `OutputValidator` automatically strips hallucinated file references.
 
 ### Fixed
+- Projects screen no longer renders empty under GraalVM native because of missing reflection hints for `ProjectRegistry$Document`, `RegisteredProject`, and the `ScanStore` record graph (`ProjectContext`, `StackProfile`, `SpringProfile`, `Dependency`, `PackageSummary`). `ProjectRegistry.loadFromDisk()` and `ScanStore.load()` previously swallowed the deserialization `IOException` and returned an empty list, so the failure mode was invisible; both now log at WARN with the cause, and the Projects view renders a yellow warning when the registry could not be read instead of the misleading "no projects yet" empty state.
 - Native image failures in Summary/Assemble phases (templates & reflection hints).
 - Welcome screen freeze on stray keystrokes; `q` correctly quits.
 - Slash-command palette alignment and description truncation.

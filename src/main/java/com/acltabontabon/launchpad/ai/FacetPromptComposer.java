@@ -1,6 +1,5 @@
 package com.acltabontabon.launchpad.ai;
 
-import com.acltabontabon.launchpad.scanner.SpringProfile;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -12,46 +11,62 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 /**
- * Composes a Spring prompt from a base template plus per-sub-stack facet
- * sections. Selected by {@link PromptSelector} when the detected framework is
- * a Spring variant.
+ * Composes a prompt for any framework with a base + facets layout. Selected by
+ * {@link PromptSelector} when the detected framework has its own
+ * {@code prompts/<framework>/} tree on the classpath.
  * <p>
- * Base templates live at <code>prompts/spring/base/{summary,skills,rules}.txt</code>
- * and must end with a <code>PROJECT CONTEXT:</code> line; the composer inserts
- * facet additions immediately before that line. Each facet file at
- * <code>prompts/spring/facets/&lt;id&gt;.txt</code> carries three delimited
- * sections (<code>=== SUMMARY ===</code>, <code>=== SKILLS ===</code>,
- * <code>=== RULES ===</code>); only the section matching the requested kind
- * is pulled.
+ * Layout per framework:
+ * <pre>
+ *   prompts/&lt;framework&gt;/
+ *     base/
+ *       summary.txt   (always included)
+ *       skills.txt
+ *       rules.txt
+ *     facets/
+ *       &lt;facet-id&gt;.txt   (one per sub-stack signal)
+ * </pre>
+ * <p>
+ * Base templates end with a {@code PROJECT CONTEXT:} line; the composer
+ * inserts enabled facet sections immediately before that line. Each facet file
+ * carries three delimited sections (<code>=== SUMMARY ===</code>,
+ * <code>=== SKILLS ===</code>, <code>=== RULES ===</code>); only the section
+ * matching the requested kind is pulled.
+ * <p>
+ * Adding a new framework requires no Java change in this class: drop a new
+ * {@code prompts/&lt;framework&gt;/base+facets/} tree, add a profile record
+ * exposing {@code facets()}, and add a routing branch in
+ * {@link PromptSelector}.
  */
 @Component
-public class SpringPromptComposer {
+public class FacetPromptComposer {
 
-    private static final Logger log = LoggerFactory.getLogger(SpringPromptComposer.class);
+    private static final Logger log = LoggerFactory.getLogger(FacetPromptComposer.class);
     private static final String CONTEXT_MARKER = "PROJECT CONTEXT:";
 
-    public String compose(PromptSelector.Kind kind, SpringProfile profile) {
-        String base = readClasspath("prompts/spring/base/" + kindFilename(kind));
-        List<String> facets = profile == null ? List.of() : profile.facets();
+    public String compose(PromptSelector.Kind kind, String frameworkSlug, List<String> facetIds) {
+        String base = readClasspath("prompts/" + frameworkSlug + "/base/" + kindFilename(kind));
+        List<String> ids = facetIds == null ? List.of() : facetIds;
         var loaded = new ArrayList<String>();
         var sections = new StringBuilder();
-        for (String facet : facets) {
-            String section = readFacetSection(facet, kind);
+        for (String facet : ids) {
+            String section = readFacetSection(frameworkSlug, facet, kind);
             if (section != null && !section.isBlank()) {
                 sections.append("\n").append(section.strip()).append("\n");
                 loaded.add(facet);
             }
         }
-        log.info("SpringPromptComposer: composed '{}' from base + {}", kind.name().toLowerCase(), loaded);
+        log.info("FacetPromptComposer: composed '{}/{}' from base + {}",
+            frameworkSlug, kind.name().toLowerCase(), loaded);
         return sections.length() == 0 ? base : insertBeforeContext(base, sections.toString());
     }
 
     /** Returns the body of the section matching {@code kind}, or null if absent. */
-    String readFacetSection(String facet, PromptSelector.Kind kind) {
-        String path = "prompts/spring/facets/" + facet + ".txt";
+    String readFacetSection(String frameworkSlug, String facet, PromptSelector.Kind kind) {
+        String path = "prompts/" + frameworkSlug + "/facets/" + facet + ".txt";
         var resource = new ClassPathResource(path);
         if (!resource.exists()) {
-            log.warn("SpringPromptComposer: facet file missing for '{}' (path: {})", facet, path);
+            log.warn("FacetPromptComposer: facet file missing for '{}/{}' (path: {})",
+                frameworkSlug, facet, path);
             return null;
         }
         String content = readClasspath(path);
@@ -76,7 +91,7 @@ public class SpringPromptComposer {
             case SUMMARY -> "summary.txt";
             case SKILLS -> "skills.txt";
             case RULES -> "rules.txt";
-            default -> throw new IllegalArgumentException("Spring composer does not handle kind: " + kind);
+            default -> throw new IllegalArgumentException("Composer does not handle kind: " + kind);
         };
     }
 
@@ -85,7 +100,7 @@ public class SpringPromptComposer {
             case SUMMARY -> "SUMMARY";
             case SKILLS -> "SKILLS";
             case RULES -> "RULES";
-            default -> throw new IllegalArgumentException("Spring composer does not handle kind: " + kind);
+            default -> throw new IllegalArgumentException("Composer does not handle kind: " + kind);
         };
     }
 

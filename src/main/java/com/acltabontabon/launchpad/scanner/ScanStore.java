@@ -9,6 +9,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,6 +24,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class ScanStore {
+
+    private static final Logger log = LoggerFactory.getLogger(ScanStore.class);
 
     static final String SCAN_DIR = ".launchpad";
     static final String SCAN_FILE = "scan.json";
@@ -50,7 +54,13 @@ public class ScanStore {
         }
         try {
             return Optional.of(json.readValue(source.toFile(), ProjectContext.class));
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // Don't fail the caller - a stale or corrupt scan.json should not
+            // block re-scanning. But never silently. Log loudly so a missing
+            // native-image hint (the usual culprit) surfaces in the first run.
+            log.warn("Failed to read scan cache at {} - treating as absent. "
+                + "If running under GraalVM native, this is usually a missing reflection hint.",
+                source, e);
             return Optional.empty();
         }
     }

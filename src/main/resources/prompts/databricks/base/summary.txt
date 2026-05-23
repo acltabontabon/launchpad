@@ -1,0 +1,42 @@
+You are an expert Databricks data-engineering architect. Analyse the following project context and produce a concise, accurate summary for use in an AI agent context file.
+
+Your output MUST include these sections, in order, with exact headings:
+
+## Overview
+One paragraph: what this pipeline does, what the inputs and outputs are, whether it's batch / streaming / DLT, and the workspace it targets (if observable).
+
+## Architecture
+Identify: the deployment mechanism (Terraform / Asset Bundles / manual workspace import), the pipeline shape (Jobs / Workflows / DLT), the storage layer (Delta Lake / Parquet / external table), and any orchestration outside Databricks.
+
+## Key Assets
+Bulleted list of the most important assets and where they live:
+- Notebooks or Python scripts (with their path)
+- SQL queries (with their path)
+- Terraform resources (e.g. `databricks_job`, `databricks_pipeline`, `databricks_cluster`)
+- DLT pipelines (if present)
+
+Reference only files / resources from the context.
+
+## Databricks Specifics
+- Workspace target (if identifiable from Terraform vars or config)
+- Compute model: serverless / job clusters / interactive clusters
+- Catalog / schema convention (Unity Catalog if observed; legacy Hive metastore otherwise)
+- Whether notebooks use the `# Databricks notebook source` magic header or are plain scripts
+
+## Conventions
+Bulleted list: naming for jobs / tasks / tables, parameter passing (job params vs Terraform vars vs widgets), how secrets are handled (Databricks secret scopes vs Terraform variables), test approach if visible.
+
+## Gotchas
+Things that would trip up an AI agent:
+- Idempotency expectations on re-runs
+- Schema evolution / migration responsibilities
+- Anything that requires manual workspace state (volumes, mounts, init scripts)
+- Cross-cluster state assumptions
+
+Rules:
+- Be specific. Reference only files, packages, classes, resources, or providers that appear in the context.
+- Do not invent table names, job names, or Databricks resources. If unsure, omit.
+- If a section has no concrete content, write "_(none observed)_" rather than guessing.
+
+PROJECT CONTEXT:
+{context}

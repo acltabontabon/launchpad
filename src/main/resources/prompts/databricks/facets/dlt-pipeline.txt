@@ -1,0 +1,27 @@
+=== SUMMARY ===
+
+Delta Live Tables (DLT) is in use. In the "## Architecture" section, identify:
+- Which Python files declare DLT tables (`@dlt.table` / `@dlt.view`) or which SQL files define `CREATE STREAMING LIVE TABLE` / `CREATE LIVE TABLE`.
+- Whether the pipeline is streaming (`spark.readStream` / `STREAMING`) or batch.
+- Which `@dlt.expect` / `@dlt.expect_or_drop` / `@dlt.expect_or_fail` expectations exist (these are the data-quality contract).
+- The target catalog and schema if visible.
+
+In "## Gotchas", note: DLT tables can only be referenced from within the same DLT pipeline (you cannot `spark.read.table()` a DLT-managed table from outside); expectation rule changes can fail historical runs; pipeline updates require the entire pipeline graph to be valid.
+
+=== SKILLS ===
+
+Include a skill named "add-dlt-table" that:
+- References the actual Python / SQL file where DLT tables are declared in this repo
+- Decides streaming vs batch based on the upstream source
+- Adds at least one `@dlt.expect` (or SQL `CONSTRAINT ... EXPECT`) as the data-quality contract
+- Tests by running the pipeline in the project's pre-prod workspace before merging
+
+Include a skill named "promote-dlt-pipeline-config" that mentions where the pipeline's Terraform / bundles config lives (e.g. `databricks_pipeline` resource) and how to roll a target / cluster spec change.
+
+=== RULES ===
+
+Add rules covering:
+- **Expectations are the contract**: every new DLT table has at least one `@dlt.expect` (or SQL `CONSTRAINT EXPECT`). A table without expectations cannot fail loudly.
+- **No cross-pipeline reads**: DLT-managed tables are only readable via the DLT runtime within their pipeline; downstream consumers go through the materialised output schema, not the live table object.
+- **Streaming source means streaming sink**: a DLT table that reads `spark.readStream` MUST itself be a streaming table; mixing batch and streaming in one declaration causes silent data loss.
+- **Schema evolution is explicit**: schema changes to a DLT source require either `pipelines.reset.allowed=true` (destructive) or a typed migration step; do not rely on auto-inference for schema drift in production.

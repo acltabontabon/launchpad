@@ -67,7 +67,7 @@ public class LaunchpadRuntimeHints implements RuntimeHintsRegistrar {
         // record-component accessors. Several are package-private so we
         // register by FQN. Nested records (Includes, Scope, Check, etc.) need
         // explicit entries too - reachability does not descend into them.
-        String[] standardsTypes = {
+        String[] jacksonRecordTypes = {
             "com.acltabontabon.launchpad.standards.StandardsPackManifest",
             "com.acltabontabon.launchpad.standards.StandardsPackManifest$Includes",
             "com.acltabontabon.launchpad.standards.RulesFile",
@@ -83,9 +83,21 @@ public class LaunchpadRuntimeHints implements RuntimeHintsRegistrar {
             "com.acltabontabon.launchpad.standards.Adapter",
             "com.acltabontabon.launchpad.standards.AdapterOutput",
             "com.acltabontabon.launchpad.standards.Scope",
-            "com.acltabontabon.launchpad.standards.Check"
+            "com.acltabontabon.launchpad.standards.Check",
+            // Project registry persisted to ~/.launchpad/projects.json.
+            // Without these the TUI Projects screen is silently empty under native.
+            "com.acltabontabon.launchpad.config.ProjectRegistry$Document",
+            "com.acltabontabon.launchpad.config.RegisteredProject",
+            // Per-project scan persisted to <projectRoot>/.launchpad/scan.json by ScanStore.
+            // Read back by MCP tools and any tooling that resumes from cache.
+            "com.acltabontabon.launchpad.scanner.ProjectContext",
+            "com.acltabontabon.launchpad.scanner.StackProfile",
+            "com.acltabontabon.launchpad.scanner.SpringProfile",
+            "com.acltabontabon.launchpad.scanner.DatabricksProfile",
+            "com.acltabontabon.launchpad.scanner.Dependency",
+            "com.acltabontabon.launchpad.scanner.PackageSummary"
         };
-        for (String fqn : standardsTypes) {
+        for (String fqn : jacksonRecordTypes) {
             hints.reflection().registerType(TypeReference.of(fqn),
                 MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,
                 MemberCategory.INVOKE_DECLARED_METHODS,

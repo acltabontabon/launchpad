@@ -1,0 +1,26 @@
+=== SUMMARY ===
+
+SQL source files are part of this pipeline. In the "## Architecture" section, identify:
+- Which directory holds the SQL (queries vs DDL vs notebook-format SQL files)
+- Whether files use the `-- Databricks notebook source` magic header
+- Whether queries reference Unity Catalog (3-part names `catalog.schema.table`) or legacy Hive metastore (2-part `schema.table`)
+- Parameterisation style (`${param}` widgets, Terraform substitution, job parameters)
+
+In "## Gotchas", note: schema-qualified writes that omit the catalog can land in the wrong workspace catalog; `OPTIMIZE` / `VACUUM` outside a maintenance job competes with live writers; `DROP TABLE` is irreversible if the table is managed (data is also deleted).
+
+=== SKILLS ===
+
+Include a skill named "add-sql-query" that:
+- References the actual SQL directory from the context
+- Uses 3-part names (`catalog.schema.table`) when Unity Catalog is in use
+- Parameterises any user-controlled value through job parameters or Terraform variables, never string-concatenated into the query
+- Notes the catalog and schema the query targets in a header comment
+
+=== RULES ===
+
+Add rules covering:
+- **Parameterise, never concatenate**: query inputs come from job parameters / widgets / Terraform substitution. No `f"SELECT * FROM {table}"`-style construction in Python wrappers either.
+- **Schema-qualified writes**: every `INSERT` / `MERGE` / `CREATE TABLE` names the catalog and schema explicitly. A bare table name silently falls back to whatever is in the current session, which differs across workspaces.
+- **MERGE over append for upserts**: idempotent upsert pattern is `MERGE INTO ... ON ... WHEN MATCHED ... WHEN NOT MATCHED INSERT`; never `INSERT` followed by a separate de-dup pass that could race the next run.
+- **OPTIMIZE / VACUUM run as their own job**: never inline maintenance commands at the tail of an ETL query; they belong in a separate job with its own retention policy.
+- **DROP TABLE requires a written reason**: `DROP TABLE` on a managed table deletes the underlying data and is irreversible; any DROP in source control documents why and what to do if recovery is needed.

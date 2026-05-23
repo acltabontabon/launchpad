@@ -62,6 +62,9 @@ class ScannerEvalTest {
                 assertThat(sp.facets())
                     .as("starter-library facet MUST NOT appear for the app fixture")
                     .doesNotContain("starter-library");
+                assertThat(ctx.stack().databricksProfile())
+                    .as("Spring app MUST NOT be misclassified as Databricks")
+                    .isNull();
             }
             case "spring-boot-starter" -> {
                 var sp = ctx.stack().springProfile();
@@ -72,10 +75,39 @@ class ScannerEvalTest {
                 assertThat(sp.facets())
                     .as("starter-library facet must appear first")
                     .startsWith("starter-library");
+                assertThat(ctx.stack().databricksProfile())
+                    .as("Spring starter library MUST NOT be misclassified as Databricks")
+                    .isNull();
             }
-            default -> assertThat(ctx.stack().springProfile())
-                .as("non-Spring fixtures must not carry a SpringProfile")
-                .isNull();
+            case "databricks-recon" -> {
+                assertThat(ctx.stack().framework())
+                    .as("databricks-recon fixture must be detected as Databricks")
+                    .isEqualTo("Databricks");
+                var dp = ctx.stack().databricksProfile();
+                assertThat(dp).as("DatabricksProfile populated for recon fixture").isNotNull();
+                assertThat(dp.terraform()).as("terraform signal").isTrue();
+                assertThat(dp.dlt()).as("dlt signal").isTrue();
+                assertThat(dp.python()).as("python signal").isTrue();
+                assertThat(dp.sql()).as("sql signal").isTrue();
+                assertThat(dp.facets())
+                    .as("databricks facet ordering")
+                    .containsExactly("terraform-deployment", "dlt-pipeline",
+                        "python-source", "sql-source");
+                assertThat(ctx.stack().springProfile())
+                    .as("Databricks project MUST NOT carry a SpringProfile")
+                    .isNull();
+            }
+            default -> {
+                assertThat(ctx.stack().springProfile())
+                    .as("non-Spring fixtures must not carry a SpringProfile")
+                    .isNull();
+                assertThat(ctx.stack().databricksProfile())
+                    .as("non-Databricks fixtures must not carry a DatabricksProfile")
+                    .isNull();
+                assertThat(ctx.stack().framework())
+                    .as("non-Databricks fixtures MUST NOT be misclassified as Databricks")
+                    .isNotEqualTo("Databricks");
+            }
         }
 
         var depNames = ctx.dependencies().stream().map(d -> d.name()).toList();

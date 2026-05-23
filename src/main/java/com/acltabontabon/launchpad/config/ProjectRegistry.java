@@ -22,6 +22,8 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -40,6 +42,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class ProjectRegistry {
 
+    private static final Logger log = LoggerFactory.getLogger(ProjectRegistry.class);
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     record Document(List<RegisteredProject> projects) {
         Document {
@@ -52,6 +56,7 @@ public class ProjectRegistry {
         .registerModule(instantAsIsoModule())
         .enable(SerializationFeature.INDENT_OUTPUT);
     private final AtomicReference<List<RegisteredProject>> current;
+    private final AtomicReference<String> lastLoadError = new AtomicReference<>();
 
     private static SimpleModule instantAsIsoModule() {
         var module = new SimpleModule("InstantAsIso");
@@ -207,10 +212,30 @@ public class ProjectRegistry {
         }
         try {
             var doc = json.readValue(registryFile.toFile(), Document.class);
+            lastLoadError.set(null);
             return doc.projects();
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // Surface this loudly. Silently returning an empty list here once
+            // made a missing native-image reflection hint look like "no projects
+            // ever scanned" - hours of confusion. The TUI Projects screen reads
+            // lastLoadError() to render a warning so the failure is never invisible.
+            var summary = e.getClass().getSimpleName() + ": " + e.getMessage();
+            lastLoadError.set("Failed to read " + registryFile + " - " + summary);
+            log.warn("Failed to read project registry at {} - returning empty list. "
+                + "If running under GraalVM native, this is usually a missing reflection hint.",
+                registryFile, e);
             return List.of();
         }
+    }
+
+    /**
+     * Non-null reason string if the last {@link #loadFromDisk()} call failed,
+     * otherwise null. Consumed by the TUI Projects screen so a corrupted or
+     * unreadable registry surfaces a warning instead of a misleading
+     * "no projects yet" empty state.
+     */
+    public String lastLoadError() {
+        return lastLoadError.get();
     }
 
     private void writeToDisk(List<RegisteredProject> projects) {

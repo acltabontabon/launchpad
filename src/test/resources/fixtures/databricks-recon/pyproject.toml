@@ -1,0 +1,21 @@
+[project]
+name = "orders-recon"
+version = "0.1.0"
+description = "Daily orders reconciliation pipeline running on Databricks"
+requires-python = ">=3.10"
+
+dependencies = [
+    "databricks-sdk>=0.20",
+    "pyspark>=3.5",
+    "mlflow>=2.10",
+    "delta-spark>=3.0",
+]
+
+[tool.poetry]
+name = "orders-recon"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+databricks-sdk = "^0.20"
+pyspark = "^3.5"

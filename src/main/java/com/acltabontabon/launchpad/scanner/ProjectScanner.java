@@ -26,7 +26,8 @@ public class ProjectScanner {
     private static final Set<String> SKIP_DIRS = Set.of(
         ".git", "node_modules", "target", "build", ".idea", ".vscode",
         "__pycache__", ".gradle", "dist", "out", ".next", ".nuxt", "vendor",
-        ".venv", "venv", ".tox", ".pytest_cache", ".mypy_cache", ".cache"
+        ".venv", "venv", ".tox", ".pytest_cache", ".mypy_cache", ".cache",
+        ".terraform"
     );
 
     // Build / config files whose full content we read for stack detection
@@ -34,14 +35,16 @@ public class ProjectScanner {
     private static final Set<String> BUILD_FILE_NAMES = Set.of(
         "pom.xml", "build.gradle", "build.gradle.kts", "package.json",
         "pyproject.toml", "requirements.txt", "Cargo.toml", "go.mod",
-        "Gemfile", "tsconfig.json", "docker-compose.yml", "Dockerfile"
+        "Gemfile", "tsconfig.json", "docker-compose.yml", "Dockerfile",
+        "databricks.yml"
     );
 
     // Files we show as excerpts in the prompt (subset of BUILD_FILE_NAMES;
     // README adds free-form project description that helps the model).
     private static final Set<String> SNIPPET_FILE_NAMES = Set.of(
         "pom.xml", "package.json", "pyproject.toml", "Cargo.toml", "go.mod",
-        "Gemfile", "README.md", "docker-compose.yml", "Dockerfile"
+        "Gemfile", "README.md", "docker-compose.yml", "Dockerfile",
+        "databricks.yml"
     );
 
     private static final Set<String> TEST_PATTERNS = Set.of("test", "tests", "spec", "specs", "__tests__");
@@ -52,6 +55,7 @@ public class ProjectScanner {
     private final DependencyExtractor dependencyExtractor = new DependencyExtractor();
     private final StructureSummarizer structureSummarizer = new StructureSummarizer();
     private final SpringProfileDetector springProfileDetector = new SpringProfileDetector();
+    private final DatabricksProfileDetector databricksProfileDetector = new DatabricksProfileDetector();
 
     public ProjectScanner(
         @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb,
@@ -73,11 +77,11 @@ public class ProjectScanner {
 
         List<String> sourceFiles = new ArrayList<>();
         List<String> testClassNames = new ArrayList<>();
+        List<String> terraformFiles = new ArrayList<>();
         Map<String, String> fullBuildContent = new LinkedHashMap<>();
         Map<String, String> snippets = new LinkedHashMap<>();
         int[] fileCount = {0};
-        boolean[] hasAutoConfigImports = {false};
-        boolean[] hasSpringFactories = {false};
+        var signals = new ScanSignals();
 
         progressCallback.accept("Scanning file tree...");
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
@@ -120,6 +124,15 @@ public class ProjectScanner {
 
                 if (isSourceFile(fileName)) {
                     sourceFiles.add(relative);
+                    if (fileName.endsWith(".py")) signals.hasPythonSource = true;
+                    if (fileName.endsWith(".sql")) signals.hasSqlSource = true;
+                }
+
+                if (fileName.endsWith(".tf")) {
+                    signals.hasTerraformFiles = true;
+                    terraformFiles.add(relative);
+                    String full = readSafe(file);
+                    fullBuildContent.put(relative, full);
                 }
 
                 if (BUILD_FILE_NAMES.contains(fileName)) {
@@ -129,20 +142,28 @@ public class ProjectScanner {
                     if (SNIPPET_FILE_NAMES.contains(fileName)) {
                         snippets.put(relative, firstLines(full, 60));
                     }
+                    if ("databricks.yml".equals(fileName)) {
+                        signals.hasDatabricksYml = true;
+                    }
                 }
 
                 if (relative.endsWith("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
                     || relative.endsWith("META-INF\\spring\\org.springframework.boot.autoconfigure.AutoConfiguration.imports")) {
-                    hasAutoConfigImports[0] = true;
+                    signals.hasAutoConfigImports = true;
                 }
                 if (relative.endsWith("META-INF/spring.factories")
                     || relative.endsWith("META-INF\\spring.factories")) {
-                    hasSpringFactories[0] = true;
+                    signals.hasSpringFactories = true;
                 }
 
                 return FileVisitResult.CONTINUE;
             }
         });
+
+        // .sql is not in isSourceFile() (which gates the package summariser).
+        // Pick those up explicitly so SQL-only Databricks pipelines still
+        // surface their files to the LLM.
+        sourceFiles.addAll(0, terraformFiles);
 
         progressCallback.accept("Scanned " + fileCount[0] + " files. Detecting stack...");
         var stack = stackDetector.detect(root, fileNameKeyed(fullBuildContent));
@@ -150,11 +171,36 @@ public class ProjectScanner {
         progressCallback.accept("Extracting dependencies...");
         var dependencies = dependencyExtractor.extract(fileNameKeyed(fullBuildContent));
 
+        // Post-walk source peeks. Spring's @AutoConfiguration / Databricks's
+        // notebook magic + DLT markers / Terraform databricks provider all
+        // need source content, so we batch them after the walk.
+        if (mayBeSpring(stack)) {
+            signals.hasAutoConfigAnnotation = findAutoConfigurationAnnotation(root, sourceFiles);
+        }
+        if (mayBeDatabricks(stack, signals)) {
+            signals.hasNotebookMagic = findNotebookMagic(root, sourceFiles);
+            signals.hasDltSource = findInPythonSources(root, sourceFiles,
+                "import dlt", "@dlt.table", "@dlt.view", "@dlt.expect");
+            signals.hasDltSqlSource = findInSqlSources(root, sourceFiles,
+                "CREATE STREAMING LIVE TABLE", "CREATE OR REFRESH STREAMING LIVE TABLE",
+                "CREATE LIVE TABLE");
+            signals.hasDatabricksProvider = anyTerraformFileMentions(root, terraformFiles,
+                "databricks/databricks");
+        }
+
         if (stack.isSpring()) {
-            boolean hasAutoConfigAnnotation = findAutoConfigurationAnnotation(root, sourceFiles);
-            var signals = new SpringProfileDetector.Signals(
-                hasAutoConfigImports[0], hasSpringFactories[0], hasAutoConfigAnnotation);
-            stack = stack.withSpringProfile(springProfileDetector.detect(dependencies, signals));
+            stack = stack.withSpringProfile(
+                springProfileDetector.detect(dependencies, signals.springSignals()));
+        }
+
+        // Promote to Databricks framework when signals fire and no stronger
+        // framework was already detected (Java/Spring wins; Node frameworks
+        // win; otherwise Databricks claims it).
+        if (shouldClassifyAsDatabricks(stack, signals)) {
+            stack = stack.withFramework("Databricks");
+        }
+        if (stack.isDatabricks()) {
+            stack = stack.withDatabricksProfile(databricksProfileDetector.detect(signals));
         }
 
         progressCallback.accept("Summarising source structure...");
@@ -169,6 +215,45 @@ public class ProjectScanner {
             entryPoints, dependencies, snippets, packageSummaries,
             existingContext
         );
+    }
+
+    /**
+     * Cheap pre-check: do not bother scanning Java sources for
+     * {@code @AutoConfiguration} unless the stack is already Spring.
+     */
+    private static boolean mayBeSpring(StackProfile stack) {
+        return stack.isSpring();
+    }
+
+    /**
+     * Cheap pre-check: only run the Databricks source peeks when at least one
+     * cheap signal is already present. Avoids reading every .py / .sql / .tf
+     * source on unrelated projects.
+     */
+    private static boolean mayBeDatabricks(StackProfile stack, ScanSignals s) {
+        if (stack.isSpring()) return false;  // Java/Spring trumps Databricks
+        return s.hasDatabricksYml || s.hasTerraformFiles || s.hasPythonSource || s.hasSqlSource;
+    }
+
+    private static boolean shouldClassifyAsDatabricks(StackProfile stack, ScanSignals s) {
+        if (stack.isSpring()) return false;
+        // Avoid hijacking projects with their own framework already detected
+        // (Next.js, FastAPI, Django, Rails, etc.). Databricks is the
+        // fall-through for Python / SQL / Terraform shaped projects.
+        String fw = stack.framework();
+        boolean noPriorFramework = fw == null
+            || "Python".equalsIgnoreCase(stack.language()) && (
+                "Django".equalsIgnoreCase(fw) == false
+                && "FastAPI".equalsIgnoreCase(fw) == false
+                && "Flask".equalsIgnoreCase(fw) == false
+                && "Pyramid".equalsIgnoreCase(fw) == false
+                && "Starlette".equalsIgnoreCase(fw) == false);
+        if (!noPriorFramework) return false;
+        return s.hasDatabricksYml
+            || s.hasDatabricksProvider
+            || s.hasNotebookMagic
+            || s.hasDltSource
+            || s.hasDltSqlSource;
     }
 
     /**
@@ -205,7 +290,8 @@ public class ProjectScanner {
         return name.endsWith(".java") || name.endsWith(".kt") || name.endsWith(".py")
             || name.endsWith(".ts") || name.endsWith(".tsx") || name.endsWith(".js")
             || name.endsWith(".jsx") || name.endsWith(".go") || name.endsWith(".rs")
-            || name.endsWith(".cs") || name.endsWith(".rb") || name.endsWith(".swift");
+            || name.endsWith(".cs") || name.endsWith(".rb") || name.endsWith(".swift")
+            || name.endsWith(".sql") || name.endsWith(".scala");
     }
 
     /**
@@ -246,6 +332,54 @@ public class ProjectScanner {
             try {
                 var content = Files.readString(root.resolve(rel));
                 if (content.contains("@AutoConfiguration")) return true;
+            } catch (IOException ignored) { }
+        }
+        return false;
+    }
+
+    /** Short-circuit: returns true on the first source file beginning with Databricks notebook magic. */
+    private static boolean findNotebookMagic(Path root, List<String> sourceFiles) {
+        for (var rel : sourceFiles) {
+            if (!rel.endsWith(".py") && !rel.endsWith(".sql") && !rel.endsWith(".scala")) continue;
+            try {
+                var content = Files.readString(root.resolve(rel));
+                // Magic appears on the first line of an exported notebook,
+                // forms: "# Databricks notebook source", "-- Databricks notebook source"
+                String head = content.length() > 200 ? content.substring(0, 200) : content;
+                if (head.contains("Databricks notebook source")) return true;
+            } catch (IOException ignored) { }
+        }
+        return false;
+    }
+
+    private static boolean findInPythonSources(Path root, List<String> sourceFiles, String... needles) {
+        return findInSourcesWithExtension(root, sourceFiles, ".py", needles);
+    }
+
+    private static boolean findInSqlSources(Path root, List<String> sourceFiles, String... needles) {
+        return findInSourcesWithExtension(root, sourceFiles, ".sql", needles);
+    }
+
+    private static boolean findInSourcesWithExtension(
+        Path root, List<String> sourceFiles, String extension, String... needles
+    ) {
+        for (var rel : sourceFiles) {
+            if (!rel.endsWith(extension)) continue;
+            try {
+                var content = Files.readString(root.resolve(rel));
+                for (var needle : needles) {
+                    if (content.contains(needle)) return true;
+                }
+            } catch (IOException ignored) { }
+        }
+        return false;
+    }
+
+    private static boolean anyTerraformFileMentions(Path root, List<String> tfFiles, String needle) {
+        for (var rel : tfFiles) {
+            try {
+                var content = Files.readString(root.resolve(rel));
+                if (content.contains(needle)) return true;
             } catch (IOException ignored) { }
         }
         return false;

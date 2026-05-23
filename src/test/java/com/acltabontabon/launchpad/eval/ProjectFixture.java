@@ -65,6 +65,15 @@ public record ProjectFixture(
                 List.of("clap", "regex", "serde_json"),
                 List.of("Matcher", "compile", "run"),
                 List.of("CLI", "Rust")
+            ),
+            new ProjectFixture(
+                "databricks-recon",
+                "databricks-recon",
+                "Python", "Poetry", "Databricks",
+                null,   // pipeline has no app-shaped entry point
+                List.of("databricks-sdk", "pyspark", "databricks/databricks"),
+                List.of(),  // no Java symbols to summarise from
+                List.of("Databricks", "DLT", "Terraform")
             )
         );
     }
