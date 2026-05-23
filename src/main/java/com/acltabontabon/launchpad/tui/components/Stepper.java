@@ -34,13 +34,28 @@ public final class Stepper {
 
     private record Step(AppState.Phase phase, String label) {}
 
-    private static final List<Step> STEPS = List.of(
+    private static final List<Step> INIT_STEPS = List.of(
         new Step(AppState.Phase.SCAN_FILES, "Scan"),
         new Step(AppState.Phase.GENERATE_SUMMARY, "Summary"),
         new Step(AppState.Phase.GENERATE_TARGET, "Target"),
         new Step(AppState.Phase.ASSEMBLE, "Assemble"),
         new Step(AppState.Phase.DONE, "Done")
     );
+
+    // /new-task only runs Scan + Audit on this screen, then jumps to TASK_INPUT.
+    // The remaining stops (Describe / Interview / Prompt) are downstream screens;
+    // showing them here gives the user a map of the rest of the flow.
+    private static final List<Step> TASK_STEPS = List.of(
+        new Step(AppState.Phase.SCAN_FILES, "Scan"),
+        new Step(AppState.Phase.AUDIT_STANDARDS, "Audit"),
+        new Step(AppState.Phase.DONE, "Describe"),
+        new Step(null, "Interview"),
+        new Step(null, "Prompt")
+    );
+
+    private static List<Step> stepsFor(AppState state) {
+        return state.taskFlow ? TASK_STEPS : INIT_STEPS;
+    }
 
     public static int rowsNeeded() { return 3; }
 
@@ -54,10 +69,11 @@ public final class Stepper {
             .split(area);
 
         var spinnerFrame = Spinner.frame(tickCounter);
-        int currentIdx = currentIndex(state);
+        var steps = stepsFor(state);
+        int currentIdx = currentIndex(state, steps);
 
-        var dotsLine = buildDotsLine(area.width(), currentIdx, state.scanError, spinnerFrame);
-        var labelsLine = buildLabelsLine(area.width(), currentIdx, state.scanError);
+        var dotsLine = buildDotsLine(area.width(), currentIdx, state.scanError, spinnerFrame, steps);
+        var labelsLine = buildLabelsLine(area.width(), currentIdx, state.scanError, steps);
 
         frame.renderWidget(
             Paragraph.builder().text(Text.from(dotsLine)).alignment(Alignment.CENTER).build(),
@@ -69,17 +85,17 @@ public final class Stepper {
         );
     }
 
-    private static int currentIndex(AppState state) {
+    private static int currentIndex(AppState state, List<Step> steps) {
         var phase = state.currentPhase.get();
-        for (int i = 0; i < STEPS.size(); i++) {
-            if (STEPS.get(i).phase == phase) return i;
+        for (int i = 0; i < steps.size(); i++) {
+            if (steps.get(i).phase == phase) return i;
         }
         return 0;
     }
 
-    private static Line buildDotsLine(int width, int currentIdx, boolean error, String spinnerFrame) {
-        // Layout: dot + 4 bars + dot + 4 bars + ... (5 dots, 4 bar groups)
-        int n = STEPS.size();
+    private static Line buildDotsLine(int width, int currentIdx, boolean error, String spinnerFrame, List<Step> steps) {
+        // Layout: dot + 4 bars + dot + 4 bars + ... (one dot per step, bar groups between)
+        int n = steps.size();
         int barCount = Math.max(2, Math.min(8, (width - n) / Math.max(1, n - 1)));
         var spans = new ArrayList<Span>();
         for (int i = 0; i < n; i++) {
@@ -113,15 +129,15 @@ public final class Stepper {
         return Span.styled(bar, Style.create().fg(color));
     }
 
-    private static Line buildLabelsLine(int width, int currentIdx, boolean error) {
+    private static Line buildLabelsLine(int width, int currentIdx, boolean error, List<Step> steps) {
         // We want labels roughly centered under each dot. Easiest: produce one
         // long string with each label slot left-padded; lean on Paragraph CENTER.
-        int n = STEPS.size();
+        int n = steps.size();
         int barCount = Math.max(2, Math.min(8, (width - n) / Math.max(1, n - 1)));
         int slotWidth = 1 + barCount;
         var spans = new ArrayList<Span>();
         for (int i = 0; i < n; i++) {
-            var label = STEPS.get(i).label;
+            var label = steps.get(i).label;
             var style = labelStyle(i, currentIdx, error);
             // Slot width minus the label, padded left for centering under the dot.
             int leftPad = Math.max(0, (slotWidth - label.length()) / 2);

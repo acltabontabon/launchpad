@@ -74,7 +74,7 @@ public final class Header {
                 }
             }
             case PROJECT_SELECT -> {
-                segs.add(Span.styled("Init", Styles.muted()));
+                segs.add(Span.styled(state.taskFlow ? "New Task" : "Init", Styles.muted()));
                 segs.add(Span.styled("  " + Icons.ARROW_RIGHT + "  ", Styles.dim()));
                 segs.add(Span.styled("Project", Style.create().fg(Theme.text)));
             }
@@ -84,8 +84,10 @@ public final class Header {
                 segs.add(Span.styled("Target", Style.create().fg(Theme.text)));
             }
             case SCANNING -> {
-                segs.add(Span.styled("Generating " + state.selectedTarget.displayName,
-                    Style.create().fg(Theme.text)));
+                var lead = state.taskFlow
+                    ? "Scanning for New Task"
+                    : "Generating " + state.selectedTarget.displayName;
+                segs.add(Span.styled(lead, Style.create().fg(Theme.text)));
                 if (!state.projectPath.isEmpty()) {
                     segs.add(Span.styled("  " + Icons.SEP + "  ", Styles.dim()));
                     segs.add(Span.styled(shortenPath(state.projectPath), Styles.muted()));

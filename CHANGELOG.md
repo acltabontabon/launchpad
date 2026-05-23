@@ -7,41 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- "Connect to AI tool" flow in `/settings` for automatic MCP configuration of Claude Desktop, Claude Code, and Cursor.
-- New `BENEFITS.md` quantifying Launchpad's value with token-cost analysis and practical experiments.
-- New `USAGE.md` comprehensive guide covering installation, TUI usage, and MCP client setup.
-- New `/projects` command to manage the project registry (browse, re-open, remove, prune).
-- Project-registry-aware MCP tools; `list_projects`, `scan_project`, `get_standards`, and `get_audit_findings` now support short project names.
-- Automatic project enrollment in `ProjectRegistry` following TUI scans.
-- `ProjectRegistry` service for persistent, name-based project addressing (`~/.launchpad/projects.json`).
-- MCP server mode via `launchpad mcp` exposing tools and SARIF resources to any MCP client.
-- Integrated Audit phase in scan pipeline with live progress and summary in TUI.
-- `LlmChecker` for semantic audit rules using local LLMs via Spring AI.
-- Standards audit engine with `PatternChecker` (regex) and `ImportChecker` (Java/Python).
-- Support for `check:` blocks in `Rule` schema to define automated audit logic.
-- `ScanStore` for persisting scans to `<project>/.launchpad/scan.json` for out-of-process consumers.
-- Rocket lift-off animation on Welcome screen when Ollama and Standards are ready.
-- Live path-prefix matches and autocomplete in Project Select.
-- `SAVED` chips in Review screen for files written during the current session.
+- **MCP Integration**
+  - AI tool flow in `/settings` for automatic MCP config (Claude, Cursor).
+  - MCP server mode via `launchpad mcp` exposing tools and SARIF resources.
+  - Registry-aware tools (`list_projects`, `scan_project`, etc.) with short-name support.
+  - `ProjectRegistry` for persistent, name-based project addressing.
+  - Automatic project enrollment after TUI scans.
+  - New `/projects` command to manage the project registry.
+
+- **Automated Audit System**
+  - Integrated Audit phase with live progress and TUI summary.
+  - Standards engine supporting `PatternChecker` and `ImportChecker`.
+  - `LlmChecker` for semantic audit rules using local LLMs.
+  - `check:` blocks in `Rule` schema for automated audit logic.
+  - `ScanStore` for persisting scans to `.launchpad/scan.json`.
+
+- **TUI & User Experience**
+  - Rocket lift-off animation on Welcome screen.
+  - Live path-prefix matches and autocomplete in Project Select.
+  - `SAVED` chips in Review screen for session-written files.
+  - New `BENEFITS.md` (token-cost analysis) and `USAGE.md` (setup guide).
 
 ### Changed
-- Simplified Welcome screen footer; removed redundant hints and moved help to `/help` palette command.
-- Reworked Welcome screen tagline to "Local AI Context Prep: Sharper prompts. Smaller bills."
-- Header breadcrumb now displays the active Ollama model instead of the tagline.
-- Switched default Ollama model to `qwen2.5-coder:7b` for better accuracy.
-- Improved prompt grounding with mandatory file-list blocks and anti-invention rules.
-- Enhanced `OutputValidator` to automatically strip hallucinated file references.
-- Consolidated Review screen warnings to focus on user-actionable signals.
-- Redesigned TUI using the "Cosmic Console" visual system (cards, stepper, refined palette).
-- Stacked warning lines in Review screen with a overflow footer.
-- Moved Review save status to a dedicated top strip and enabled diffs for new files.
-- Fixed duplicated breadcrumb separators in the header.
+- **Visual & UI Refinement**
+  - Redesigned TUI using "Cosmic Console" visual system.
+  - Simplified Welcome screen: Reworked tagline and moved help to `/help`.
+  - Improved Header: Breadcrumb shows active Ollama model.
+  - Optimized Review Screen: Consolidated warnings and moved save status to top strip.
+  - Enabled diff views for new files in Review.
+
+- **Core Logic & AI**
+  - Default Ollama model to `qwen2.5-coder:7b`.
+  - Improved grounding with mandatory file-list blocks and anti-invention rules.
+  - `OutputValidator` automatically strips hallucinated file references.
 
 ### Fixed
-- Prompt templates are now bundled into the native image; previously the Summary phase failed with `Missing prompt template` under native.
-- Standards record types now carry reflection hints, so `StandardsLoader` can deserialize YAML under native; previously the Assemble phase failed with `Failed to read standards-pack.yml`.
-- Welcome screen no longer freezes on stray keystrokes; `q` correctly quits when palette is closed.
-- Slash-command palette now pads command ids to a uniform column and sizes the card to its content, so descriptions stay aligned and are no longer truncated.
+- Native image failures in Summary/Assemble phases (templates & reflection hints).
+- Welcome screen freeze on stray keystrokes; `q` correctly quits.
+- Slash-command palette alignment and description truncation.
+- `/new-task` Scanning screen no longer mislabels itself as "Generating Claude Code": header now reads "Scanning for New Task", the stepper shows the task journey (Scan/Audit/Describe/Interview/Prompt), and the phases card hides the LLM/Assemble rows that never run on this path.
+- Settings "Connect to AI tool" picker now pads client name and status badge columns so the path column lines up across rows.
 
 ## [0.2.0] - 2026-05-23
 ### Added

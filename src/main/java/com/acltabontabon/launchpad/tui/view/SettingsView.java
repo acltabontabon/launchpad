@@ -44,6 +44,8 @@ public class SettingsView implements View {
     private static final int FIELD_CONNECT_ACTION = 3;
     private static final int FIELD_COUNT = 4;
 
+    private static final int BADGE_WIDTH = "[not found]".length();
+
     private final LaunchpadSettings settings;
     private final ClientRegistry clientRegistry;
     private final SnippetFactory snippetFactory;
@@ -132,6 +134,7 @@ public class SettingsView implements View {
         var inner = card.inner(listArea);
         frame.renderWidget(card, listArea);
 
+        int nameWidth = clients.stream().mapToInt(c -> c.displayName().length()).max().orElse(0);
         var lines = new ArrayList<Line>(clients.size());
         for (int i = 0; i < clients.size(); i++) {
             var c = clients.get(i);
@@ -155,8 +158,8 @@ public class SettingsView implements View {
             lines.add(Line.from(
                 Span.styled(prefix, Styles.muted()),
                 Span.styled(checkbox, checkboxStyle),
-                Span.styled(c.displayName(), nameStyle),
-                Span.styled("  " + badge, badgeStyle(c)),
+                Span.styled(String.format("%-" + nameWidth + "s", c.displayName()), nameStyle),
+                Span.styled("  " + String.format("%-" + BADGE_WIDTH + "s", badge), badgeStyle(c)),
                 Span.styled(pathText, pathStyle)
             ));
         }

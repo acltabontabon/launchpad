@@ -123,10 +123,14 @@ public class ScanProgressView implements View {
         lines.add(blank());
         lines.add(phaseRow(AppState.Phase.SCAN_FILES, "Scan project files", current, state));
         lines.add(phaseRow(AppState.Phase.AUDIT_STANDARDS, "Audit against standards", current, state));
-        lines.add(phaseRow(AppState.Phase.GENERATE_SUMMARY, "Generate project summary", current, state));
-        lines.add(phaseRow(AppState.Phase.GENERATE_TARGET, "Generate " + target + " content", current, state));
-        lines.add(phaseRow(AppState.Phase.ASSEMBLE, "Assemble output files", current, state));
-        lines.add(phaseRow(AppState.Phase.DONE, "Done", current, state));
+        // /new-task is scan-only on this screen; the LLM summary / target / assemble
+        // phases never run, so listing them here is misleading.
+        if (!state.taskFlow) {
+            lines.add(phaseRow(AppState.Phase.GENERATE_SUMMARY, "Generate project summary", current, state));
+            lines.add(phaseRow(AppState.Phase.GENERATE_TARGET, "Generate " + target + " content", current, state));
+            lines.add(phaseRow(AppState.Phase.ASSEMBLE, "Assemble output files", current, state));
+        }
+        lines.add(phaseRow(AppState.Phase.DONE, state.taskFlow ? "Ready to describe task" : "Done", current, state));
 
         var paragraph = Paragraph.builder()
             .text(Text.from(lines.toArray(new Line[0])))
