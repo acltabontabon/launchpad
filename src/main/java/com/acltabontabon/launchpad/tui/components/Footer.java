@@ -1,6 +1,6 @@
 package com.acltabontabon.launchpad.tui.components;
 
-import com.acltabontabon.launchpad.ai.OllamaStatus;
+import com.acltabontabon.launchpad.ai.LlmProviderStatus;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.tui.AppState;
 import com.acltabontabon.launchpad.tui.theme.Styles;
@@ -52,7 +52,10 @@ public final class Footer {
         var standards = state.remoteStandardsStatus.get();
         if (ollama != null) {
             out.add(StatusDot.dot(ollamaState(ollama)));
-            out.add(Span.styled(" Ollama  ", Styles.dim()));
+            var label = ollama.resolvedProvider() == null
+                ? " Local AI  "
+                : " " + ollama.resolvedProvider().displayName() + "  ";
+            out.add(Span.styled(label, Styles.dim()));
         }
         if (standards != null) {
             out.add(StatusDot.dot(standardsState(standards)));
@@ -61,7 +64,7 @@ public final class Footer {
         return out;
     }
 
-    private static StatusDot.State ollamaState(OllamaStatus s) {
+    private static StatusDot.State ollamaState(LlmProviderStatus s) {
         return switch (s.state()) {
             case READY -> StatusDot.State.OK;
             case CHECKING -> StatusDot.State.WORKING;

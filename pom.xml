@@ -51,11 +51,18 @@
             <artifactId>spring-boot-starter</artifactId>
         </dependency>
 
-        <!-- Spring AI - Ollama integration -->
-        <!-- NOTE: artifact name may differ in Spring AI 2.x - check spring-ai-bom for current name -->
+        <!-- Spring AI - local-AI providers. Both starters are on the classpath so
+             LlmProviderRouter can swap between Ollama and any OpenAI-compatible
+             endpoint (LM Studio, llama.cpp server, vLLM) at runtime without a
+             rebuild. The router's @Primary ChatModel shadows the autoconfigured
+             beans; only the active provider sees traffic. -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-ollama</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
 
         <!-- Spring AI MCP server (stdio transport) - exposes Launchpad's scan / standards /

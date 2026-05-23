@@ -49,23 +49,33 @@ That's the whole loop. No accounts, no cloud, no API keys.
 ## What you need
 
 - A computer running macOS, Linux, or Windows.
-- [Ollama](https://ollama.com) installed and running locally - this is the engine that powers the writing. Launchpad talks to it on your machine; nothing is sent anywhere else.
-- A pulled model (the default is `qwen2.5-coder:7b`, but you can switch to any model Ollama supports).
+- A local-AI runtime. Launchpad ships with first-class support for **Ollama** and any **OpenAI-compatible** server (LM Studio, llama.cpp's `server`, vLLM, hosted gateways). Pick whichever you already run; nothing is sent off your machine. See [docs/providers.md](docs/providers.md) for per-provider setup.
+- A loaded model. The default is `qwen2.5-coder:7b` on Ollama, but any model your runtime supports works - swap it in /settings.
+
+## Supported local-AI providers
+
+| Provider           | Default base URL              | Notes |
+|--------------------|-------------------------------|-------|
+| Ollama             | `http://localhost:11434`      | `ollama serve`, then `ollama pull <model>`. |
+| OpenAI-compatible  | depends on the server         | LM Studio (`http://localhost:1234/v1`), llama.cpp `server`, vLLM. Optional API key for gateways that require one. |
+| Auto-detect        | -                             | Probes `/api/tags` then `/v1/models` and picks whatever responds. |
+
+Full setup steps per server are in [docs/providers.md](docs/providers.md).
 
 ## Configuration
 
-Out of the box Launchpad talks to Ollama at `http://localhost:11434` using the `qwen2.5-coder:7b` model (a code-aware 7B model chosen for its grounded handling of file paths and project structure - swap in any model Ollama supports if you prefer). If Ollama lives somewhere else - a homelab box, a remote dev machine, or just a different port - you can point Launchpad at it in any of three ways:
+Out of the box, `launchpad.ai.provider=auto` probes the configured base URL and resolves to the runtime that responds first. If you have a homelab box, a remote dev machine, or a different port, point Launchpad at it in any of three ways:
 
-1. **In the TUI (recommended)** - press `c` on the Welcome screen. Edit the base URL and model, hit Enter to save. Changes apply immediately, no restart, and persist to `~/.launchpad/config.properties`.
-2. **Edit the config file directly** - `~/.launchpad/config.properties` (created on first save). Keys are `spring.ai.ollama.base-url` and `spring.ai.ollama.chat.options.model`. Note: Java's properties format escapes `:` in URLs, so the file shows `http\://host\:11434`; that round-trips correctly when read back.
+1. **In the TUI (recommended)** - press `/` on the Welcome screen and run `/settings`. Toggle the provider with ←/→, edit the base URL / model / optional API key, hit Enter to save. Changes apply immediately, no restart, and persist to `~/.launchpad/config.properties`.
+2. **Edit the config file directly** - `~/.launchpad/config.properties` (created on first save). Keys are `launchpad.ai.provider`, `launchpad.ai.base-url`, `launchpad.ai.model`, and optional `launchpad.ai.api-key`. Note: Java's properties format escapes `:` in URLs, so the file shows `http\://host\:11434`; that round-trips correctly when read back. Existing files that only carry the legacy `spring.ai.ollama.*` keys still load on first run and are rewritten on the next save.
 3. **Environment variable or CLI argument** - useful for one-off overrides or running in CI:
    ```bash
-   SPRING_AI_OLLAMA_BASE_URL=http://remote:11434 ./mvnw spring-boot:run
+   LAUNCHPAD_AI_BASE_URL=http://remote:11434 ./mvnw spring-boot:run
    # or
-   ./mvnw spring-boot:run -Dspring-boot.run.arguments=--spring.ai.ollama.base-url=http://remote:11434
+   ./mvnw spring-boot:run -Dspring-boot.run.arguments=--launchpad.ai.base-url=http://remote:11434
    ```
 
-The TUI config file takes precedence over the bundled defaults; env vars and CLI args feed the defaults, so they win only when no user file exists.
+The `LAUNCHPAD_LLM_API_KEY` env var overrides any api-key in the config file so secrets can stay out of plaintext. The TUI config file takes precedence over the bundled defaults; env vars and CLI args feed the defaults, so they win only when no user file exists.
 
 ## Use Launchpad as an MCP server
 

@@ -1,8 +1,8 @@
 package com.acltabontabon.launchpad.tui;
 
 import com.acltabontabon.launchpad.ai.ContextGeneratorService;
-import com.acltabontabon.launchpad.ai.OllamaHealthChecker;
-import com.acltabontabon.launchpad.ai.OllamaStatus;
+import com.acltabontabon.launchpad.ai.LlmProviderStatus;
+import com.acltabontabon.launchpad.ai.ProviderHealthChecker;
 import com.acltabontabon.launchpad.audit.AuditService;
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.config.ProjectRegistry;
@@ -69,7 +69,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final ProjectRegistry projectRegistry;
     private final AuditService auditService;
     private final ContextGeneratorService generatorService;
-    private final OllamaHealthChecker healthChecker;
+    private final ProviderHealthChecker healthChecker;
     private final RemoteStandardsChecker remoteStandardsChecker;
     private final ContextTemplateEngine templateEngine;
     private final TaskAdvisorService taskAdvisor;
@@ -95,7 +95,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         ProjectRegistry projectRegistry,
         AuditService auditService,
         ContextGeneratorService generatorService,
-        OllamaHealthChecker healthChecker,
+        ProviderHealthChecker healthChecker,
         RemoteStandardsChecker remoteStandardsChecker,
         ContextTemplateEngine templateEngine,
         TaskAdvisorService taskAdvisor,
@@ -127,7 +127,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     }
 
     @org.springframework.context.event.EventListener
-    void onOllamaSettingsChanged(LaunchpadSettings.OllamaSettingsChanged event) {
+    void onLlmProviderSettingsChanged(LaunchpadSettings.LlmProviderSettingsChanged event) {
         state.activeModel = event.snapshot().model();
     }
 
@@ -201,7 +201,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     private void triggerHealthCheckIfNeeded() {
         if (!state.healthCheckRequested) return;
         state.healthCheckRequested = false;
-        state.ollamaStatus.set(OllamaStatus.checking());
+        state.ollamaStatus.set(LlmProviderStatus.checking());
 
         CompletableFuture.runAsync(() -> state.ollamaStatus.set(healthChecker.check()));
     }

@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **Pluggable local-AI provider so Launchpad now works with LM Studio,
+  llama.cpp's server, vLLM, and any other OpenAI-compatible local endpoint**
+  (#13). A new `launchpad.ai.provider` setting (`ollama` / `openai-compatible` /
+  `auto`) selects the concrete backend; `auto` probes Ollama's `/api/tags`
+  first, then OpenAI's `/v1/models`, and surfaces the resolved provider on the
+  Welcome readiness badge. `LlmProviderRouter` (replacing
+  `OllamaClientProvider`) holds a volatile `ChatModel` delegate and hot-swaps
+  it on `LlmProviderSettingsChanged` so a provider switch via /settings takes
+  effect without restarting the JVM. `ProviderHealthChecker` replaces
+  `OllamaHealthChecker` and speaks both endpoints' model-listing formats.
+  Settings screen gains a Provider toggle row and an optional API key field
+  (blank = no Authorization header, matching unauthenticated local servers).
+  Docs: `docs/providers.md` covers Ollama, LM Studio, llama.cpp server, and
+  vLLM setup.
+
+### Changed
+- **Config keys renamed to provider-neutral `launchpad.ai.*`.** The user
+  config at `~/.launchpad/config.properties` now writes
+  `launchpad.ai.provider`, `launchpad.ai.base-url`, `launchpad.ai.model`, and
+  optional `launchpad.ai.api-key`. Existing configs that only carry the legacy
+  `spring.ai.ollama.*` keys still load on first run (pinned to provider=ollama)
+  and are rewritten on next save. The `LAUNCHPAD_LLM_API_KEY` env var
+  overrides any api-key in the file so secrets can stay out of plaintext.
+
 ### Fixed
 - **Ollama calls now have explicit timeouts so the TUI no longer freezes on a
   stalled local model** (#1). A new `LaunchpadAiProperties`

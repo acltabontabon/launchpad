@@ -1,6 +1,6 @@
 package com.acltabontabon.launchpad.tui.view;
 
-import com.acltabontabon.launchpad.ai.OllamaStatus;
+import com.acltabontabon.launchpad.ai.LlmProviderStatus;
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.tui.AppState;
@@ -98,7 +98,7 @@ public class WelcomeView implements View {
     }
 
     private static boolean ollamaReady(AppState state) {
-        return state.ollamaStatus.get().state() == OllamaStatus.State.READY;
+        return state.ollamaStatus.get().state() == LlmProviderStatus.State.READY;
     }
 
     private static boolean standardsReady(AppState state) {
@@ -153,7 +153,7 @@ public class WelcomeView implements View {
         frame.renderWidget(body, inner);
     }
 
-    private Line ollamaLine(OllamaStatus s) {
+    private Line ollamaLine(LlmProviderStatus s) {
         var state = switch (s.state()) {
             case READY -> StatusDot.State.OK;
             case CHECKING -> StatusDot.State.WORKING;
@@ -162,13 +162,17 @@ public class WelcomeView implements View {
         var label = switch (s.state()) {
             case READY -> "ready";
             case CHECKING -> "checking " + Spinner.frame(tick / 4);
-            case DAEMON_DOWN -> "daemon unreachable";
+            case DAEMON_DOWN -> "unreachable";
             case MODEL_MISSING -> "model missing";
         };
+        // Show the resolved provider name once known; until then call it "Local AI".
+        var providerLabel = s.resolvedProvider() == null
+            ? "Local AI    "
+            : String.format("%-12s", s.resolvedProvider().displayName());
         return Line.from(
             Span.styled("  ", Style.create()),
             Span.styled(state.glyph, Style.create().fg(state.color).bold()),
-            Span.styled("  Ollama       ", Style.create().fg(Theme.text).bold()),
+            Span.styled("  " + providerLabel + " ", Style.create().fg(Theme.text).bold()),
             Span.styled(label, Style.create().fg(state.color))
         );
     }
@@ -358,8 +362,10 @@ public class WelcomeView implements View {
             var cmd = filtered.get(idx);
             if (cmd.id().equals("/settings")) {
                 var snap = settings.snapshot();
+                state.settingsProviderInput = snap.provider();
                 state.settingsBaseUrlInput = snap.baseUrl();
                 state.settingsModelInput = snap.model();
+                state.settingsApiKeyInput = snap.apiKey() == null ? "" : snap.apiKey();
                 state.settingsRemoteStandardsUrlInput =
                     snap.remoteStandardsUrl() == null ? "" : snap.remoteStandardsUrl();
                 state.settingsFocusIndex = 0;

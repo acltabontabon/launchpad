@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.acltabontabon.launchpad.ai.ContextGeneratorService;
-import com.acltabontabon.launchpad.ai.OllamaHealthChecker;
+import com.acltabontabon.launchpad.ai.ProviderHealthChecker;
 import com.acltabontabon.launchpad.scanner.ProjectScanner;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +24,9 @@ import org.springframework.test.context.TestPropertySource;
  */
 @SpringBootTest
 @TestPropertySource(properties = {
+    "launchpad.ai.provider=ollama",
+    "launchpad.ai.base-url=${LAUNCHPAD_EVAL_OLLAMA_URL:http://localhost:11434}",
+    "launchpad.ai.model=${LAUNCHPAD_EVAL_MODEL:qwen2.5-coder:7b}",
     "spring.ai.ollama.base-url=${LAUNCHPAD_EVAL_OLLAMA_URL:http://localhost:11434}",
     "spring.ai.ollama.chat.options.model=${LAUNCHPAD_EVAL_MODEL:qwen2.5-coder:7b}"
 })
@@ -33,7 +36,7 @@ class GenerationEvalIT {
     private ContextGeneratorService generator;
 
     @Autowired
-    private OllamaHealthChecker healthChecker;
+    private ProviderHealthChecker healthChecker;
 
     @BeforeEach
     void assumeEvalEnabled() {
