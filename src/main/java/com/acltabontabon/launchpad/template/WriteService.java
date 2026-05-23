@@ -33,7 +33,9 @@ public class WriteService {
         boolean backupDirCreated = false;
 
         for (var plan : plans) {
-            if (plan.action() == FilePlan.Action.SKIP || plan.action() == FilePlan.Action.CORRUPTED) {
+            if (plan.action() == FilePlan.Action.SKIP
+                || plan.action() == FilePlan.Action.CORRUPTED
+                || plan.action() == FilePlan.Action.UNREADABLE) {
                 skipped++;
                 continue;
             }

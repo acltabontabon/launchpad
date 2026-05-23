@@ -155,6 +155,10 @@ public class ReviewView implements View {
             return;
         }
         var plan = state.currentFilePlan();
+        if (plan != null && plan.action() == FilePlan.Action.UNREADABLE) {
+            renderUnreadable(frame, area, current, plan);
+            return;
+        }
         if (state.reviewShowDiff) {
             // NEW files have no on-disk baseline, so a real diff is empty. Render the
             // whole file as additions instead - useful preview, and the `d` key
@@ -167,6 +171,35 @@ public class ReviewView implements View {
         } else {
             renderContent(frame, area, current, plan);
         }
+    }
+
+    private void renderUnreadable(Frame frame, Rect area, GeneratedFile current, FilePlan plan) {
+        var bottom = "unreadable  " + Icons.SEP + "  " + plan.statusChip();
+        var card = Card.of(current.relativePath()).bottomTitle(bottom).active(true).build();
+        var inner = card.inner(area);
+        frame.renderWidget(card, area);
+
+        var lines = new ArrayList<Line>();
+        lines.add(Line.from(Span.styled("", Style.create())));
+        lines.add(Line.from(
+            Span.styled("  " + Icons.WARN + "  ", Styles.error()),
+            Span.styled("Existing file could not be read.",
+                Style.create().fg(Theme.caution).bold())
+        ));
+        lines.add(Line.from(Span.styled("", Style.create())));
+        lines.add(Line.from(
+            Span.styled("  cause: ", Styles.dim()),
+            Span.styled(plan.errorMessage == null ? "(no detail)" : plan.errorMessage, Styles.body())
+        ));
+        lines.add(Line.from(Span.styled("", Style.create())));
+        lines.add(Line.from(Span.styled(
+            "  Resolve the underlying issue (permissions, file lock) and re-run,"
+                + " or press 'x' to skip.", Styles.muted())));
+        var widget = Paragraph.builder()
+            .text(Text.from(lines.toArray(new Line[0])))
+            .overflow(Overflow.WRAP_WORD)
+            .build();
+        frame.renderWidget(widget, inner);
     }
 
     private void renderContent(Frame frame, Rect area, GeneratedFile current, FilePlan plan) {
@@ -282,6 +315,7 @@ public class ReviewView implements View {
             case MERGE -> Styles.cautionChip();
             case SKIP -> Styles.muteChip();
             case CORRUPTED -> Styles.dangerChip();
+            case UNREADABLE -> Styles.dangerChip();
         };
     }
 
@@ -378,6 +412,12 @@ public class ReviewView implements View {
         if (plan.action() == FilePlan.Action.CORRUPTED && action == FilePlan.Action.MERGE) {
             return;
         }
+        // We never read the existing content, so we cannot safely OVERWRITE or
+        // MERGE without risking clobbering hand-edited data. Only SKIP is allowed
+        // until the user fixes the underlying read failure and re-runs.
+        if (plan.action() == FilePlan.Action.UNREADABLE && action != FilePlan.Action.SKIP) {
+            return;
+        }
         if (action == FilePlan.Action.OVERWRITE && !plan.exists) {
             plan.setAction(FilePlan.Action.WRITE_NEW);
         } else {
@@ -403,7 +443,8 @@ public class ReviewView implements View {
             for (int i = 0; i < state.filePlans.size(); i++) {
                 var plan = state.filePlans.get(i);
                 if (plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.SKIP
-                    || plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.CORRUPTED) continue;
+                    || plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.CORRUPTED
+                    || plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.UNREADABLE) continue;
                 if (failedPaths.contains(plan.file.relativePath())) continue;
                 saved.add(i);
             }
