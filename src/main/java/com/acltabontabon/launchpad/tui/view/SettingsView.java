@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.tui.view;
 
+import com.acltabontabon.launchpad.ai.LlmProvider;
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.tui.AppState;
 import com.acltabontabon.launchpad.tui.components.Card;
@@ -38,11 +39,13 @@ import java.util.Optional;
 @Component
 public class SettingsView implements View {
 
-    private static final int FIELD_BASE_URL = 0;
-    private static final int FIELD_MODEL = 1;
-    private static final int FIELD_REMOTE_STANDARDS = 2;
-    private static final int FIELD_CONNECT_ACTION = 3;
-    private static final int FIELD_COUNT = 4;
+    private static final int FIELD_PROVIDER = 0;
+    private static final int FIELD_BASE_URL = 1;
+    private static final int FIELD_MODEL = 2;
+    private static final int FIELD_API_KEY = 3;
+    private static final int FIELD_REMOTE_STANDARDS = 4;
+    private static final int FIELD_CONNECT_ACTION = 5;
+    private static final int FIELD_COUNT = 6;
 
     private static final int BADGE_WIDTH = "[not found]".length();
 
@@ -74,36 +77,70 @@ public class SettingsView implements View {
     private void renderFields(Frame frame, Rect area, AppState state) {
         var rows = Layout.vertical()
             .constraints(
-                Constraint.length(2),
-                Constraint.length(3),
-                Constraint.length(3),
-                Constraint.length(1),
-                Constraint.length(3),
-                Constraint.length(1),
-                Constraint.length(3),
-                Constraint.length(1),
-                Constraint.length(3),
-                Constraint.length(2),
-                Constraint.min(0)
+                Constraint.length(2),  // 0  top spacer
+                Constraint.length(3),  // 1  heading
+                Constraint.length(3),  // 2  provider
+                Constraint.length(1),  // 3  gap
+                Constraint.length(3),  // 4  base url
+                Constraint.length(1),  // 5  gap
+                Constraint.length(3),  // 6  model
+                Constraint.length(1),  // 7  gap
+                Constraint.length(3),  // 8  api key
+                Constraint.length(1),  // 9  gap
+                Constraint.length(3),  // 10 remote standards
+                Constraint.length(1),  // 11 gap
+                Constraint.length(3),  // 12 connect action
+                Constraint.length(2),  // 13 gap
+                Constraint.min(0)      // 14 error / fill
             )
             .split(area);
 
         renderHeading(frame, rows.get(1));
 
-        renderField(frame, rows.get(2), "Ollama base URL",
+        renderProviderField(frame, rows.get(2),
+            state.settingsProviderInput, state.settingsFocusIndex == FIELD_PROVIDER);
+        renderField(frame, rows.get(4), "Base URL",
             state.settingsBaseUrlInput, state.settingsFocusIndex == FIELD_BASE_URL);
-        renderField(frame, rows.get(4), "Model",
+        renderField(frame, rows.get(6), "Model",
             state.settingsModelInput, state.settingsFocusIndex == FIELD_MODEL);
-        renderField(frame, rows.get(6), "Remote standards URL  " + Icons.SEP + "  optional",
+        renderField(frame, rows.get(8), "API key  " + Icons.SEP + "  optional",
+            maskApiKey(state.settingsApiKeyInput), state.settingsFocusIndex == FIELD_API_KEY);
+        renderField(frame, rows.get(10), "Remote standards URL  " + Icons.SEP + "  optional",
             state.settingsRemoteStandardsUrlInput, state.settingsFocusIndex == FIELD_REMOTE_STANDARDS);
-        renderActionRow(frame, rows.get(8),
+        renderActionRow(frame, rows.get(12),
             "Connect to AI tool",
             "wire Launchpad into Claude Desktop / Code / Cursor (MCP)",
             state.settingsFocusIndex == FIELD_CONNECT_ACTION);
 
         if (state.settingsErrorMessage != null) {
-            renderError(frame, rows.get(9), state.settingsErrorMessage);
+            renderError(frame, rows.get(14), state.settingsErrorMessage);
         }
+    }
+
+    /** Render the api key as a fixed-length mask so the value never shows on screen. */
+    private static String maskApiKey(String value) {
+        if (value == null || value.isEmpty()) return "";
+        return "*".repeat(Math.min(value.length(), 16));
+    }
+
+    private static void renderProviderField(Frame frame, Rect area, LlmProvider current, boolean focused) {
+        var fieldArea = centeredColumn(area, 80);
+        var card = Card.of("Provider  " + Icons.SEP + "  ←/→ or space to cycle").active(focused).build();
+        var inner = card.inner(fieldArea);
+        frame.renderWidget(card, fieldArea);
+
+        var spans = new ArrayList<Span>();
+        spans.add(Span.styled(" ", Style.create()));
+        for (var p : LlmProvider.values()) {
+            boolean selected = p == current;
+            var label = selected ? "[ " + p.slug() + " ]" : "  " + p.slug() + "  ";
+            var style = selected
+                ? (focused ? Styles.focus() : Styles.body())
+                : Styles.muted();
+            spans.add(Span.styled(label, style));
+            spans.add(Span.styled(" ", Style.create()));
+        }
+        frame.renderWidget(Paragraph.builder().text(Text.from(Line.from(spans.toArray(new Span[0])))).build(), inner);
     }
 
     private void renderPicker(Frame frame, Rect area, AppState state) {
@@ -380,6 +417,23 @@ public class SettingsView implements View {
             state.settingsFocusIndex = (state.settingsFocusIndex + 1) % FIELD_COUNT;
             return true;
         }
+        if (state.settingsFocusIndex == FIELD_PROVIDER) {
+            if (key.isKey(KeyCode.LEFT)) {
+                state.settingsProviderInput = cycleProvider(state.settingsProviderInput, -1);
+                return true;
+            }
+            if (key.isKey(KeyCode.RIGHT)) {
+                state.settingsProviderInput = cycleProvider(state.settingsProviderInput, 1);
+                return true;
+            }
+            if (key.code() == KeyCode.CHAR && key.character() == ' ') {
+                state.settingsProviderInput = cycleProvider(state.settingsProviderInput, 1);
+                return true;
+            }
+            // Stray keys (letters, backspace) are swallowed so they don't fall
+            // through into another field's buffer.
+            return true;
+        }
         if (state.settingsFocusIndex == FIELD_CONNECT_ACTION) {
             // Action row swallows character input so stray keys don't accumulate.
             return true;
@@ -393,6 +447,15 @@ public class SettingsView implements View {
             return true;
         }
         return false;
+    }
+
+    private static LlmProvider cycleProvider(LlmProvider current, int direction) {
+        var values = LlmProvider.values();
+        int idx = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == current) { idx = i; break; }
+        }
+        return values[Math.floorMod(idx + direction, values.length)];
     }
 
     private boolean handlePicker(KeyEvent key, AppState state) {
@@ -496,13 +559,14 @@ public class SettingsView implements View {
     private boolean save(AppState state) {
         var url = state.settingsBaseUrlInput.trim();
         var model = state.settingsModelInput.trim();
+        var apiKey = state.settingsApiKeyInput.trim();
         var remoteUrl = state.settingsRemoteStandardsUrlInput.trim();
         if (url.isEmpty() || model.isEmpty()) {
-            state.settingsErrorMessage = "Ollama base URL and model cannot be empty";
+            state.settingsErrorMessage = "Base URL and model cannot be empty";
             return true;
         }
         try {
-            settings.update(url, model, remoteUrl);
+            settings.update(state.settingsProviderInput, url, model, apiKey, remoteUrl);
         } catch (IOException e) {
             state.settingsErrorMessage = "Could not save: " + e.getMessage();
             return true;
@@ -518,6 +582,7 @@ public class SettingsView implements View {
         switch (state.settingsFocusIndex) {
             case FIELD_BASE_URL -> state.settingsBaseUrlInput = state.settingsBaseUrlInput + c;
             case FIELD_MODEL -> state.settingsModelInput = state.settingsModelInput + c;
+            case FIELD_API_KEY -> state.settingsApiKeyInput = state.settingsApiKeyInput + c;
             case FIELD_REMOTE_STANDARDS ->
                 state.settingsRemoteStandardsUrlInput = state.settingsRemoteStandardsUrlInput + c;
         }
@@ -527,6 +592,7 @@ public class SettingsView implements View {
         switch (state.settingsFocusIndex) {
             case FIELD_BASE_URL -> state.settingsBaseUrlInput = chop(state.settingsBaseUrlInput);
             case FIELD_MODEL -> state.settingsModelInput = chop(state.settingsModelInput);
+            case FIELD_API_KEY -> state.settingsApiKeyInput = chop(state.settingsApiKeyInput);
             case FIELD_REMOTE_STANDARDS ->
                 state.settingsRemoteStandardsUrlInput = chop(state.settingsRemoteStandardsUrlInput);
         }

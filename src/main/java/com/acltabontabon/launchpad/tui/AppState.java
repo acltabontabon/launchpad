@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.tui;
 
-import com.acltabontabon.launchpad.ai.OllamaStatus;
+import com.acltabontabon.launchpad.ai.LlmProvider;
+import com.acltabontabon.launchpad.ai.LlmProviderStatus;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.task.TaskTurn;
@@ -56,8 +57,9 @@ public class AppState {
     // Navigation
     public volatile Screen currentScreen = Screen.WELCOME;
 
-    // Ollama readiness (updated from background thread)
-    public final AtomicReference<OllamaStatus> ollamaStatus = new AtomicReference<>(OllamaStatus.checking());
+    // Local-AI provider readiness (updated from background thread)
+    public final AtomicReference<LlmProviderStatus> ollamaStatus =
+        new AtomicReference<>(LlmProviderStatus.checking());
     public volatile boolean healthCheckRequested = true;
 
     // Remote standards repo readiness (updated from background thread)
@@ -137,14 +139,16 @@ public class AppState {
 
     // Active Ollama model name (e.g. "qwen2.5-coder:7b"). Surfaced in the Welcome
     // header so the user knows which local model will do the work. Updated on
-    // startup and whenever LaunchpadSettings.OllamaSettingsChanged fires.
+    // startup and whenever LaunchpadSettings.LlmProviderSettingsChanged fires.
     public volatile String activeModel = "";
 
-    // Settings screen input state (Ollama base URL + model + remote standards URL)
+    // Settings screen input state (provider + base URL + model + api key + remote standards URL)
+    public volatile LlmProvider settingsProviderInput = LlmProvider.AUTO;
     public volatile String settingsBaseUrlInput = "";
     public volatile String settingsModelInput = "";
+    public volatile String settingsApiKeyInput = "";
     public volatile String settingsRemoteStandardsUrlInput = "";
-    // 0 = base URL, 1 = model, 2 = remote standards URL, 3 = "Connect to AI tool" action row
+    // 0 = provider, 1 = base URL, 2 = model, 3 = api key, 4 = remote standards URL, 5 = "Connect to AI tool" action row
     public volatile int settingsFocusIndex = 0;
     public volatile String settingsErrorMessage = null;
 
