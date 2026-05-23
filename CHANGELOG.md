@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **`/new-task` hardening:** System+user prompt split with one-shot examples; standards scope-filtered once at interview entry and cached across turns (no more full-pack reloads each round); real per-chunk streaming on the synthesise call with `launchpad.task.interview-timeout` / `launchpad.task.finalize-timeout` budgets; new `TaskOutputValidator` with a single retry on structural failure; per-task warnings surface to the result view; saved-file timestamps now ms-precision to avoid collisions; runaway round cap tightened from 15 to 8.
 - **Pluggable local-AI providers:** Support for LM Studio, llama.cpp, vLLM, and OpenAI-compatible endpoints (#13).
 - **Provider auto-detection:** `launchpad.ai.provider` set to `auto` probes Ollama then OpenAI; settings take effect without restart.
 - **Provider Health:** New `ProviderHealthChecker` supports both Ollama and OpenAI listing formats.

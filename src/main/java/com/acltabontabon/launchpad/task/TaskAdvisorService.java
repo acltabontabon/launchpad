@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.task;
 
 import com.acltabontabon.launchpad.ai.PromptSelector;
+import com.acltabontabon.launchpad.config.LaunchpadTaskProperties;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.scanner.StackProfile;
 import com.acltabontabon.launchpad.standards.Checklist;
@@ -8,6 +9,7 @@ import com.acltabontabon.launchpad.standards.ChecklistItem;
 import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Scope;
 import com.acltabontabon.launchpad.standards.Skill;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -25,13 +27,16 @@ import org.springframework.stereotype.Service;
  *     Standards-driven: the LLM picks the next applicable rule / skill / checklist
  *     item and probes it. Project scan is intentionally NOT passed in - it just
  *     gives the model material to hallucinate around. Only the stack one-liner
- *     goes in so questions are framework-appropriate.
- *   - finalize: synthesises the refined prompt (markdown) from the transcript +
- *     full codebase context + applicable engineering standards. The codebase
- *     context IS useful here - the downstream agent needs real file paths.
- * Calls are synchronous and block on the streaming response - callers should run
- * them on a background thread (CompletableFuture.runAsync) so the TUI stays
- * responsive.
+ *     goes in so questions are framework-appropriate. Standards are expected to
+ *     be pre-filtered by scope before reaching this method (see
+ *     {@link #selectRelevantStandards}) so per-turn dispatch can ship a focused
+ *     menu instead of the full pack.
+ *   - synthesise: produces the refined prompt (markdown) from the transcript +
+ *     codebase context + applicable engineering standards. Real per-chunk
+ *     streaming so a stalled model is caught by the read-timeout, with
+ *     validator + single retry guarding the output that lands on disk.
+ * Calls block on the streaming response - callers should run them on a
+ * background thread (CompletableFuture.runAsync) so the TUI stays responsive.
  */
 @Service
 public class TaskAdvisorService {
@@ -42,12 +47,96 @@ public class TaskAdvisorService {
      *  cited by id in a footer line so they remain discoverable. */
     private static final int MAX_CONSTRAINTS = 10;
 
+    private static final String SYSTEM_MARKER = "===SYSTEM===";
+    private static final String USER_MARKER = "===USER===";
+
+    private static final String FINALIZE_RETRY_REMINDER = """
+
+        FORMAT VIOLATION: your previous response did not produce the three
+        marker-delimited sections. Output ONLY:
+        ===GOAL===
+        <one prose paragraph>
+        ===ACCEPTANCE===
+        - <bullet>
+        ===OUT_OF_SCOPE===
+        - <bullet> or (none)
+        Use ONLY the user's words. Nothing else.
+        """;
+
     private final ChatClient chatClient;
     private final PromptSelector promptSelector;
+    private final TaskOutputValidator validator = new TaskOutputValidator();
+    private final Duration interviewTimeout;
+    private final Duration finalizeTimeout;
 
-    public TaskAdvisorService(ChatClient.Builder builder, PromptSelector promptSelector) {
+    public TaskAdvisorService(
+        ChatClient.Builder builder,
+        PromptSelector promptSelector,
+        LaunchpadTaskProperties taskProperties
+    ) {
         this.chatClient = builder.build();
         this.promptSelector = promptSelector;
+        this.interviewTimeout = taskProperties.interviewTimeout();
+        this.finalizeTimeout = taskProperties.finalizeTimeout();
+    }
+
+    /**
+     * Splits a prompt template on the {@code ===SYSTEM===} / {@code ===USER===}
+     * markers so the same .txt file can carry both messages. Falls back to
+     * treating the whole template as the user message if either marker is
+     * missing - keeps tests and ad-hoc templates working without a system block.
+     */
+    record PromptParts(String system, String user) {
+        static PromptParts split(String template) {
+            if (template == null) return new PromptParts("", "");
+            int sysIdx = template.indexOf(SYSTEM_MARKER);
+            int userIdx = template.indexOf(USER_MARKER);
+            if (sysIdx < 0 || userIdx < 0 || userIdx < sysIdx) {
+                return new PromptParts("", template);
+            }
+            var system = template.substring(sysIdx + SYSTEM_MARKER.length(), userIdx).strip();
+            var user = template.substring(userIdx + USER_MARKER.length()).strip();
+            return new PromptParts(system, user);
+        }
+    }
+
+    /** Holder for the three filtered standards lists passed across the
+     *  pipeline. Computed once at TASK_INTERVIEW entry and reused for every
+     *  interview turn plus the final synthesise call. */
+    public record RelevantStandards(List<Rule> rules, List<Skill> skills, List<Checklist> checklists) {}
+
+    /**
+     * Apply scope + opt-out filtering once. Called by LaunchpadRunner when the
+     * user lands on TASK_INTERVIEW (and again from synthesise to re-derive after
+     * the interview may have surfaced new opt-outs). Pure function; safe to call
+     * on a background thread.
+     */
+    public static RelevantStandards selectRelevantStandards(
+        StackProfile stack,
+        String taskDescription,
+        List<TaskTurn> history,
+        List<Rule> allRules,
+        List<Skill> allSkills,
+        List<Checklist> allChecklists
+    ) {
+        var taskTags = classifyTaskTags(taskDescription, history);
+        var optedOutRuleIds = detectOptedOutRules(allRules, history);
+        var optedOutTags = detectOptedOutTags(history);
+
+        var rules = (allRules == null ? List.<Rule>of() : allRules).stream()
+            .filter(r -> scopeApplies(r.scope(), stack, taskTags))
+            .filter(r -> !optedOutRuleIds.contains(r.id()))
+            .filter(r -> !overlapsTags(r.scope(), optedOutTags))
+            .toList();
+        var skills = (allSkills == null ? List.<Skill>of() : allSkills).stream()
+            .filter(s -> scopeApplies(s.scope(), stack, taskTags))
+            .filter(s -> !overlapsTags(s.scope(), optedOutTags))
+            .toList();
+        var checklists = (allChecklists == null ? List.<Checklist>of() : allChecklists).stream()
+            .filter(c -> scopeApplies(c.scope(), stack, taskTags))
+            .filter(c -> !overlapsTags(c.scope(), optedOutTags))
+            .toList();
+        return new RelevantStandards(rules, skills, checklists);
     }
 
     public String askNextQuestion(
@@ -59,15 +148,18 @@ public class TaskAdvisorService {
         List<Checklist> checklists
     ) {
         var template = promptSelector.load(PromptSelector.Kind.TASK_INTERVIEW, stack);
+        var parts = PromptParts.split(template);
         // Interview gets COMPACT one-line-per-item menus, not full descriptions.
         // Small local models lose the thread when handed 60+ rules with full
         // rationales - they start asking *about* the standards instead of *from*
-        // them. Full text is reserved for the finalize step.
+        // them. Full text is reserved for the synthesise step.
         var response = chatClient.prompt()
-            .user(u -> u.text(template)
+            .system(parts.system())
+            .user(u -> u.text(parts.user())
                 .param("stack", formatStack(stack))
                 .param("task", taskDescription)
                 .param("history", formatHistory(history))
+                .param("discovery_hint", discoveryHintFor(taskDescription, history))
                 .param("rules", formatRulesCompact(rules))
                 .param("skills", formatSkillsCompact(skills))
                 .param("checklists", formatChecklistsCompact(checklists)))
@@ -95,6 +187,39 @@ public class TaskAdvisorService {
         // model having nothing new to ask and finalize.
         if (isNearDuplicateOfPrior(extracted, history)) return DONE_TOKEN;
         return extracted;
+    }
+
+    /**
+     * Stack-aware DISCOVERY hint: instead of a fixed REST-shaped noun list, the
+     * Java side composes the under-specified aspects most likely relevant given
+     * the task wording. A bug-fix task hears about symptoms and reproduction; a
+     * REST task hears about resource and callers; an unclassified task gets a
+     * neutral fallback. The prompt picks one of these to probe in PHASE 1.
+     */
+    static String discoveryHintFor(String taskDescription, List<TaskTurn> history) {
+        var tags = classifyTaskTags(taskDescription, history);
+        if (tags.contains("debugging")) {
+            return "symptom, reproduction steps, root-cause hypothesis, expected behaviour, affected scope";
+        }
+        if (tags.contains("refactoring")) {
+            return "target module, motivation, behaviour-preservation criteria, scope boundary";
+        }
+        if (tags.contains("rest")) {
+            return "resource, HTTP method, inputs, outputs, callers, success criteria, error shape";
+        }
+        if (tags.contains("ui")) {
+            return "screen / view, user action, inputs, success / failure state, navigation context";
+        }
+        if (tags.contains("data")) {
+            return "schema target, migration safety, query path, expected row counts, rollback plan";
+        }
+        if (tags.contains("ai")) {
+            return "model role, prompt inputs, expected output shape, failure handling, observability";
+        }
+        if (tags.contains("configuration")) {
+            return "setting name, default, source of truth, who can change it at runtime";
+        }
+        return "purpose, primary inputs, primary outputs, callers / triggers, success criteria";
     }
 
     /**
@@ -156,12 +281,6 @@ public class TaskAdvisorService {
      *   3. Fallback to the last non-empty line.
      * Visible for testing.
      */
-    /**
-     * Jaccard-similarity duplicate check. Returns true if the new question shares
-     * enough significant words with any prior question that they're substantially
-     * asking the same thing. Threshold 0.5 = at least half the meaningful words
-     * overlap. Visible for testing.
-     */
     static boolean isNearDuplicateOfPrior(String newQuestion, List<TaskTurn> history) {
         if (history == null || history.isEmpty()) return false;
         var newWords = significantWords(newQuestion);
@@ -183,13 +302,6 @@ public class TaskAdvisorService {
         return false;
     }
 
-    /**
-     * Word-match helper that treats simple plural/inflection variants as the same
-     * word. "default" matches "defaults", "validate" matches "validates" /
-     * "validating" / "validated". Used by opt-out detection and near-duplicate
-     * detection so a rule titled "...Defaults Are Secure" matches a question
-     * about "default authentication".
-     */
     private static int stemTolerantOverlap(Set<String> a, Set<String> b) {
         int matches = 0;
         for (var x : a) {
@@ -247,16 +359,21 @@ public class TaskAdvisorService {
         return picked.replaceFirst("^\\**\\s*(Q\\d+|\\d+)\\s*[:.\\)]\\s*\\**\\s*", "");
     }
 
+    /** Result of a synthesise call - the assembled markdown plus any validator warnings. */
+    public record SynthesiseResult(String markdown, List<String> warnings) {}
+
     /**
-     * Hybrid finalize: the LLM only synthesises the three sections that genuinely
-     * need natural-language synthesis (Task summary, Acceptance criteria, Out of
-     * scope). Java deterministically assembles everything else - Context from the
-     * scanner, Constraints from the filtered rules' full text, Relevant standards
-     * from filtered skill/checklist ids. This stops the model from hallucinating
-     * constraints, dropping placeholders like `<id>` into the output, or having
-     * its instructions truncated by an over-large prompt.
+     * Hybrid synthesise: the LLM only produces the three sections that genuinely
+     * need natural-language synthesis (Goal prose, Acceptance criteria, Out of
+     * scope). Java deterministically assembles Constraints from the filtered
+     * rules and Standards consulted from filtered skills / checklists, so the
+     * model has no opportunity to hallucinate constraints or drop placeholders
+     * into the output. Streams the model response with a per-chunk timeout so a
+     * stalled daemon surfaces fast; emits the assembled doc through {@code onChunk}
+     * once parsing + grounding + assembly complete. On validator failure, retries
+     * once with a stricter reminder.
      */
-    public String finalize(
+    public SynthesiseResult synthesise(
         ProjectContext ctx,
         String taskDescription,
         List<TaskTurn> history,
@@ -265,63 +382,89 @@ public class TaskAdvisorService {
         List<Checklist> checklists,
         Consumer<String> onChunk
     ) {
-        // Scope-based selection: read the YAML scope (frameworks / languages / tags /
-        // tasks) and include items whose scope actually applies to this task. Then
-        // subtract anything the user explicitly opted out of in the interview.
-        var stack = ctx.stack();
-        var taskTags = classifyTaskTags(taskDescription, history);
-        var optedOutRuleIds = detectOptedOutRules(rules, history);
-        var optedOutTags = detectOptedOutTags(history);
+        // Standards are expected pre-filtered by the caller. Re-filtering here is
+        // cheap and protects against callers that pass an unfiltered pack
+        // (legacy / test setups). selectRelevantStandards is idempotent: a list
+        // that already matches the scope passes through unchanged.
+        var filtered = selectRelevantStandards(
+            ctx == null ? null : ctx.stack(), taskDescription, history, rules, skills, checklists);
 
-        var relevantRules = rules.stream()
-            .filter(r -> scopeApplies(r.scope(), stack, taskTags))
-            .filter(r -> !optedOutRuleIds.contains(r.id()))
-            .filter(r -> !overlapsTags(r.scope(), optedOutTags))
-            .toList();
-        var relevantSkills = skills.stream()
-            .filter(s -> scopeApplies(s.scope(), stack, taskTags))
-            .filter(s -> !overlapsTags(s.scope(), optedOutTags))
-            .toList();
-        var relevantChecklists = checklists.stream()
-            .filter(c -> scopeApplies(c.scope(), stack, taskTags))
-            .filter(c -> !overlapsTags(c.scope(), optedOutTags))
-            .toList();
-
-        // Small focused LLM call - just three sections with marker-delimited output.
-        var template = promptSelector.load(PromptSelector.Kind.TASK_FINALIZE, ctx.stack());
+        var template = promptSelector.load(PromptSelector.Kind.TASK_FINALIZE, ctx == null ? null : ctx.stack());
+        var parts = PromptParts.split(template);
         if (onChunk != null) onChunk.accept("");  // signal: synthesis starting
-        var raw = chatClient.prompt()
-            .user(u -> u.text(template)
+
+        var raw = streamSynthesise(parts.system(), parts.user(), taskDescription, history, ctx);
+        var doc = buildDocument(taskDescription, history, raw, filtered);
+        var warnings = validator.validate(doc);
+
+        // Single retry on hard structural failure. We treat "missing required
+        // section: ## Goal" or "synthesised prompt was empty" as retriable -
+        // the model fundamentally failed to produce the marker shape. Cosmetic
+        // warnings (quote-only bullets, placeholders) are NOT retriable; the
+        // user sees them and can decide.
+        if (isRetriable(warnings)) {
+            var rawRetry = streamSynthesise(
+                parts.system() + FINALIZE_RETRY_REMINDER,
+                parts.user(),
+                taskDescription, history, ctx);
+            var docRetry = buildDocument(taskDescription, history, rawRetry, filtered);
+            var warningsRetry = validator.validate(docRetry);
+            // Keep the retry only if it is actually better. Otherwise fall back
+            // to the first attempt so we never replace a partially-good doc with
+            // a worse one.
+            if (warningsRetry.size() < warnings.size()) {
+                doc = docRetry;
+                warnings = warningsRetry;
+            }
+        }
+
+        if (onChunk != null) onChunk.accept(doc);
+        return new SynthesiseResult(doc, warnings);
+    }
+
+    private static boolean isRetriable(List<String> warnings) {
+        if (warnings == null || warnings.isEmpty()) return false;
+        for (var w : warnings) {
+            if (w.startsWith("missing required section")) return true;
+            if (w.contains("empty")) return true;
+        }
+        return false;
+    }
+
+    private String streamSynthesise(String system, String userTemplate,
+            String taskDescription, List<TaskTurn> history, ProjectContext ctx) {
+        var sb = new StringBuilder();
+        chatClient.prompt()
+            .system(system)
+            .user(u -> u.text(userTemplate)
                 .param("task", taskDescription)
+                .param("stack", formatStack(ctx == null ? null : ctx.stack()))
                 .param("history", formatHistory(history)))
-            .call()
-            .content();
+            .stream()
+            .content()
+            // Per-chunk inactivity timeout: if the stream stops emitting tokens
+            // for longer than finalizeTimeout, surface a TimeoutException instead
+            // of blocking the TUI thread forever.
+            .timeout(finalizeTimeout)
+            .doOnNext(sb::append)
+            .blockLast();
+        return sb.toString();
+    }
+
+    private String buildDocument(String taskDescription, List<TaskTurn> history,
+            String raw, RelevantStandards filtered) {
         var sections = parseMarkerSections(raw == null ? "" : raw);
         // The model often dumps bullets into the GOAL section even though GOAL
         // expects pure prose. Extract the leading paragraph as the real goal and
         // shunt any trailing bullets into ACCEPTANCE where the grounding filter
         // can act on them.
         sections = separateGoalProseFromBullets(sections);
-        // Drop Acceptance bullets that are quote-only echoes of user fragments
-        // (the model loves to bullet-ify ["create new api"] etc.) or that don't
-        // share any significant words with the user's actual task or answers
-        // (catches hallucinations like "internationalization" / "encryption"
-        // that the model picks up from prompt instructions).
         sections = groundAcceptance(sections, taskDescription, history);
-        // Defensive: the model keeps inferring things like "Adding support for
-        // concurrent requests" into Out-of-scope when the user only said "no
-        // rate-limit". Drop any bullet whose significant words don't overlap with
-        // either a user-negated answer's question or an opted-out rule's title.
-        sections = groundOutOfScope(sections, history, optedOutRuleIds, rules);
+        var optedOutRuleIds = detectOptedOutRules(filtered.rules(), history);
+        sections = groundOutOfScope(sections, history, optedOutRuleIds, filtered.rules());
 
-        // Java assembles the full markdown deterministically.
-        var doc = assembleFinalMarkdown(
-            taskDescription, sections, relevantRules, relevantSkills, relevantChecklists);
-
-        // Push the assembled doc through the chunk callback in one shot so the
-        // result view's existing "append-on-chunk" wiring renders it once.
-        if (onChunk != null) onChunk.accept(doc);
-        return doc;
+        return assembleFinalMarkdown(taskDescription, sections,
+            filtered.rules(), filtered.skills(), filtered.checklists());
     }
 
     /** Parsed LLM output sections. Context was tried twice and hallucinated both
@@ -412,10 +555,8 @@ public class TaskAdvisorService {
                 proseLines.add(l);
             }
         }
-        // Collapse the prose lines into a single paragraph (whitespace-joined).
         var prose = String.join(" ", proseLines).replaceAll(" +", " ").strip();
         if (bulletLines.isEmpty()) return sections;
-        // Prepend the bullets to whatever the model already had in ACCEPTANCE.
         var mergedAcceptance = String.join("\n", bulletLines);
         if (sections.acceptance() != null && !sections.acceptance().isBlank()) {
             mergedAcceptance = mergedAcceptance + "\n" + sections.acceptance();
@@ -441,8 +582,6 @@ public class TaskAdvisorService {
         }
         var grounding = buildOptOutGrounding(history, optedOutRuleIds, allRules);
         if (grounding.isEmpty()) {
-            // Nothing to ground against - the user didn't opt out of anything, so
-            // there shouldn't be an Out-of-scope section. Clear it.
             return new FinalizeSections(sections.goal(), sections.acceptance(), "");
         }
         var kept = new ArrayList<String>();
@@ -451,7 +590,10 @@ public class TaskAdvisorService {
             if (l.isEmpty()) continue;
             var text = l.startsWith("- ") ? l.substring(2)
                 : l.startsWith("* ") ? l.substring(2) : l;
-            if (text.startsWith("(") && text.endsWith(")")) continue;  // skip "(none)" placeholders
+            // Skip placeholder text like "(none)" or "(no exclusions)" - the
+            // synthesise prompt's documented sentinel when the user did not opt
+            // out of anything.
+            if (text.startsWith("(") && text.endsWith(")")) continue;
             var bulletWords = significantWords(text);
             if (bulletWords.stream().anyMatch(grounding::contains)) {
                 kept.add(l);
@@ -531,8 +673,9 @@ public class TaskAdvisorService {
 
     /**
      * Builds the final markdown deterministically. The LLM's contribution is the
-     * prose of Goal / Context / Acceptance / Out-of-scope; everything else is
-     * generated from the standards pack.
+     * prose of Goal / Acceptance / Out-of-scope; everything else is generated
+     * from the standards pack. Null-safe on {@code userTask} - the assembler
+     * runs even when called with a null task description.
      * <p>
      * Sections are kept compact: constraints render as one-line bullets (first
      * sentence of the rule's content + severity + id suffix for traceability)
@@ -548,19 +691,17 @@ public class TaskAdvisorService {
         List<Checklist> checklists
     ) {
         var sb = new StringBuilder();
+        var safeTask = userTask == null ? "" : userTask.strip();
 
         sb.append("## Goal\n");
-        var goal = sections.goal().isBlank() ? userTask.strip() : sections.goal();
+        var goal = sections.goal() == null || sections.goal().isBlank() ? safeTask : sections.goal();
+        if (goal.isBlank()) goal = "(no goal provided)";
         sb.append(goal).append("\n\n");
 
         sb.append("## Constraints\n");
-        if (rules.isEmpty()) {
+        if (rules == null || rules.isEmpty()) {
             sb.append("- _No standards rules apply to this task._\n\n");
         } else {
-            // Sort by severity (must / never first) then YAML priority (lower =
-            // more important), then cap at MAX_CONSTRAINTS so the prompt stays
-            // focused. A 22-rule wall overwhelms the implementing agent; the cap
-            // surfaces what matters most and lists overflow IDs in a footer line.
             var sorted = rules.stream()
                 .sorted((a, b) -> {
                     int s = Integer.compare(severityRank(a.severity()), severityRank(b.severity()));
@@ -587,25 +728,29 @@ public class TaskAdvisorService {
             "- Behaviour described in the Goal section is implemented."));
         sb.append("\n");
 
-        // Out-of-scope only appears when there's something to say. groundOutOfScope
-        // upstream already strips hallucinated bullets and may clear the section.
-        if (!sections.outOfScope().isBlank()) {
+        if (sections.outOfScope() != null && !sections.outOfScope().isBlank()) {
             sb.append("## Out of scope\n");
             sb.append(normaliseBullets(sections.outOfScope(), ""));
             sb.append("\n");
         }
 
-        if (!skills.isEmpty() || !checklists.isEmpty()) {
+        boolean hasSkills = skills != null && !skills.isEmpty();
+        boolean hasChecklists = checklists != null && !checklists.isEmpty();
+        if (hasSkills || hasChecklists) {
             sb.append("## Standards consulted\n");
-            for (var s : skills) {
-                sb.append("- skill:").append(s.id());
-                if (s.title() != null && !s.title().isBlank()) sb.append(" - ").append(s.title());
-                sb.append("\n");
+            if (hasSkills) {
+                for (var s : skills) {
+                    sb.append("- skill:").append(s.id());
+                    if (s.title() != null && !s.title().isBlank()) sb.append(" - ").append(s.title());
+                    sb.append("\n");
+                }
             }
-            for (var c : checklists) {
-                sb.append("- checklist:").append(c.id());
-                if (c.title() != null && !c.title().isBlank()) sb.append(" - ").append(c.title());
-                sb.append("\n");
+            if (hasChecklists) {
+                for (var c : checklists) {
+                    sb.append("- checklist:").append(c.id());
+                    if (c.title() != null && !c.title().isBlank()) sb.append(" - ").append(c.title());
+                    sb.append("\n");
+                }
             }
             sb.append("\n");
         }
@@ -617,7 +762,7 @@ public class TaskAdvisorService {
     // scope (frameworks / languages / tags / tasks) is non-restrictive OR overlaps
     // with the task. Empty list = no restriction at that axis = applies broadly.
 
-    static boolean scopeApplies(Scope scope, com.acltabontabon.launchpad.scanner.StackProfile stack, Set<String> taskTags) {
+    static boolean scopeApplies(Scope scope, StackProfile stack, Set<String> taskTags) {
         if (scope == null) return true;
         String fwSlug = normaliseFramework(stack);
         String langSlug = normaliseLanguage(stack);
@@ -642,13 +787,13 @@ public class TaskAdvisorService {
     }
 
     /** Normalises StackProfile.framework ("Spring Boot") to the YAML slug ("spring-boot"). */
-    static String normaliseFramework(com.acltabontabon.launchpad.scanner.StackProfile stack) {
+    static String normaliseFramework(StackProfile stack) {
         if (stack == null || stack.framework() == null) return null;
         return stack.framework().toLowerCase().replaceAll("\\s+", "-").replaceAll("\\.", "");
     }
 
     /** Normalises StackProfile.language ("Java") to the YAML slug ("java"). */
-    static String normaliseLanguage(com.acltabontabon.launchpad.scanner.StackProfile stack) {
+    static String normaliseLanguage(StackProfile stack) {
         if (stack == null || stack.language() == null) return null;
         return stack.language().toLowerCase();
     }
@@ -665,13 +810,8 @@ public class TaskAdvisorService {
         tags.add("feature");
         if (anyWord(words, "api", "endpoint", "controller", "route", "rest", "http", "endpoints")) {
             tags.add("rest");
-            // REST work is always HTTP, and adding/changing endpoints is a delivery
-            // activity - emit those tags too so skills/checklists scoped to either
-            // can also apply.
             tags.add("http");
             tags.add("delivery");
-            // Sub-classify REST tasks so rules scoped to specific shapes
-            // (collection endpoints, mutating endpoints) fire only when relevant.
             if (anyWord(words, "list", "lists", "search", "browse", "all", "many",
                     "collection", "collections", "page", "paginate", "paginated")) {
                 tags.add("rest-collection");
@@ -706,14 +846,6 @@ public class TaskAdvisorService {
         return false;
     }
 
-    /**
-     * Renders a rule as a single bullet: severity prefix, first sentence of the
-     * description (the actionable directive), and the id as a parenthetical
-     * suffix for traceability. Tech-lead-authored rule content is generally
-     * structured as "directive sentence. elaboration. examples." so the first
-     * sentence carries the action; subsequent sentences are reinforcement that
-     * the implementing agent doesn't need inline.
-     */
     /** Ranks rule severity for stable ordering: must=0, never=1, should=2, avoid=3, other=4. */
     private static int severityRank(String severity) {
         if (severity == null) return 4;
@@ -734,7 +866,6 @@ public class TaskAdvisorService {
         }
         var directive = firstSentence(r.description());
         if (directive.isBlank()) {
-            // Fallback: rule has no description, use the title.
             directive = r.title() == null ? r.id() : r.title();
         }
         sb.append(directive);
@@ -756,21 +887,12 @@ public class TaskAdvisorService {
         if (text == null) return "";
         var collapsed = text.strip().replaceAll("\\R+", " ").replaceAll(" +", " ");
         if (collapsed.isEmpty()) return "";
-        // ". " followed by an uppercase letter = real sentence boundary.
         var matcher = java.util.regex.Pattern.compile("\\. (?=[A-Z])").matcher(collapsed);
         if (matcher.find()) return collapsed.substring(0, matcher.start() + 1);
         if (collapsed.endsWith(".")) return collapsed;
         return collapsed.length() > 240 ? collapsed.substring(0, 240) + "..." : collapsed;
     }
 
-    /**
-     * Coerce a free-form bullet block into proper markdown bullets. Handles:
-     *   - Long bullets wrapped across multiple lines: continuations join into the
-     *     previous bullet rather than becoming new ones.
-     *   - Multi-prefix bullets like "- - text" that arise when the model emits
-     *     bullets in a section that gets later joined with another bullet list:
-     *     all leading "- " / "* " prefixes get stripped recursively.
-     */
     private static String normaliseBullets(String section, String defaultLine) {
         if (section == null || section.isBlank()) return defaultLine + "\n";
         var bullets = new ArrayList<String>();
@@ -780,10 +902,8 @@ public class TaskAdvisorService {
             if (l.startsWith("- ") || l.startsWith("* ")) {
                 bullets.add(stripAllBulletPrefixes(l));
             } else if (bullets.isEmpty()) {
-                // Pre-bullet stray line - treat as the first bullet.
                 bullets.add(l);
             } else {
-                // Continuation of the previous bullet - join with a space.
                 int last = bullets.size() - 1;
                 bullets.set(last, bullets.get(last) + " " + l);
             }
@@ -802,7 +922,6 @@ public class TaskAdvisorService {
         return l;
     }
 
-    /** Combined haystack of the user's task + every Q/A in the transcript. */
     private static String buildHaystack(String taskDescription, List<TaskTurn> history) {
         var sb = new StringBuilder();
         if (taskDescription != null) sb.append(taskDescription.toLowerCase()).append(' ');
@@ -822,20 +941,11 @@ public class TaskAdvisorService {
     );
 
     /**
-     * Heuristically detect rules the user opted out of in the interview. For each
-     * Q/A pair, find rules whose title significantly overlaps with the question.
-     * If the answer is a negation, mark those rules opted-out so we don't embed
-     * them as Constraints (contradicting the user's stated decision).
-     */
-    /**
      * Maps "negation answer + keyword in the question" → "this whole tag-domain
      * is opted out". When the user says "no" to a question containing security
      * keywords like "auth" / "password" / "token", we drop EVERY rule whose scope
      * tags include "security" / "crypto" / "auth" - not just the specific rule
-     * whose title matched. This is what cleans up `modern-password-hashing` /
-     * `output-encoding-context-aware` / `transport-security-tls-required`
-     * showing up under Constraints for a "hello world greeting API" task where
-     * the user said no to authentication.
+     * whose title matched.
      */
     static Set<String> detectOptedOutTags(List<TaskTurn> history) {
         if (history == null || history.isEmpty()) return Set.of();
@@ -844,15 +954,13 @@ public class TaskAdvisorService {
             if (turn == null || turn.question() == null || turn.answer() == null) continue;
             if (!isNegation(turn.answer())) continue;
             var q = turn.question().toLowerCase();
-            // Each entry maps "if question mentions any of these keywords" →
-            // "opt out rules tagged with any of these tag slugs".
             if (containsAnyKeyword(q, "auth", "authentication", "login", "token", "session", "password", "credential", "security")) {
                 optedOut.add("security");
                 optedOut.add("auth");
                 optedOut.add("crypto");
             }
             if (containsAnyKeyword(q, "rate", "limit", "throttle", "quota")) {
-                optedOut.add("reliability");  // partial - rate-limit is the only reliability concern most users opt out of
+                optedOut.add("reliability");
             }
             if (containsAnyKeyword(q, "log", "logging", "metric", "trace", "observability", "monitor")) {
                 optedOut.add("observability");
@@ -891,8 +999,6 @@ public class TaskAdvisorService {
                 if (rule.title() == null) continue;
                 var titleWords = significantWords(rule.title());
                 if (titleWords.isEmpty()) continue;
-                // Stem-tolerant overlap so "Defaults" in a rule title matches
-                // "default" in the question text.
                 int hits = stemTolerantOverlap(titleWords, qWords);
                 if (hits >= Math.min(2, titleWords.size())) {
                     optedOut.add(rule.id());
@@ -915,6 +1021,11 @@ public class TaskAdvisorService {
         return false;
     }
 
+    /** Exposed for the runner so it can surface a per-turn timeout deadline. */
+    public Duration interviewTimeout() {
+        return interviewTimeout;
+    }
+
     // === formatters ===
 
     private static String formatHistory(List<TaskTurn> history) {
@@ -929,66 +1040,10 @@ public class TaskAdvisorService {
         return sb.toString().stripTrailing();
     }
 
-    private static String formatSkills(List<Skill> skills) {
-        if (skills == null || skills.isEmpty()) return "(no skills configured)";
-        var sb = new StringBuilder();
-        for (var s : skills) {
-            sb.append("- ").append(s.id());
-            if (s.title() != null && !s.title().isBlank()) {
-                sb.append("  -  ").append(s.title());
-            }
-            sb.append("\n");
-            if (s.trigger() != null && !s.trigger().isBlank()) {
-                sb.append("    trigger: ").append(s.trigger()).append("\n");
-            }
-            if (s.steps() != null && !s.steps().isEmpty()) {
-                sb.append("    steps:\n");
-                for (var step : s.steps()) {
-                    sb.append("      * ").append(step).append("\n");
-                }
-            }
-        }
-        return sb.toString().stripTrailing();
-    }
-
-    private static String formatChecklists(List<Checklist> checklists) {
-        if (checklists == null || checklists.isEmpty()) return "(no checklists configured)";
-        var sb = new StringBuilder();
-        for (var c : checklists) {
-            sb.append("- ").append(c.id());
-            if (c.title() != null && !c.title().isBlank()) {
-                sb.append("  -  ").append(c.title());
-            }
-            sb.append("\n");
-            if (c.items() != null && !c.items().isEmpty()) {
-                for (ChecklistItem item : c.items()) {
-                    sb.append("    * ").append(item.text());
-                    if (item.required()) sb.append(" (required)");
-                    sb.append("\n");
-                }
-            }
-        }
-        return sb.toString().stripTrailing();
-    }
-
-    private static String formatRules(List<Rule> rules) {
-        if (rules == null || rules.isEmpty()) return "(no rules configured)";
-        var sb = new StringBuilder();
-        for (var r : rules) {
-            sb.append("- id: ").append(r.id());
-            if (r.title() != null) sb.append("\n  title: ").append(r.title());
-            if (r.severity() != null) sb.append("\n  severity: ").append(r.severity());
-            if (r.description() != null) sb.append("\n  description: ").append(r.description().replace("\n", " "));
-            if (r.rationale() != null) sb.append("\n  rationale: ").append(r.rationale().replace("\n", " "));
-            sb.append("\n");
-        }
-        return sb.toString().stripTrailing();
-    }
-
     // === compact formatters (interview menu) ===
 
     private static String formatRulesCompact(List<Rule> rules) {
-        if (rules == null || rules.isEmpty()) return "(no rules configured)";
+        if (rules == null || rules.isEmpty()) return "(no rules apply to this task)";
         var sb = new StringBuilder();
         for (var r : rules) {
             sb.append("- rule:").append(r.id());
@@ -1000,7 +1055,7 @@ public class TaskAdvisorService {
     }
 
     private static String formatSkillsCompact(List<Skill> skills) {
-        if (skills == null || skills.isEmpty()) return "(no skills configured)";
+        if (skills == null || skills.isEmpty()) return "(no skills apply to this task)";
         var sb = new StringBuilder();
         for (var s : skills) {
             sb.append("- skill:").append(s.id());
@@ -1011,7 +1066,7 @@ public class TaskAdvisorService {
     }
 
     private static String formatChecklistsCompact(List<Checklist> checklists) {
-        if (checklists == null || checklists.isEmpty()) return "(no checklists configured)";
+        if (checklists == null || checklists.isEmpty()) return "(no checklists apply to this task)";
         var sb = new StringBuilder();
         for (var c : checklists) {
             sb.append("- checklist:").append(c.id());

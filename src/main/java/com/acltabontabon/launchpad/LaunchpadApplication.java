@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad;
 
 import com.acltabontabon.launchpad.config.LaunchpadAiProperties;
+import com.acltabontabon.launchpad.config.LaunchpadTaskProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -22,7 +23,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
  */
 @SpringBootApplication
 @EnableAsync
-@EnableConfigurationProperties(LaunchpadAiProperties.class)
+@EnableConfigurationProperties({LaunchpadAiProperties.class, LaunchpadTaskProperties.class})
 @ImportRuntimeHints(LaunchpadRuntimeHints.class)
 public class LaunchpadApplication {
 

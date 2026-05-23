@@ -57,7 +57,7 @@ public class FacetPromptComposer {
         }
         log.info("FacetPromptComposer: composed '{}/{}' from base + {}",
             frameworkSlug, kind.name().toLowerCase(), loaded);
-        return sections.length() == 0 ? base : insertBeforeContext(base, sections.toString());
+        return sections.isEmpty() ? base : insertBeforeContext(base, sections.toString());
     }
 
     /** Returns the body of the section matching {@code kind}, or null if absent. */

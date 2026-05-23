@@ -678,4 +678,174 @@ class TaskAdvisorServiceTest {
     private static Rule ruleWithDesc(String id, String severity, String description) {
         return new Rule(id, "Title-" + id, severity, description, null, Scope.empty(), null, null);
     }
+
+    // === isNearDuplicateOfPrior false-positive guards ===
+
+    @Nested
+    class IsNearDuplicateOfPriorFalsePositives {
+
+        @Test
+        void differentAuthAnglesNotDuplicate() {
+            // Both touch "auth" but probe different aspects - the rate threshold
+            // should NOT collapse them. The Jaccard threshold must let related
+            // questions through.
+            var history = List.of(
+                new TaskTurn("Should the endpoint require authentication?", "yes"));
+            var newQ = "How long should auth tokens stay valid before refresh?";
+            assertThat(TaskAdvisorService.isNearDuplicateOfPrior(newQ, history)).isFalse();
+        }
+
+        @Test
+        void unrelatedShortQuestionNotDuplicate() {
+            var history = List.of(
+                new TaskTurn("Which authentication scheme applies?", "team default"));
+            assertThat(TaskAdvisorService.isNearDuplicateOfPrior(
+                "What error envelope should responses use?", history)).isFalse();
+        }
+    }
+
+    // === discoveryHintFor ===
+
+    @Nested
+    class DiscoveryHintFor {
+
+        @Test
+        void restTaskGetsResourceShape() {
+            var hint = TaskAdvisorService.discoveryHintFor("add a new endpoint", List.of());
+            assertThat(hint).contains("resource").contains("HTTP method");
+        }
+
+        @Test
+        void debuggingTaskGetsSymptomShape() {
+            var hint = TaskAdvisorService.discoveryHintFor("fix bug in login flow", List.of());
+            assertThat(hint).contains("symptom").contains("reproduction");
+        }
+
+        @Test
+        void refactoringTaskGetsMotivationShape() {
+            var hint = TaskAdvisorService.discoveryHintFor("refactor the user service", List.of());
+            assertThat(hint).contains("motivation").contains("behaviour-preservation");
+        }
+
+        @Test
+        void uiTaskGetsScreenShape() {
+            var hint = TaskAdvisorService.discoveryHintFor("add a new screen for settings", List.of());
+            assertThat(hint).contains("screen").contains("user action");
+        }
+
+        @Test
+        void aiTaskGetsModelShape() {
+            var hint = TaskAdvisorService.discoveryHintFor("add llm prompt template", List.of());
+            assertThat(hint).contains("model role").contains("prompt inputs");
+        }
+
+        @Test
+        void unclassifiedTaskGetsNeutralFallback() {
+            var hint = TaskAdvisorService.discoveryHintFor("xyz", List.of());
+            assertThat(hint).contains("purpose").contains("inputs").contains("outputs");
+        }
+    }
+
+    // === selectRelevantStandards ===
+
+    @Nested
+    class SelectRelevantStandards {
+
+        @Test
+        void filtersByFrameworkScope() {
+            var spring = new StackProfile("Java", "Maven", "Spring Boot", List.of());
+            var matching = new Rule("a", "A", "must", "x", null,
+                new Scope(List.of(), List.of("spring-boot"), List.of(), List.of(), List.of()), null, null);
+            var nonMatching = new Rule("b", "B", "must", "x", null,
+                new Scope(List.of(), List.of("next"), List.of(), List.of(), List.of()), null, null);
+
+            var result = TaskAdvisorService.selectRelevantStandards(
+                spring, "create endpoint", List.of(),
+                List.of(matching, nonMatching), List.of(), List.of());
+            assertThat(result.rules()).extracting(Rule::id).containsExactly("a");
+        }
+
+        @Test
+        void dropsRulesUserOptedOutOf() {
+            var spring = new StackProfile("Java", "Maven", "Spring Boot", List.of());
+            var auth = mustRule("auth", "Authentication Required by Default");
+            var rate = mustRule("rate", "Documented Rate-Limit Policy");
+            var history = List.of(
+                new TaskTurn("What authentication is required by default?", "no need"));
+
+            var result = TaskAdvisorService.selectRelevantStandards(
+                spring, "create endpoint", history,
+                List.of(auth, rate), List.of(), List.of());
+            assertThat(result.rules()).extracting(Rule::id).contains("rate").doesNotContain("auth");
+        }
+
+        @Test
+        void nullInputListsHandledGracefully() {
+            var spring = new StackProfile("Java", "Maven", "Spring Boot", List.of());
+            var result = TaskAdvisorService.selectRelevantStandards(
+                spring, "task", List.of(), null, null, null);
+            assertThat(result.rules()).isEmpty();
+            assertThat(result.skills()).isEmpty();
+            assertThat(result.checklists()).isEmpty();
+        }
+    }
+
+    // === assembleFinalMarkdown null-task safety ===
+
+    @Nested
+    class AssembleFinalMarkdownNullSafety {
+
+        @Test
+        void nullUserTaskDoesNotCrash() {
+            var sections = new FinalizeSections("My goal.", "- accept", "");
+            var doc = TaskAdvisorService.assembleFinalMarkdown(
+                null, sections, List.of(), List.of(), List.of());
+            assertThat(doc).contains("## Goal").contains("My goal.");
+        }
+
+        @Test
+        void nullUserTaskAndEmptyGoalProducesSentinel() {
+            var sections = new FinalizeSections("", "- accept", "");
+            var doc = TaskAdvisorService.assembleFinalMarkdown(
+                null, sections, List.of(), List.of(), List.of());
+            assertThat(doc).contains("(no goal provided)");
+        }
+    }
+
+    // === PromptParts ===
+
+    @Nested
+    class PromptPartsSplit {
+
+        @Test
+        void splitsOnMarkers() {
+            var template = "===SYSTEM===\nsystem text\n===USER===\nuser text";
+            var parts = TaskAdvisorService.PromptParts.split(template);
+            assertThat(parts.system()).isEqualTo("system text");
+            assertThat(parts.user()).isEqualTo("user text");
+        }
+
+        @Test
+        void emptySystemWhenMarkersMissing() {
+            var template = "just a body with no markers";
+            var parts = TaskAdvisorService.PromptParts.split(template);
+            assertThat(parts.system()).isEmpty();
+            assertThat(parts.user()).isEqualTo(template);
+        }
+
+        @Test
+        void emptySystemWhenOnlyUserMarker() {
+            var template = "===USER===\nbody";
+            var parts = TaskAdvisorService.PromptParts.split(template);
+            assertThat(parts.system()).isEmpty();
+            assertThat(parts.user()).isEqualTo(template);
+        }
+
+        @Test
+        void handlesNull() {
+            var parts = TaskAdvisorService.PromptParts.split(null);
+            assertThat(parts.system()).isEmpty();
+            assertThat(parts.user()).isEmpty();
+        }
+    }
 }

@@ -3,7 +3,10 @@ package com.acltabontabon.launchpad.tui;
 import com.acltabontabon.launchpad.ai.LlmProvider;
 import com.acltabontabon.launchpad.ai.LlmProviderStatus;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
+import com.acltabontabon.launchpad.standards.Checklist;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
+import com.acltabontabon.launchpad.standards.Rule;
+import com.acltabontabon.launchpad.standards.Skill;
 import com.acltabontabon.launchpad.task.TaskTurn;
 import com.acltabontabon.launchpad.template.ContextTarget;
 import com.acltabontabon.launchpad.template.FilePlan;
@@ -199,6 +202,17 @@ public class AppState {
     // so the user knows the call isn't hung. 0 = no op active.
     public volatile long taskOpStartedAtMs = 0L;
 
+    // Standards loaded + scope-filtered once at TASK_INTERVIEW entry, then reused
+    // across every interview turn and the finalize call. Avoids re-reading the YAML
+    // pack and re-running scopeApplies on every dispatch. Set to null on task reset
+    // so the next task re-derives them against the new task description.
+    public volatile List<Rule> taskRelevantRules = null;
+    public volatile List<Skill> taskRelevantSkills = null;
+    public volatile List<Checklist> taskRelevantChecklists = null;
+    // Warnings from the synthesised-prompt validator. Surfaced by TaskResultView
+    // as a banner so a malformed model output is visible to the user, not silent.
+    public volatile List<String> taskWarnings = new ArrayList<>();
+
     // Scan-trigger latch consulted by LaunchpadRunner.triggerScanIfNeeded(). The
     // runner sets it true when a scan starts so subsequent ticks don't fire a
     // second one; flows that need a fresh scan (e.g. starting /init or /new-task
@@ -255,10 +269,15 @@ public class AppState {
         taskReadyToFinalize = false;
         taskError = false;
         taskOpStartedAtMs = 0L;
+        taskRelevantRules = null;
+        taskRelevantSkills = null;
+        taskRelevantChecklists = null;
+        taskWarnings = new ArrayList<>();
     }
 
     /** Clear per-task state but keep the scanned ProjectContext so a follow-up task
-     *  on the same project doesn't trigger a re-scan. */
+     *  on the same project doesn't trigger a re-scan. The cached standards lists
+     *  are cleared too because the new task's tags / opt-outs will be different. */
     public void resetTaskForReuse() {
         taskDescription = "";
         taskCurrentAnswer = "";
@@ -272,6 +291,10 @@ public class AppState {
         taskReadyToFinalize = false;
         taskError = false;
         taskOpStartedAtMs = 0L;
+        taskRelevantRules = null;
+        taskRelevantSkills = null;
+        taskRelevantChecklists = null;
+        taskWarnings = new ArrayList<>();
     }
 
     public void nextReviewFile() {

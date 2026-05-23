@@ -76,8 +76,13 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final StandardsLoader standardsLoader;
     private final LaunchpadSettings settings;
 
-    private static final DateTimeFormatter TASK_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
-    private static final int TASK_RUNAWAY_CAP = 15;
+    // Millisecond precision so two tasks created within the same second still
+    // produce distinct filenames - per-second resolution caused later writes to
+    // overwrite earlier ones when a user submitted twice quickly.
+    private static final DateTimeFormatter TASK_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
+    // Cap on interview rounds. Real interviews converge in 3-5 rounds; 8 leaves
+    // headroom for stack-specific paths while still cutting off runaway models.
+    private static final int TASK_RUNAWAY_CAP = 8;
 
     public LaunchpadRunner(
         WelcomeView welcomeView,
@@ -323,14 +328,15 @@ public class LaunchpadRunner implements ApplicationRunner {
         CompletableFuture.runAsync(() -> {
             try {
                 var projectRoot = Path.of(state.projectPath).toAbsolutePath();
-                var rules = standardsLoader.loadRules(projectRoot);
-                var skills = standardsLoader.loadSkills(projectRoot);
-                var checklists = standardsLoader.loadChecklists(projectRoot);
+                ensureStandardsCached(projectRoot);
+                var rules = state.taskRelevantRules;
+                var skills = state.taskRelevantSkills;
+                var checklists = state.taskRelevantChecklists;
 
-                // If the project has no standards configured at all, there's nothing
+                // If the project has no relevant standards at all, there's nothing
                 // worth interviewing about - skip straight to finalize. The synthesised
-                // prompt will still benefit from the codebase scan in the Constraints /
-                // Context sections; the interview is purely a standards-driven phase.
+                // prompt will still benefit from the codebase scan in the Constraints
+                // section; the interview is purely a standards-driven phase.
                 boolean noStandards = rules.isEmpty() && skills.isEmpty() && checklists.isEmpty();
                 if (noStandards && state.taskRound == 0) {
                     state.taskStatus.set("no engineering standards found - skipping interview");
@@ -366,6 +372,32 @@ public class LaunchpadRunner implements ApplicationRunner {
     }
 
     /**
+     * Load + scope-filter standards once per task and stash the result on
+     * AppState. Subsequent interview turns reuse the cached lists instead of
+     * re-reading the YAML pack and re-filtering on every dispatch. Re-derived
+     * when the cache is null - that happens on task entry, after resetTaskFlow,
+     * or after resetTaskForReuse (because new task tags / opt-outs change the
+     * scope-filter result).
+     */
+    private void ensureStandardsCached(Path projectRoot) {
+        if (state.taskRelevantRules != null
+                && state.taskRelevantSkills != null
+                && state.taskRelevantChecklists != null) {
+            return;
+        }
+        var allRules = standardsLoader.loadRules(projectRoot);
+        var allSkills = standardsLoader.loadSkills(projectRoot);
+        var allChecklists = standardsLoader.loadChecklists(projectRoot);
+        var stack = state.taskProjectContext == null ? null : state.taskProjectContext.stack();
+        var relevant = TaskAdvisorService.selectRelevantStandards(
+            stack, state.taskDescription, state.taskTurns.get(),
+            allRules, allSkills, allChecklists);
+        state.taskRelevantRules = relevant.rules();
+        state.taskRelevantSkills = relevant.skills();
+        state.taskRelevantChecklists = relevant.checklists();
+    }
+
+    /**
      * Fires when the user lands on the result screen with no synthesised prompt yet.
      * Runs finalize() on a background thread and writes the result to
      * {@code <projectRoot>/.launchpad/tasks/<ts>-<slug>.md}.
@@ -378,26 +410,23 @@ public class LaunchpadRunner implements ApplicationRunner {
         state.taskThinking = true;
         state.taskError = false;
         state.taskOpStartedAtMs = System.currentTimeMillis();
-        state.taskStatus.set("streaming the synthesised prompt from the local model...");
+        state.taskStatus.set("synthesising the prompt from the local model...");
 
         CompletableFuture.runAsync(() -> {
             try {
                 var projectRoot = Path.of(state.projectPath).toAbsolutePath();
-                var rules = standardsLoader.loadRules(projectRoot);
-                var skills = standardsLoader.loadSkills(projectRoot);
-                var checklists = standardsLoader.loadChecklists(projectRoot);
-                // Stream chunks into taskFinalPrompt so the user watches it materialise
-                // rather than staring at a spinner for 30+ seconds.
-                var prompt = taskAdvisor.finalize(
+                ensureStandardsCached(projectRoot);
+                var result = taskAdvisor.synthesise(
                     state.taskProjectContext,
                     state.taskDescription,
                     state.taskTurns.get(),
-                    rules,
-                    skills,
-                    checklists,
-                    chunk -> state.taskFinalPrompt = state.taskFinalPrompt + chunk
+                    state.taskRelevantRules,
+                    state.taskRelevantSkills,
+                    state.taskRelevantChecklists,
+                    chunk -> state.taskFinalPrompt = chunk.isEmpty() ? "" : chunk
                 );
-                state.taskFinalPrompt = prompt;
+                state.taskFinalPrompt = result.markdown();
+                state.taskWarnings = new java.util.ArrayList<>(result.warnings());
 
                 // Save the prompt to disk + an `<!-- interview -->` appendix that
                 // captures the raw task description and Q/A transcript so the
@@ -409,7 +438,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                     var ts = LocalDateTime.now().format(TASK_TS_FMT);
                     var slug = slugify(state.taskDescription);
                     var file = taskDir.resolve(ts + "-" + slug + ".md");
-                    var fullContent = prompt + "\n\n" + renderInterviewAppendix(
+                    var fullContent = result.markdown() + "\n\n" + renderInterviewAppendix(
                         state.taskDescription, state.taskTurns.get(), ts);
                     Files.writeString(file, fullContent);
                     state.taskSavedPath = file.toString();
@@ -419,7 +448,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                 }
             } catch (Exception e) {
                 state.taskError = true;
-                state.taskStatus.set(buildLlmErrorMessage("finalize", e));
+                state.taskStatus.set(buildLlmErrorMessage("synthesise", e));
                 // Clear any partial stream so the user sees the error instead of a half-prompt.
                 state.taskFinalPrompt = "";
             } finally {
