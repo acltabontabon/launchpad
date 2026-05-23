@@ -283,7 +283,9 @@ public class WelcomeView implements View {
         // a small margin for the cursor symbol and breathing room. Clamp to the
         // available area so narrow terminals still render gracefully.
         int gap = 3;
-        int desiredInner = idWidth + gap + maxDescLen + 4;
+        // Margin accounts for: card borders (2), left/right inner padding (2),
+        // and the "▶ " highlight symbol rendered inside the list (2).
+        int desiredInner = idWidth + gap + maxDescLen + 8;
         int headerWidth = ("commands  " + Icons.SEP + "  " + state.commandInput).length() + 6;
         int cardWidth = Math.min(area.width() - 4, Math.max(desiredInner, headerWidth));
         int cardHeight = Math.min(area.height(), Math.max(6, filtered.size() + 4));

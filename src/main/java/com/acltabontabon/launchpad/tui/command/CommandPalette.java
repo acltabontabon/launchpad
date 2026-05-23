@@ -20,7 +20,7 @@ public final class CommandPalette {
         new Command(
             "/new-task",
             "New task",
-            "Interview-driven prompt builder for Claude / Cursor (local AI)",
+            "Interview-driven prompt builder for Claude / Cursor",
             (state, runner) -> {
                 state.resetTaskFlow();
                 state.resetScanLatch();
@@ -31,7 +31,7 @@ public final class CommandPalette {
         new Command(
             "/projects",
             "Projects",
-            "Browse projects you have used Launchpad on (MCP-addressable by name)",
+            "Browse projects you have used Launchpad on",
             (state, runner) -> {
                 state.projectsCursorIndex = 0;
                 state.projectsFlashMessage = "";
