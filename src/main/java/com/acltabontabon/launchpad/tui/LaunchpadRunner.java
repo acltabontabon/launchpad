@@ -9,6 +9,8 @@ import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import com.acltabontabon.launchpad.task.TaskAdvisorService;
 import com.acltabontabon.launchpad.template.ContextTemplateEngine;
+import com.acltabontabon.launchpad.tui.components.Footer;
+import com.acltabontabon.launchpad.tui.components.Header;
 import com.acltabontabon.launchpad.tui.view.ProjectSelectView;
 import com.acltabontabon.launchpad.tui.view.ReviewView;
 import com.acltabontabon.launchpad.tui.view.ScanProgressView;
@@ -21,19 +23,12 @@ import com.acltabontabon.launchpad.tui.view.View;
 import com.acltabontabon.launchpad.tui.view.WelcomeView;
 import dev.tamboui.layout.Constraint;
 import dev.tamboui.layout.Layout;
-import dev.tamboui.layout.Rect;
-import dev.tamboui.style.Color;
-import dev.tamboui.style.Style;
 import dev.tamboui.terminal.Frame;
-import dev.tamboui.text.Line;
-import dev.tamboui.text.Span;
-import dev.tamboui.text.Text;
 import dev.tamboui.tui.TuiConfig;
 import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.TickEvent;
-import dev.tamboui.widgets.paragraph.Paragraph;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -47,9 +42,6 @@ import java.util.concurrent.CompletableFuture;
 
 @Component
 public class LaunchpadRunner implements ApplicationRunner {
-
-    private static final String BRAND = "◆ Launchpad";
-    private static final String USER_HOME = System.getProperty("user.home");
 
     private final AppState state = new AppState();
 
@@ -162,59 +154,15 @@ public class LaunchpadRunner implements ApplicationRunner {
         var rows = Layout.vertical()
             .constraints(
                 Constraint.length(1),   // header
-                Constraint.min(0)       // content
+                Constraint.min(0),      // content
+                Constraint.length(1)    // footer
             )
             .split(area);
 
-        renderHeader(frame, rows.get(0));
-        currentView().render(frame, rows.get(1), state);
-    }
-
-    private void renderHeader(Frame frame, Rect area) {
-        var spans = new java.util.ArrayList<Span>();
-        spans.add(Span.styled(" " + BRAND, Style.create().fg(Color.CYAN).bold()));
-
-        var screen = state.currentScreen;
-        var dim = Style.create().fg(Color.DARK_GRAY);
-
-        if (screen == AppState.Screen.WELCOME) {
-            spans.add(Span.styled("  ·  ", dim));
-            spans.add(Span.styled("AI Context Generator", dim));
-        } else if (screen == AppState.Screen.SETTINGS) {
-            spans.add(Span.styled("  ·  ", dim));
-            spans.add(Span.styled("Settings", Style.create().fg(Color.YELLOW).bold()));
-        } else {
-            if (!state.projectPath.isEmpty()) {
-                spans.add(Span.styled("  ·  ", dim));
-                spans.add(Span.styled(shortenPath(state.projectPath), Style.create().fg(Color.WHITE)));
-            }
-            // Badge tracks the currently-typed path (ProjectSelectView recomputes on every
-            // keystroke), so it's safe to render on PROJECT_SELECT as live typing feedback.
-            if (state.launchpadAware) {
-                spans.add(Span.styled("  ", dim));
-                spans.add(Span.styled("✨ launchpad-aware", Style.create().fg(Color.YELLOW).bold()));
-            }
-            // Target arrow stays committed-only (chosen on TARGET_SELECT onward).
-            if (screen != AppState.Screen.PROJECT_SELECT) {
-                spans.add(Span.styled("  ·  ", dim));
-                spans.add(Span.styled("→ " + state.selectedTarget.displayName,
-                    Style.create().fg(Color.GREEN)));
-            }
-        }
-
-        var header = Paragraph.builder()
-            .text(Text.from(Line.from(spans.toArray(new Span[0]))))
-            .build();
-        frame.renderWidget(header, area);
-    }
-
-    private static String shortenPath(String path) {
-        var display = path.startsWith(USER_HOME) ? "~" + path.substring(USER_HOME.length()) : path;
-        if (display.length() <= 40) return display;
-        // Keep the last segment + ellipsis prefix for long paths.
-        var slash = display.lastIndexOf('/');
-        var tail = slash >= 0 ? display.substring(slash) : display;
-        return "…" + tail;
+        Header.render(frame, rows.get(0), state);
+        var view = currentView();
+        view.render(frame, rows.get(1), state);
+        Footer.render(frame, rows.get(2), state, view.footerHints(state));
     }
 
     // ── Background health check ────────────────────────────────────────────────

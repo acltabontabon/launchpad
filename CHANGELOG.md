@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Project Select now shows a live "matches" card listing every sibling directory that prefix-matches the unfinished path segment. `↑↓` browses, `tab` accepts the highlighted match (or the ghost suggestion when the list is hidden), `enter` continues.
+- Review screen now shows a green `SAVED` chip on files successfully written this session, distinguishing them from the planned `NEW` / `MERGE` / `OVERWRITE` chips.
+- Welcome screen surfaces a yellow tip beneath the Ollama model line when the configured model is in a known hallucination-prone bucket (llama3.2, phi3.5:mini, sub-3B variants), recommending `qwen2.5-coder` or `llama3.1:8b`.
+
+### Changed
+- `ContextGeneratorService` now appends a file-list grounding block + anti-invention rule to every prompt so the model can only reference paths from the scanned project; works against all existing templates without modification.
+- `OutputValidator` now strips hallucinated file references from the winning content (bullet lines containing fake paths are dropped, inline references are replaced with "an unrelated file"); records a `stripped N hallucinated file references` warning so the action stays visible.
+- Redesign TUI with the Cosmic Console visual system: shared `Theme` / `Styles` / `Icons` tokens, rounded `Card` panels with internal padding, persistent `Header` + `Footer` chrome on every screen, a horizontal `Stepper` on the scan screen, a refined compact wordmark + signature glyph hero on Welcome, a modal command palette that swaps the system-check card on Welcome rather than overlaying it, and a duotone indigo + amber RGB palette in place of the ANSI-16 fallbacks.
+- Review warning strip now stacks all warnings as bulleted lines (capped at 4 with a `+N more` footer) instead of showing only the first one.
+- Review save status renders in a dedicated top strip instead of overlapping the file list's bottom border; the `d` (diff) toggle now renders NEW files as an all-add diff instead of silently no-op-ing.
+- Header breadcrumb separators no longer duplicate (e.g. `Review · 26 files generated` instead of `Review · · · 26 files generated`).
 
 ## [0.2.0] - 2026-05-23
 ### Added

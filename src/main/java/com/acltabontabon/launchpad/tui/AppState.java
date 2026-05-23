@@ -11,7 +11,9 @@ import com.acltabontabon.launchpad.template.GeneratedFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -59,6 +61,10 @@ public class AppState {
     // User selections
     public volatile String projectPath = System.getProperty("user.home");
     public volatile String pathSuggestion = PathAutocomplete.suggest(projectPath);
+    // Live candidate list shown beneath the path input. Updated on every keystroke
+    // that mutates projectPath. Cursor is clamped to the current list size on render.
+    public volatile List<String> pathMatches = PathAutocomplete.matches(projectPath);
+    public volatile int pathMatchesCursor = 0;
     public volatile ContextTarget selectedTarget = ContextTarget.CLAUDE;
     public volatile int targetCursorIndex = 0;
 
@@ -104,6 +110,11 @@ public class AppState {
     // Review screen: save-all feedback (shown in the action bar)
     public final AtomicReference<String> reviewSaveStatus = new AtomicReference<>("");
     public volatile boolean reviewSaveError = false;
+    // Indices into generatedFiles whose plan was applied to disk successfully in
+    // this session. ReviewView swaps these rows' chips from the planned action
+    // (NEW / MERGE / OVERWRITE) to a "SAVED" pill so the user sees post-save
+    // truth instead of stale intent.
+    public volatile Set<Integer> savedFileIndices = new HashSet<>();
 
     // Text input cursor for path input
     public volatile int inputCursorPos = 0;
@@ -163,6 +174,11 @@ public class AppState {
         streamedChunks.set(0);
         streamTail.set("");
         scanMessage.set("Waiting...");
+        // A fresh scan produces a fresh file list; the previous run's "SAVED"
+        // chips no longer apply to whatever GeneratedFile sits at index N now.
+        savedFileIndices = new HashSet<>();
+        reviewSaveStatus.set("");
+        reviewSaveError = false;
     }
 
     public void resetTaskFlow() {

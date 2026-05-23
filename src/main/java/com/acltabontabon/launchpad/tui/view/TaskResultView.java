@@ -1,10 +1,16 @@
 package com.acltabontabon.launchpad.tui.view;
 
 import com.acltabontabon.launchpad.tui.AppState;
+import com.acltabontabon.launchpad.tui.components.Card;
+import com.acltabontabon.launchpad.tui.components.KeyHint;
+import com.acltabontabon.launchpad.tui.components.Spinner;
+import com.acltabontabon.launchpad.tui.components.StatusDot;
+import com.acltabontabon.launchpad.tui.theme.Icons;
+import com.acltabontabon.launchpad.tui.theme.Styles;
+import com.acltabontabon.launchpad.tui.theme.Theme;
 import dev.tamboui.layout.Constraint;
 import dev.tamboui.layout.Layout;
 import dev.tamboui.layout.Rect;
-import dev.tamboui.style.Color;
 import dev.tamboui.style.Overflow;
 import dev.tamboui.style.Style;
 import dev.tamboui.terminal.Frame;
@@ -15,109 +21,102 @@ import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
-import dev.tamboui.widgets.block.Block;
-import dev.tamboui.widgets.block.Borders;
-import dev.tamboui.widgets.block.Title;
 import dev.tamboui.widgets.paragraph.Paragraph;
-import java.util.ArrayList;
 import org.springframework.stereotype.Component;
 
-/**
- * Displays the synthesised prompt and the on-disk path it was saved to. The actual
- * finalize call and file write happen on a background thread, kicked off by
- * LaunchpadRunner when the screen becomes active.
- */
+import java.util.ArrayList;
+import java.util.List;
+
 @Component
 public class TaskResultView implements View {
 
-    private static final String[] SPINNER = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
-    private int spinnerFrame = 0;
-    // Scroll offset (line index of the top of the visible prompt window).
+    private long tick = 0;
     private int scrollOffset = 0;
 
     @Override
     public void render(Frame frame, Rect area, AppState state) {
-        spinnerFrame = (spinnerFrame + 1) % SPINNER.length;
+        tick++;
 
         var rows = Layout.vertical()
             .constraints(
-                Constraint.length(3),  // header / status
-                Constraint.min(0),     // prompt body
-                Constraint.length(1)   // hints
+                Constraint.length(1),  // top spacer
+                Constraint.length(1),  // header status line
+                Constraint.length(1),  // gap
+                Constraint.min(0)      // prompt card
             )
             .split(area);
 
-        renderHeader(frame, rows.get(0), state);
-        renderPrompt(frame, rows.get(1), state);
-        renderHints(frame, rows.get(2), state);
+        renderHeader(frame, rows.get(1), state);
+        renderPrompt(frame, rows.get(3), state);
     }
 
     private void renderHeader(Frame frame, Rect area, AppState state) {
-        Style style;
-        String text;
+        Line line;
         if (state.taskError) {
-            style = Style.create().fg(Color.RED).bold();
-            text = " ✗  " + (state.taskStatus.get().isEmpty() ? "Something went wrong." : state.taskStatus.get());
+            line = Line.from(
+                Span.styled("  " + Icons.CROSS + "  ", Styles.error()),
+                Span.styled(state.taskStatus.get().isEmpty()
+                    ? "Something went wrong." : state.taskStatus.get(), Styles.error())
+            );
         } else if (state.taskThinking) {
-            style = Style.create().fg(Color.CYAN);
-            var status = state.taskStatus.get().isEmpty() ? "Synthesising prompt..." : state.taskStatus.get();
-            text = " " + SPINNER[spinnerFrame] + "  " + status + elapsedSuffix(state);
+            var msg = state.taskStatus.get().isEmpty() ? "synthesising prompt..." : state.taskStatus.get();
+            line = Line.from(
+                Span.styled("  " + Spinner.frame(tick / 3) + "  ", Styles.focus()),
+                Span.styled(msg + elapsedSuffix(state), Styles.caption())
+            );
         } else if (state.taskFinalPrompt.isEmpty()) {
-            // Not thinking, not errored, but no content yet - briefly between trigger and stream start.
-            style = Style.create().fg(Color.DARK_GRAY);
-            text = " ⋯  Preparing...";
+            line = Line.from(
+                Span.styled("  ⋯  ", Styles.dim()),
+                Span.styled("Preparing...", Styles.dim())
+            );
         } else if (state.taskSavedPath.isEmpty()) {
-            style = Style.create().fg(Color.YELLOW);
-            text = " ●  Prompt ready (saving to disk...)";
+            line = StatusDot.of(StatusDot.State.WORKING, "Prompt ready (saving to disk...)");
         } else {
-            style = Style.create().fg(Color.GREEN).bold();
-            text = " ✓  Saved to " + state.taskSavedPath;
+            line = StatusDot.of(StatusDot.State.OK, "Saved to", state.taskSavedPath);
         }
-
-        var header = Paragraph.builder()
-            .text(Text.styled(text, style))
-            .block(Block.builder()
-                .borders(Borders.BOTTOM_ONLY)
-                .borderStyle(Style.create().fg(Color.DARK_GRAY))
-                .build())
-            .build();
-        frame.renderWidget(header, area);
+        var widget = Paragraph.builder().text(Text.from(line)).build();
+        frame.renderWidget(widget, area);
     }
 
     private static String elapsedSuffix(AppState state) {
         long start = state.taskOpStartedAtMs;
         if (start == 0L) return "";
         long sec = (System.currentTimeMillis() - start) / 1000;
-        return sec <= 0 ? "" : "  (" + sec + "s)";
+        return sec <= 0 ? "" : "  " + Icons.SEP + "  " + sec + "s";
     }
 
     private void renderPrompt(Frame frame, Rect area, AppState state) {
+        String bottom = state.taskSavedPath.isEmpty()
+            ? ("press y to copy  " + Icons.SEP + "  n for new task")
+            : (state.taskSavedPath + "  " + Icons.SEP + "  press n for new task");
+        var card = Card.of("refined prompt").bottomTitle(bottom).active(true).build();
+        var inner = card.inner(area);
+        frame.renderWidget(card, area);
+
         var content = state.taskFinalPrompt;
         var lines = new ArrayList<Line>();
 
         if (state.taskError) {
-            lines.add(Line.from(Span.styled("",  Style.create())));
-            lines.add(Line.from(Span.styled("   " + state.taskStatus.get(),
-                Style.create().fg(Color.RED))));
-            lines.add(Line.from(Span.styled("",  Style.create())));
-            lines.add(Line.from(Span.styled("   Press q to return to Welcome, then try again.",
-                Style.create().fg(Color.DARK_GRAY).italic())));
+            lines.add(blank());
+            lines.add(Line.from(Span.styled("  " + state.taskStatus.get(), Styles.error())));
+            lines.add(blank());
+            lines.add(Line.from(Span.styled("  Press q to return to Welcome, then try again.",
+                Styles.caption())));
         } else if (content.isEmpty()) {
-            lines.add(Line.from(Span.styled("",  Style.create())));
-            lines.add(Line.from(Span.styled("   " + SPINNER[spinnerFrame] + "  waiting for the local model to synthesise the final prompt..."
-                    + elapsedSuffix(state),
-                Style.create().fg(Color.DARK_GRAY).italic())));
+            lines.add(blank());
+            lines.add(Line.from(
+                Span.styled("  " + Spinner.frame(tick / 3) + "  ", Styles.focus()),
+                Span.styled("waiting for the local model to synthesise the final prompt..."
+                    + elapsedSuffix(state), Styles.caption())
+            ));
         } else {
             for (var raw : content.split("\n", -1)) {
-                lines.add(Line.from(Span.styled(" " + raw, styleForMarkdownLine(raw))));
+                lines.add(Line.from(Span.styled(raw, styleForMarkdownLine(raw))));
             }
         }
 
-        // Clamp scroll so we don't run past the end.
-        int viewportRows = Math.max(1, area.height() - 2);  // minus borders
+        int viewportRows = Math.max(1, inner.height());
         int maxScroll = Math.max(0, lines.size() - viewportRows);
-        // While the prompt is still streaming, force-pin to the tail so the user
-        // watches new tokens appear instead of staring at the now-stale top.
         if (state.taskThinking) scrollOffset = maxScroll;
         if (scrollOffset > maxScroll) scrollOffset = maxScroll;
 
@@ -125,42 +124,35 @@ public class TaskResultView implements View {
         int end = Math.min(lines.size(), scrollOffset + viewportRows);
         for (int i = scrollOffset; i < end; i++) visible.add(lines.get(i));
 
-        var box = Paragraph.builder()
-            .text(Text.from(visible))
+        var widget = Paragraph.builder()
+            .text(Text.from(visible.toArray(new Line[0])))
             .overflow(Overflow.WRAP_WORD)
-            .block(Block.builder()
-                .title(Title.from(Span.styled(" Refined Prompt ",
-                    Style.create().fg(Color.GREEN))))
-                .borders(Borders.ALL)
-                .borderStyle(Style.create().fg(Color.GREEN))
-                .build())
             .build();
-        frame.renderWidget(box, area);
+        frame.renderWidget(widget, inner);
+    }
+
+    private static Line blank() {
+        return Line.from(Span.styled("", Style.create()));
     }
 
     private static Style styleForMarkdownLine(String line) {
         var trimmed = line.stripLeading();
-        if (trimmed.startsWith("## ")) return Style.create().fg(Color.YELLOW).bold();
-        if (trimmed.startsWith("### ")) return Style.create().fg(Color.CYAN).bold();
-        if (trimmed.startsWith("_Why:_")) return Style.create().fg(Color.DARK_GRAY).italic();
-        return Style.create().fg(Color.WHITE);
+        if (trimmed.startsWith("# ")) return Style.create().fg(Theme.brand).bold();
+        if (trimmed.startsWith("## ")) return Style.create().fg(Theme.fuel).bold();
+        if (trimmed.startsWith("### ")) return Style.create().fg(Theme.brand).bold();
+        if (trimmed.startsWith("_Why:_")) return Styles.caption();
+        return Styles.body();
     }
 
-    private void renderHints(Frame frame, Rect area, AppState state) {
+    @Override
+    public List<KeyHint> footerHints(AppState state) {
         boolean ready = !state.taskFinalPrompt.isEmpty();
-        var hints = Paragraph.builder()
-            .text(Text.from(Line.from(
-                Span.styled(" ↑↓ ", Style.create().fg(Color.BLACK).bg(Color.YELLOW)),
-                Span.styled(" scroll  ", Style.create().fg(Color.DARK_GRAY)),
-                Span.styled(" PgUp/PgDn ", Style.create().fg(Color.BLACK).bg(Color.YELLOW)),
-                Span.styled(" jump  ", Style.create().fg(Color.DARK_GRAY)),
-                Span.styled(" n ", Style.create().fg(Color.BLACK).bg(ready ? Color.YELLOW : Color.DARK_GRAY)),
-                Span.styled(" new task  ", Style.create().fg(Color.DARK_GRAY)),
-                Span.styled(" q ", Style.create().fg(Color.BLACK).bg(Color.DARK_GRAY)),
-                Span.styled(" welcome", Style.create().fg(Color.DARK_GRAY))
-            )))
-            .build();
-        frame.renderWidget(hints, area);
+        var hints = new ArrayList<KeyHint>();
+        hints.add(new KeyHint("↑↓", "scroll"));
+        hints.add(new KeyHint("pgup/pgdn", "jump"));
+        if (ready) hints.add(new KeyHint("n", "new task"));
+        hints.add(new KeyHint("q", "welcome"));
+        return hints;
     }
 
     @Override
@@ -168,9 +160,6 @@ public class TaskResultView implements View {
         if (!(event instanceof KeyEvent key)) return false;
 
         if (key.isKey(KeyCode.UP)) {
-            // Bigger step than 1 since the prompt body uses word-wrap and each
-            // "line" in our list may visually span 2-3 terminal rows. Single-line
-            // steps look like nothing happened.
             scrollOffset = Math.max(0, scrollOffset - 3);
             return true;
         }
@@ -191,7 +180,7 @@ public class TaskResultView implements View {
             return true;
         }
         if (key.isKey(KeyCode.END)) {
-            scrollOffset = Integer.MAX_VALUE;  // render-side clamp will pin to maxScroll
+            scrollOffset = Integer.MAX_VALUE;
             return true;
         }
         if (key.isChar('q')) {

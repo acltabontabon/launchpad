@@ -5,11 +5,18 @@ import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.tui.AppState;
 import com.acltabontabon.launchpad.tui.command.CommandPalette;
+import com.acltabontabon.launchpad.tui.components.Brand;
+import com.acltabontabon.launchpad.tui.components.Card;
+import com.acltabontabon.launchpad.tui.components.KeyHint;
+import com.acltabontabon.launchpad.tui.components.Spinner;
+import com.acltabontabon.launchpad.tui.components.StatusDot;
+import com.acltabontabon.launchpad.tui.theme.Icons;
+import com.acltabontabon.launchpad.tui.theme.Styles;
+import com.acltabontabon.launchpad.tui.theme.Theme;
 import dev.tamboui.layout.Alignment;
 import dev.tamboui.layout.Constraint;
 import dev.tamboui.layout.Layout;
 import dev.tamboui.layout.Rect;
-import dev.tamboui.style.Color;
 import dev.tamboui.style.Style;
 import dev.tamboui.terminal.Frame;
 import dev.tamboui.text.Line;
@@ -20,147 +27,246 @@ import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.TickEvent;
-import dev.tamboui.widgets.block.Block;
-import dev.tamboui.widgets.block.Borders;
 import dev.tamboui.widgets.list.ListItem;
 import dev.tamboui.widgets.list.ListState;
 import dev.tamboui.widgets.list.ListWidget;
 import dev.tamboui.widgets.paragraph.Paragraph;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 public class WelcomeView implements View {
 
-    private static final String[] SPINNER = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
-    private int spinnerFrame = 0;
-
     private final LaunchpadSettings settings;
+    private long tick = 0;
 
     public WelcomeView(LaunchpadSettings settings) {
         this.settings = settings;
     }
 
-    private static final String ASCII_LOGO = """
-         ██╗      █████╗ ██╗   ██╗███╗   ██╗ ██████╗██╗  ██╗██████╗  █████╗ ██████╗
-         ██║     ██╔══██╗██║   ██║████╗  ██║██╔════╝██║  ██║██╔══██╗██╔══██╗██╔══██╗
-         ██║     ███████║██║   ██║██╔██╗ ██║██║     ███████║██████╔╝███████║██║  ██║
-         ██║     ██╔══██║██║   ██║██║╚██╗██║██║     ██╔══██║██╔═══╝ ██╔══██║██║  ██║
-         ███████╗██║  ██║╚██████╔╝██║ ╚████║╚██████╗██║  ██║██║     ██║  ██║██████╔╝
-         ╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚═════╝
-        """;
-
     @Override
     public void render(Frame frame, Rect area, AppState state) {
-        spinnerFrame = (spinnerFrame + 1) % SPINNER.length;
+        tick++;
 
-        var outerBlock = Block.builder()
-            .borders(Borders.ALL)
-            .borderStyle(Style.create().fg(Color.CYAN))
-            .build();
+        boolean paletteOpen = state.commandInput.startsWith("/");
 
-        var innerArea = outerBlock.inner(area);
-        frame.renderWidget(outerBlock, area);
-
+        // Vertical rhythm: spacer · hero · gap · main panel · gap · prompt · spacer
+        // The "main panel" slot holds either the system-check card or, when the
+        // user is typing a slash command, the palette card - never both. This
+        // makes the palette a real modal swap, not a z-stacked overlay.
         var rows = Layout.vertical()
             .constraints(
-                Constraint.length(7),   // logo
-                Constraint.length(2),   // tagline
-                Constraint.length(1),   // ollama status badge
-                Constraint.length(1),   // ollama target (baseUrl · model)
-                Constraint.length(1),   // ollama status hint
-                Constraint.length(1),   // remote standards badge
-                Constraint.min(0),      // flexible spacer
-                Constraint.length(1),   // version
-                Constraint.length(4),   // command dropdown (rendered only when palette is open)
-                Constraint.length(1),   // flash message
-                Constraint.length(1),   // input bar
-                Constraint.length(1)    // bottom hint
+                Constraint.length(2),    // top spacer
+                Constraint.length(5),    // brand hero
+                Constraint.length(2),    // gap
+                Constraint.min(0),       // main panel (system check OR palette)
+                Constraint.length(1),    // CTA line
+                Constraint.length(1)     // bottom spacer
             )
-            .split(innerArea);
+            .split(area);
 
-        var logo = Paragraph.builder()
-            .text(Text.from(ASCII_LOGO))
-            .style(Style.create().fg(Color.CYAN).bold())
+        var hero = Paragraph.builder()
+            .text(Brand.hero())
             .alignment(Alignment.CENTER)
             .build();
-        frame.renderWidget(logo, rows.get(0));
+        frame.renderWidget(hero, rows.get(1));
 
-        var tagline = Paragraph.builder()
-            .text(Text.styled(
-                "AI Context Generator  ·  Save tokens. Ship faster.",
-                Style.create().fg(Color.WHITE)
-            ))
-            .alignment(Alignment.CENTER)
-            .build();
-        frame.renderWidget(tagline, rows.get(1));
+        if (paletteOpen) {
+            renderPalette(frame, rows.get(3), state);
+        } else {
+            renderSystemCheck(frame, rows.get(3), state);
+            renderCta(frame, rows.get(4), state);
+        }
+    }
 
-        var status = state.ollamaStatus.get();
-
-        var badge = Paragraph.builder()
-            .text(Text.styled(badgeText(status), badgeStyle(status)))
-            .alignment(Alignment.CENTER)
-            .build();
-        frame.renderWidget(badge, rows.get(2));
-
+    private void renderSystemCheck(Frame frame, Rect area, AppState state) {
         var snap = settings.snapshot();
-        var target = Paragraph.builder()
-            .text(Text.styled(
-                snap.baseUrl() + "  ·  " + snap.model(),
-                Style.create().fg(Color.DARK_GRAY)
-            ))
-            .alignment(Alignment.CENTER)
-            .build();
-        frame.renderWidget(target, rows.get(3));
+        var ollama = state.ollamaStatus.get();
+        var standards = state.remoteStandardsStatus.get();
 
-        if (status.hint() != null) {
-            var hint = Paragraph.builder()
-                .text(Text.styled(status.hint(), Style.create().fg(Color.DARK_GRAY)))
-                .alignment(Alignment.CENTER)
-                .build();
-            frame.renderWidget(hint, rows.get(4));
+        var lines = new java.util.ArrayList<Line>();
+        lines.add(blank());
+
+        // Ollama row
+        lines.add(ollamaLine(ollama));
+        lines.add(detailLine(snap.baseUrl() + "  " + Icons.SEP + "  " + snap.model()));
+        if (ollama.hint() != null && !ollama.hint().isBlank()) {
+            lines.add(detailLine(ollama.hint()));
+        }
+        var modelTip = modelTip(snap.model());
+        if (modelTip != null) {
+            lines.add(tipLine(modelTip));
+        }
+        lines.add(blank());
+
+        // Standards row
+        lines.add(standardsLine(standards));
+        var standardsDetail = standardsDetail(standards);
+        if (standardsDetail != null) {
+            lines.add(detailLine(standardsDetail));
         }
 
-        renderStandardsBadge(frame, rows.get(5), state.remoteStandardsStatus.get());
+        // Size the card to fit its actual content (+2 for top/bottom border,
+        // +1 trailing breathing row) but never exceed the available area.
+        int cardWidth = Math.min(area.width() - 4, 64);
+        int cardHeight = Math.min(area.height(), lines.size() + 3);
+        int leftPad = Math.max(0, (area.width() - cardWidth) / 2);
+        var cardArea = new Rect(area.x() + leftPad, area.y(), cardWidth, cardHeight);
 
-        var version = Paragraph.builder()
-            .text(Text.styled(
-                "v0.1.0  ·  Powered by Ollama + Spring AI",
-                Style.create().fg(Color.DARK_GRAY)
-            ))
-            .alignment(Alignment.CENTER)
+        var card = Card.of("system check").build();
+        var inner = card.inner(cardArea);
+        frame.renderWidget(card, cardArea);
+
+        var body = Paragraph.builder()
+            .text(Text.from(lines.toArray(new Line[0])))
             .build();
-        frame.renderWidget(version, rows.get(7));
-
-        renderDropdown(frame, rows.get(8), state);
-        renderFlash(frame, rows.get(9), state);
-        renderInputBar(frame, rows.get(10), state);
-        renderBottomHint(frame, rows.get(11), state);
+        frame.renderWidget(body, inner);
     }
 
-    private void renderStandardsBadge(Frame frame, Rect area, RemoteStandardsStatus status) {
-        var glyph = status.state() == RemoteStandardsStatus.State.CHECKING ? SPINNER[spinnerFrame] : "●";
-        var badge = Paragraph.builder()
-            .text(Text.styled(glyph + "  " + status.message(), standardsBadgeStyle(status)))
-            .alignment(Alignment.CENTER)
-            .build();
-        frame.renderWidget(badge, area);
+    private Line ollamaLine(OllamaStatus s) {
+        var state = switch (s.state()) {
+            case READY -> StatusDot.State.OK;
+            case CHECKING -> StatusDot.State.WORKING;
+            case DAEMON_DOWN, MODEL_MISSING -> StatusDot.State.ERROR;
+        };
+        var label = switch (s.state()) {
+            case READY -> "ready";
+            case CHECKING -> "checking " + Spinner.frame(tick / 4);
+            case DAEMON_DOWN -> "daemon unreachable";
+            case MODEL_MISSING -> "model missing";
+        };
+        return Line.from(
+            Span.styled("  ", Style.create()),
+            Span.styled(state.glyph, Style.create().fg(state.color).bold()),
+            Span.styled("  Ollama       ", Style.create().fg(Theme.text).bold()),
+            Span.styled(label, Style.create().fg(state.color))
+        );
     }
 
-    private static Style standardsBadgeStyle(RemoteStandardsStatus status) {
-        return switch (status.state()) {
-            case CHECKING, NOT_CONFIGURED -> Style.create().fg(Color.DARK_GRAY);
-            case SYNCED                   -> Style.create().fg(Color.GREEN);
-            case STALE_CACHE              -> Style.create().fg(Color.YELLOW);
-            case ERROR                    -> Style.create().fg(Color.RED);
+    private Line standardsLine(RemoteStandardsStatus s) {
+        var st = switch (s.state()) {
+            case SYNCED -> StatusDot.State.OK;
+            case CHECKING -> StatusDot.State.WORKING;
+            case STALE_CACHE -> StatusDot.State.WARN;
+            case NOT_CONFIGURED -> StatusDot.State.IDLE;
+            case ERROR -> StatusDot.State.ERROR;
+        };
+        var label = switch (s.state()) {
+            case SYNCED -> "synced";
+            case CHECKING -> "checking " + Spinner.frame(tick / 4);
+            case STALE_CACHE -> "offline cache";
+            case NOT_CONFIGURED -> "not configured";
+            case ERROR -> "fetch failed";
+        };
+        return Line.from(
+            Span.styled("  ", Style.create()),
+            Span.styled(st.glyph, Style.create().fg(st.color).bold()),
+            Span.styled("  Standards    ", Style.create().fg(Theme.text).bold()),
+            Span.styled(label, Style.create().fg(st.color))
+        );
+    }
+
+    private static String standardsDetail(RemoteStandardsStatus s) {
+        // The badge already says SYNCED / OFFLINE / etc. - the detail line should
+        // add NEW information (the why, the cache reason) and not repeat the badge.
+        return switch (s.state()) {
+            case SYNCED -> null;
+            case STALE_CACHE, ERROR -> s.hint() != null && !s.hint().isBlank() ? s.hint() : null;
+            case NOT_CONFIGURED -> "set a remote standards URL in /settings to share across projects";
+            case CHECKING -> null;
         };
     }
 
-    private static void renderDropdown(Frame frame, Rect area, AppState state) {
+    private static Line detailLine(String text) {
+        return Line.from(
+            Span.styled("       ", Style.create()),
+            Span.styled(text, Styles.caption())
+        );
+    }
+
+    /**
+     * Soft recommendation when the configured model is in a known
+     * hallucination-prone bucket. Returns null when the model is fine or
+     * we don't recognise it (silent default - no false positives).
+     */
+    static String modelTip(String model) {
+        if (model == null) return null;
+        var m = model.toLowerCase();
+        // Llama 3.2 default = 3B; phi3/3.5 mini and any sub-4B coder model
+        // routinely invents Spring-Boot-shaped files on framework projects.
+        boolean prone = m.startsWith("llama3.2")
+            || m.contains("phi3.5:mini") || m.contains("phi3:mini")
+            || m.contains("gemma2:2b") || m.contains("gemma:2b")
+            || m.endsWith(":1b") || m.endsWith(":2b") || m.endsWith(":3b");
+        if (!prone) return null;
+        return "tip: " + Icons.WARN + " this model hallucinates file names · try qwen2.5-coder or llama3.1:8b";
+    }
+
+    private static Line tipLine(String text) {
+        return Line.from(
+            Span.styled("       ", Style.create()),
+            Span.styled(text, Style.create().fg(Theme.caution).italic())
+        );
+    }
+
+    private static Line blank() {
+        return Line.from(Span.styled("", Style.create()));
+    }
+
+    private void renderCta(Frame frame, Rect area, AppState state) {
+        if (!state.welcomeFlashMessage.isEmpty()) {
+            var flash = Paragraph.builder()
+                .text(Text.styled(state.welcomeFlashMessage, Styles.warning()))
+                .alignment(Alignment.CENTER)
+                .build();
+            frame.renderWidget(flash, area);
+            return;
+        }
+        var prompt = Line.from(
+            Span.styled("Press  ", Styles.muted()),
+            Span.styled(" / ", Style.create().fg(Theme.ignition).bg(Theme.surface).bold()),
+            Span.styled("  to begin", Styles.muted())
+        );
+        var paragraph = Paragraph.builder()
+            .text(Text.from(prompt))
+            .alignment(Alignment.CENTER)
+            .build();
+        frame.renderWidget(paragraph, area);
+    }
+
+    private void renderPalette(Frame frame, Rect area, AppState state) {
         var filtered = CommandPalette.filter(state.commandInput);
-        if (filtered.isEmpty()) return;
+
+        // Match the system-check card geometry exactly so swapping in feels stable.
+        int cardWidth = Math.min(area.width() - 4, 64);
+        int cardHeight = Math.min(area.height(), Math.max(6, filtered.size() + 4));
+        int leftPad = Math.max(0, (area.width() - cardWidth) / 2);
+        var cardArea = new Rect(area.x() + leftPad, area.y(), cardWidth, cardHeight);
+
+        var card = Card.of("commands  " + Icons.SEP + "  " + state.commandInput)
+            .active(true)
+            .build();
+        var inner = card.inner(cardArea);
+        frame.renderWidget(card, cardArea);
+
+        if (filtered.isEmpty()) {
+            var empty = Paragraph.builder()
+                .text(Text.from(Line.from(Span.styled(
+                    "  no matching commands",
+                    Styles.caption()))))
+                .build();
+            frame.renderWidget(empty, inner);
+            return;
+        }
 
         var items = filtered.stream()
-            .map(c -> ListItem.from(" " + c.id() + "  -  " + c.description()))
+            .map(c -> ListItem.from(
+                Line.from(
+                    Span.styled(c.id(), Style.create().fg(Theme.text).bold()),
+                    Span.styled("    " + c.description(), Styles.muted())
+                )
+            ))
             .toArray(ListItem[]::new);
 
         var listState = new ListState();
@@ -168,59 +274,27 @@ public class WelcomeView implements View {
 
         var list = ListWidget.builder()
             .items(items)
-            .highlightStyle(Style.create().fg(Color.BLACK).bg(Color.YELLOW).bold())
-            .highlightSymbol("▶ ")
+            .highlightStyle(Styles.listHighlight())
+            .highlightSymbol(Icons.CURSOR + " ")
             .build();
-
-        frame.renderStatefulWidget(list, area, listState);
+        frame.renderStatefulWidget(list, inner, listState);
     }
 
-    private static void renderFlash(Frame frame, Rect area, AppState state) {
-        if (state.welcomeFlashMessage.isEmpty()) return;
-        var flash = Paragraph.builder()
-            .text(Text.styled(state.welcomeFlashMessage, Style.create().fg(Color.YELLOW).bold()))
-            .alignment(Alignment.CENTER)
-            .build();
-        frame.renderWidget(flash, area);
-    }
-
-    private static void renderInputBar(Frame frame, Rect area, AppState state) {
-        var inputLine = Line.from(
-            Span.styled(" > ", Style.create().fg(Color.YELLOW).bold()),
-            Span.styled(state.commandInput, Style.create().fg(Color.WHITE)),
-            Span.styled("█", Style.create().fg(Color.WHITE))
+    @Override
+    public List<KeyHint> footerHints(AppState state) {
+        if (state.commandInput.startsWith("/")) {
+            return List.of(
+                new KeyHint("↑↓", "navigate"),
+                new KeyHint("enter", "run"),
+                new KeyHint("esc", "clear")
+            );
+        }
+        return List.of(
+            new KeyHint("/", "commands"),
+            new KeyHint("r", "refresh"),
+            new KeyHint("?", "help"),
+            new KeyHint("q", "quit")
         );
-        var input = Paragraph.builder()
-            .text(Text.from(inputLine))
-            .alignment(Alignment.CENTER)
-            .build();
-        frame.renderWidget(input, area);
-    }
-
-    private static void renderBottomHint(Frame frame, Rect area, AppState state) {
-        var paletteOpen = state.commandInput.startsWith("/");
-        var hintText = paletteOpen
-            ? "↑↓ navigate  ·  enter run  ·  esc clear"
-            : "type / to see commands";
-        var hint = Paragraph.builder()
-            .text(Text.styled(hintText, Style.create().fg(Color.DARK_GRAY)))
-            .alignment(Alignment.CENTER)
-            .build();
-        frame.renderWidget(hint, area);
-    }
-
-    private String badgeText(OllamaStatus status) {
-        var glyph = status.state() == OllamaStatus.State.CHECKING ? SPINNER[spinnerFrame] : "●";
-        return glyph + "  " + status.message();
-    }
-
-    private static Style badgeStyle(OllamaStatus status) {
-        return switch (status.state()) {
-            case CHECKING      -> Style.create().fg(Color.DARK_GRAY);
-            case READY         -> Style.create().fg(Color.GREEN).bold();
-            case DAEMON_DOWN,
-                 MODEL_MISSING -> Style.create().fg(Color.RED).bold();
-        };
     }
 
     @Override
@@ -234,9 +308,6 @@ public class WelcomeView implements View {
             if (filtered.isEmpty()) return true;
             int idx = Math.min(state.commandCursorIndex, filtered.size() - 1);
             var cmd = filtered.get(idx);
-            // The /settings flow needs the current Ollama config seeded into the
-            // input fields before SettingsView takes over - same pattern the old
-            // 'c' shortcut used.
             if (cmd.id().equals("/settings")) {
                 var snap = settings.snapshot();
                 state.settingsBaseUrlInput = snap.baseUrl();

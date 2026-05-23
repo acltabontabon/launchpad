@@ -2,10 +2,14 @@ package com.acltabontabon.launchpad.tui.view;
 
 import com.acltabontabon.launchpad.template.ContextTarget;
 import com.acltabontabon.launchpad.tui.AppState;
+import com.acltabontabon.launchpad.tui.components.Card;
+import com.acltabontabon.launchpad.tui.components.KeyHint;
+import com.acltabontabon.launchpad.tui.theme.Icons;
+import com.acltabontabon.launchpad.tui.theme.Styles;
+import com.acltabontabon.launchpad.tui.theme.Theme;
 import dev.tamboui.layout.Constraint;
 import dev.tamboui.layout.Layout;
 import dev.tamboui.layout.Rect;
-import dev.tamboui.style.Color;
 import dev.tamboui.style.Style;
 import dev.tamboui.terminal.Frame;
 import dev.tamboui.text.Line;
@@ -15,11 +19,10 @@ import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
-import dev.tamboui.widgets.block.Block;
-import dev.tamboui.widgets.block.Borders;
-import dev.tamboui.widgets.block.Title;
 import dev.tamboui.widgets.paragraph.Paragraph;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Component
 public class TargetSelectView implements View {
@@ -30,74 +33,132 @@ public class TargetSelectView implements View {
     public void render(Frame frame, Rect area, AppState state) {
         var rows = Layout.vertical()
             .constraints(
-                Constraint.min(0),      // target cards
-                Constraint.length(1)    // hints
+                Constraint.length(2),  // top spacer
+                Constraint.length(3),  // heading + subhead
+                Constraint.min(0)      // cards
             )
             .split(area);
 
-        // Target cards split horizontally
+        renderHeading(frame, rows.get(1));
+
+        // Two cards side-by-side with a 1-col gutter for breathing room.
         var cols = Layout.horizontal()
             .constraints(
+                Constraint.length(2),         // left margin
                 Constraint.percentage(50),
-                Constraint.percentage(50)
+                Constraint.length(2),         // gutter
+                Constraint.percentage(50),
+                Constraint.length(2)          // right margin
             )
-            .split(rows.get(0));
+            .split(rows.get(2));
 
-        for (int i = 0; i < TARGETS.length; i++) {
-            renderTargetCard(frame, cols.get(i), TARGETS[i], i == state.targetCursorIndex);
-        }
+        renderTargetCard(frame, cols.get(1), TARGETS[0], state.targetCursorIndex == 0);
+        renderTargetCard(frame, cols.get(3), TARGETS[1], state.targetCursorIndex == 1);
+    }
 
-        // Hints
-        var hints = Paragraph.builder()
-            .text(Text.from(Line.from(
-                Span.styled(" ←→ ", Style.create().fg(Color.BLACK).bg(Color.YELLOW)),
-                Span.styled(" navigate  ", Style.create().fg(Color.DARK_GRAY)),
-                Span.styled(" Enter ", Style.create().fg(Color.BLACK).bg(Color.YELLOW)),
-                Span.styled(" select  ", Style.create().fg(Color.DARK_GRAY)),
-                Span.styled(" Esc ", Style.create().fg(Color.BLACK).bg(Color.DARK_GRAY)),
-                Span.styled(" back", Style.create().fg(Color.DARK_GRAY))
-            )))
-            .build();
-        frame.renderWidget(hints, rows.get(1));
+    private void renderHeading(Frame frame, Rect area) {
+        var content = Text.from(
+            Line.from(Span.styled("  Pick a target", Styles.heading())),
+            Line.from(Span.styled(
+                "  Choose which AI assistant the context files will be generated for.",
+                Styles.caption()))
+        );
+        var paragraph = Paragraph.builder().text(content).build();
+        frame.renderWidget(paragraph, area);
     }
 
     private void renderTargetCard(Frame frame, Rect area, ContextTarget target, boolean selected) {
-        var borderStyle = selected
-            ? Style.create().fg(Color.YELLOW)
-            : Style.create().fg(Color.DARK_GRAY);
+        var card = Card.of(target.displayName).active(selected).build();
+        var inner = card.inner(area);
+        frame.renderWidget(card, area);
 
-        var titleStyle = selected
-            ? Style.create().fg(Color.YELLOW).bold()
-            : Style.create().fg(Color.WHITE);
+        var lines = new java.util.ArrayList<Line>();
+        lines.add(Line.from(Span.styled("", Style.create())));
 
-        var block = Block.builder()
-            .title(Title.from(Span.styled(" " + target.displayName + " ", titleStyle)))
-            .borders(Borders.ALL)
-            .borderStyle(borderStyle)
-            .build();
+        // Selection marker line
+        if (selected) {
+            lines.add(Line.from(
+                Span.styled(Icons.BRAND, Style.create().fg(Theme.fuel).bold()),
+                Span.styled("  Selected", Style.create().fg(Theme.fuel).bold())
+            ));
+        } else {
+            lines.add(Line.from(
+                Span.styled(Icons.DOT_EMPTY, Styles.dim()),
+                Span.styled("  " + Icons.SWAP + " to switch", Styles.dim())
+            ));
+        }
+        lines.add(Line.from(Span.styled("", Style.create())));
 
-        var inner = block.inner(area);
-        frame.renderWidget(block, area);
+        // Description
+        for (var descLine : wrap(target.description, inner.width())) {
+            lines.add(Line.from(Span.styled(descLine,
+                selected ? Styles.body() : Styles.muted())));
+        }
+        lines.add(Line.from(Span.styled("", Style.create())));
 
-        // Selected indicator + output file list
-        var selectedMark = selected ? "◉  Selected\n\n" : "○  Press ←→ to select\n\n";
-        var content = selectedMark + target.description + "\n\n" + outputFileList(target);
-
-        var contentStyle = selected
-            ? Style.create().fg(Color.WHITE)
-            : Style.create().fg(Color.DARK_GRAY);
+        // Outputs label
+        lines.add(Line.from(Span.styled("Outputs", Styles.subheading())));
+        for (var path : outputPaths(target)) {
+            lines.add(Line.from(
+                Span.styled(" " + Icons.BULLET + "  ", Styles.dim()),
+                Span.styled(path, selected ? Styles.code() : Styles.muted())
+            ));
+        }
 
         var paragraph = Paragraph.builder()
-            .text(Text.styled(content, contentStyle))
+            .text(Text.from(lines.toArray(new Line[0])))
             .build();
         frame.renderWidget(paragraph, inner);
     }
 
-    private String outputFileList(ContextTarget target) {
+    private static List<String> outputPaths(ContextTarget target) {
         return switch (target) {
-            case CLAUDE -> "Generates:\n  · CLAUDE.md\n  · .ai/index.md\n  · .ai/engineering-rules.md\n  · .ai/stack.md\n  · .claude/skills/<id>/SKILL.md (one per skill)";
-            case CURSOR -> "Generates:\n  · .cursorrules\n  · .cursor/rules/engineering.mdc\n  · .cursor/rules/skills.mdc\n  · .cursor/rules/stack.mdc";
+            case CLAUDE -> List.of(
+                "CLAUDE.md",
+                ".ai/index.md",
+                ".ai/engineering-rules.md",
+                ".ai/stack.md",
+                ".claude/skills/<id>/SKILL.md"
+            );
+            case CURSOR -> List.of(
+                ".cursorrules",
+                ".cursor/rules/engineering.mdc",
+                ".cursor/rules/skills.mdc",
+                ".cursor/rules/stack.mdc"
+            );
         };
+    }
+
+    private static List<String> wrap(String text, int width) {
+        var out = new java.util.ArrayList<String>();
+        if (text == null || text.isEmpty()) {
+            out.add("");
+            return out;
+        }
+        var words = text.split("\\s+");
+        var current = new StringBuilder();
+        for (var w : words) {
+            if (current.length() == 0) {
+                current.append(w);
+            } else if (current.length() + 1 + w.length() <= width) {
+                current.append(' ').append(w);
+            } else {
+                out.add(current.toString());
+                current.setLength(0);
+                current.append(w);
+            }
+        }
+        if (current.length() > 0) out.add(current.toString());
+        return out;
+    }
+
+    @Override
+    public List<KeyHint> footerHints(AppState state) {
+        return List.of(
+            new KeyHint(Icons.SWAP, "switch"),
+            new KeyHint("enter", "select"),
+            new KeyHint("esc", "back")
+        );
     }
 
     @Override

@@ -2,10 +2,14 @@ package com.acltabontabon.launchpad.tui.view;
 
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.tui.AppState;
+import com.acltabontabon.launchpad.tui.components.Card;
+import com.acltabontabon.launchpad.tui.components.KeyHint;
+import com.acltabontabon.launchpad.tui.theme.Icons;
+import com.acltabontabon.launchpad.tui.theme.Styles;
+import com.acltabontabon.launchpad.tui.theme.Theme;
 import dev.tamboui.layout.Constraint;
 import dev.tamboui.layout.Layout;
 import dev.tamboui.layout.Rect;
-import dev.tamboui.style.Color;
 import dev.tamboui.style.Style;
 import dev.tamboui.terminal.Frame;
 import dev.tamboui.text.Line;
@@ -15,12 +19,11 @@ import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
-import dev.tamboui.widgets.block.Block;
-import dev.tamboui.widgets.block.Borders;
-import dev.tamboui.widgets.block.Title;
 import dev.tamboui.widgets.paragraph.Paragraph;
-import java.io.IOException;
 import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.util.List;
 
 @Component
 public class SettingsView implements View {
@@ -40,68 +43,81 @@ public class SettingsView implements View {
     public void render(Frame frame, Rect area, AppState state) {
         var rows = Layout.vertical()
             .constraints(
-                Constraint.length(3),  // title
-                Constraint.length(3),  // base URL input
-                Constraint.length(3),  // model input
-                Constraint.length(3),  // remote standards URL input
-                Constraint.length(2),  // error message
-                Constraint.min(0),     // spacer
-                Constraint.length(1)   // hints
+                Constraint.length(2),  // top spacer
+                Constraint.length(3),  // heading + subhead
+                Constraint.length(3),  // base URL
+                Constraint.length(1),  // gap
+                Constraint.length(3),  // model
+                Constraint.length(1),  // gap
+                Constraint.length(3),  // remote standards
+                Constraint.length(2),  // error
+                Constraint.min(0)
             )
             .split(area);
 
-        var title = Paragraph.builder()
-            .text(Text.styled(" Launchpad Configuration", Style.create().fg(Color.CYAN).bold()))
-            .block(Block.builder()
-                .borders(Borders.BOTTOM_ONLY)
-                .borderStyle(Style.create().fg(Color.DARK_GRAY))
-                .build())
-            .build();
-        frame.renderWidget(title, rows.get(0));
+        renderHeading(frame, rows.get(1));
 
-        renderField(frame, rows.get(1), " Ollama Base URL ",
+        renderField(frame, rows.get(2), "Ollama base URL",
             state.settingsBaseUrlInput, state.settingsFocusIndex == FIELD_BASE_URL);
-        renderField(frame, rows.get(2), " Ollama Model ",
+        renderField(frame, rows.get(4), "Model",
             state.settingsModelInput, state.settingsFocusIndex == FIELD_MODEL);
-        renderField(frame, rows.get(3), " Remote Standards Git URL (optional) ",
+        renderField(frame, rows.get(6), "Remote standards URL  " + Icons.SEP + "  optional",
             state.settingsRemoteStandardsUrlInput, state.settingsFocusIndex == FIELD_REMOTE_STANDARDS);
 
         if (state.settingsErrorMessage != null) {
-            var error = Paragraph.builder()
-                .text(Text.styled(" ✗  " + state.settingsErrorMessage, Style.create().fg(Color.RED)))
-                .build();
-            frame.renderWidget(error, rows.get(4));
+            renderError(frame, rows.get(7), state.settingsErrorMessage);
         }
+    }
 
-        var hints = Paragraph.builder()
-            .text(Text.from(Line.from(
-                Span.styled(" Tab ", Style.create().fg(Color.BLACK).bg(Color.YELLOW)),
-                Span.styled(" switch field  ", Style.create().fg(Color.DARK_GRAY)),
-                Span.styled(" Enter ", Style.create().fg(Color.BLACK).bg(Color.YELLOW)),
-                Span.styled(" save  ", Style.create().fg(Color.DARK_GRAY)),
-                Span.styled(" Esc ", Style.create().fg(Color.BLACK).bg(Color.DARK_GRAY)),
-                Span.styled(" cancel", Style.create().fg(Color.DARK_GRAY))
-            )))
-            .build();
-        frame.renderWidget(hints, rows.get(6));
+    private static void renderHeading(Frame frame, Rect area) {
+        var content = Text.from(
+            Line.from(Span.styled("  Configure Launchpad", Styles.heading())),
+            Line.from(Span.styled(
+                "  These persist to ~/.launchpad/config.properties.",
+                Styles.caption()))
+        );
+        var p = Paragraph.builder().text(content).build();
+        frame.renderWidget(p, area);
     }
 
     private static void renderField(Frame frame, Rect area, String label, String value, boolean focused) {
-        var borderColor = focused ? Color.YELLOW : Color.DARK_GRAY;
-        var labelColor = focused ? Color.YELLOW : Color.DARK_GRAY;
-        var display = focused ? value + "█" : value;
+        var fieldArea = centeredColumn(area, 80);
+        var card = Card.of(label).active(focused).build();
+        var inner = card.inner(fieldArea);
+        frame.renderWidget(card, fieldArea);
 
-        var block = Block.builder()
-            .title(Title.from(Span.styled(label, Style.create().fg(labelColor))))
-            .borders(Borders.ALL)
-            .borderStyle(Style.create().fg(borderColor))
-            .build();
+        var line = focused
+            ? Line.from(
+                Span.styled(value, Styles.code()),
+                Span.styled("█", Style.create().fg(Theme.fuel)))
+            : Line.from(Span.styled(value, Styles.muted()));
+        var p = Paragraph.builder().text(Text.from(line)).build();
+        frame.renderWidget(p, inner);
+    }
 
-        var paragraph = Paragraph.builder()
-            .text(Text.styled(" " + display, Style.create().fg(Color.WHITE)))
-            .block(block)
-            .build();
-        frame.renderWidget(paragraph, area);
+    private static void renderError(Frame frame, Rect area, String message) {
+        var fieldArea = centeredColumn(area, 80);
+        var line = Line.from(
+            Span.styled(" " + Icons.CROSS + "  ", Styles.error()),
+            Span.styled(message, Styles.error())
+        );
+        var p = Paragraph.builder().text(Text.from(line)).build();
+        frame.renderWidget(p, fieldArea);
+    }
+
+    private static Rect centeredColumn(Rect area, int width) {
+        int w = Math.min(area.width() - 4, width);
+        int left = Math.max(2, (area.width() - w) / 2);
+        return new Rect(area.x() + left, area.y(), w, area.height());
+    }
+
+    @Override
+    public List<KeyHint> footerHints(AppState state) {
+        return List.of(
+            new KeyHint("tab", "next field"),
+            new KeyHint("enter", "save"),
+            new KeyHint("esc", "cancel")
+        );
     }
 
     @Override

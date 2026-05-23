@@ -20,7 +20,10 @@ import org.springframework.stereotype.Service;
 public class ContextGeneratorService {
 
     private static final List<String> SUMMARY_HEADINGS = List.of("## Overview", "## Architecture");
-    private static final List<String> SKILLS_HEADINGS = List.of("## Skill:");
+    // Loose substring check: matches "## Skill: <name>" but also "## Skill <name>",
+    // "## Skill\n", or any other variation where the model drops the colon. The
+    // downstream ContextTemplateEngine handles further parsing.
+    private static final List<String> SKILLS_HEADINGS = List.of("## Skill");
     private static final List<String> CURSOR_HEADINGS = List.of("-");  // bullet list; weaker check
 
     private static final String RETRY_REMINDER = """
@@ -29,6 +32,13 @@ public class ContextGeneratorService {
         format. Output ONLY the requested sections with the EXACT headings shown
         above. Do not include preamble, apologies, or commentary.
         """;
+
+    /**
+     * Cap on how many file paths we list to the model. Each file averages ~50
+     * chars including the leading "- " and "\n"; 120 lines is ~6KB which fits
+     * comfortably even alongside an 8KB context block on a 4K-token model.
+     */
+    private static final int MAX_GROUNDING_FILES = 120;
 
     private final ChatClient chatClient;
     private final PromptSelector promptSelector;
@@ -67,25 +77,45 @@ public class ContextGeneratorService {
         boolean retriable = warnings.stream().anyMatch(w ->
             w.startsWith("empty") || w.startsWith("suspiciously short") || w.startsWith("missing required"));
         if (!retriable) {
-            return warnings.isEmpty()
-                ? GeneratedOutput.ok(first, false)
-                : GeneratedOutput.withWarnings(first, warnings, false);
+            return finalize(first, warnings, ctx, false);
         }
         // One retry with reminder appended.
         String retried = streamPrompt(template + RETRY_REMINDER, ctx, onChunk);
         var retryWarnings = validator.validate(retried, ctx, requiredHeadings);
-        // Keep whichever output is longer (heuristic: more content = more useful).
         String winning = retried.length() > first.length() ? retried : first;
         var winningWarnings = winning == retried ? retryWarnings : warnings;
-        return winningWarnings.isEmpty()
-            ? GeneratedOutput.ok(winning, true)
-            : GeneratedOutput.withWarnings(winning, winningWarnings, true);
+        return finalize(winning, winningWarnings, ctx, true);
+    }
+
+    /**
+     * Strips hallucinated file references from the winning content before it
+     * ships, and records how many were removed as a separate warning. The
+     * underlying "model referenced X" warnings are kept too so the user can see
+     * what the model invented.
+     */
+    private GeneratedOutput finalize(String content, List<String> warnings, ProjectContext ctx, boolean retried) {
+        var clean = validator.cleanHallucinations(content, ctx);
+        var combined = new java.util.ArrayList<>(warnings);
+        if (clean.strippedCount() > 0) {
+            combined.add("stripped " + clean.strippedCount()
+                + " hallucinated file reference"
+                + (clean.strippedCount() == 1 ? "" : "s")
+                + " from the output");
+        }
+        return combined.isEmpty()
+            ? GeneratedOutput.ok(clean.content(), retried)
+            : GeneratedOutput.withWarnings(clean.content(), combined, retried);
     }
 
     private String streamPrompt(String template, ProjectContext ctx, Consumer<String> onChunk) {
+        // Append a file-list grounding block to every prompt. Small models stuck
+        // on framework boilerplate routinely invent files (LoanApplicationController,
+        // UserService, ...). Giving them an explicit closed set + an anti-invention
+        // rule dramatically reduces those hallucinations.
+        var grounded = template + buildFileGrounding(ctx);
         var sb = new StringBuilder();
         chatClient.prompt()
-            .user(u -> u.text(template).param("context", ctx.toPromptString()))
+            .user(u -> u.text(grounded).param("context", ctx.toPromptString()))
             .stream()
             .content()
             .doOnNext(chunk -> {
@@ -93,6 +123,35 @@ public class ContextGeneratorService {
                 onChunk.accept(chunk);
             })
             .blockLast();
+        return sb.toString();
+    }
+
+    /**
+     * Builds the file-list grounding suffix appended to every prompt. The model
+     * sees this as part of the user message after the original template body.
+     */
+    static String buildFileGrounding(ProjectContext ctx) {
+        var files = ctx.sourceFiles();
+        if (files == null || files.isEmpty()) return "";
+
+        int cap = Math.min(files.size(), MAX_GROUNDING_FILES);
+        var sb = new StringBuilder();
+        sb.append("\n\n---\n");
+        sb.append("FILES IN THIS PROJECT (the ONLY files you may reference in backticks):\n");
+        for (int i = 0; i < cap; i++) {
+            sb.append("- ").append(files.get(i)).append('\n');
+        }
+        if (files.size() > cap) {
+            sb.append("- ... and ").append(files.size() - cap).append(" more files\n");
+        }
+        sb.append("\n");
+        sb.append("STRICT RULES for file references in your output:\n");
+        sb.append("- When citing a file in backticks, use ONLY paths from the list above.\n");
+        sb.append("- Do NOT invent class names like `LoanApplicationController.java`, `UserService.java`,\n");
+        sb.append("  `OrderRepository.java`, or any other Spring-Boot-shaped boilerplate that does not\n");
+        sb.append("  appear in the list. If you cannot find a real file for a point, use the package name\n");
+        sb.append("  (e.g. `com.example.foo`) or a generic descriptor (\"the controller layer\") instead.\n");
+        sb.append("- Bullet entries that name a file MUST cite a real file from the list.\n");
         return sb.toString();
     }
 }
