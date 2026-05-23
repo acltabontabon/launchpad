@@ -1,7 +1,9 @@
 package com.acltabontabon.launchpad.standards;
 
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -117,20 +119,53 @@ public class RemoteStandardsFetcher {
         }
     }
 
+    private static final int MAX_CAPTURED_OUTPUT_BYTES = 64 * 1024;
+    private static final Duration DRAINER_JOIN_TIMEOUT = Duration.ofSeconds(2);
+
     private static void runGit(Path cwd, String... cmd) throws IOException, InterruptedException {
+        var verb = cmd.length > 1 && "-C".equals(cmd[1]) && cmd.length > 3 ? cmd[3] : (cmd.length > 1 ? cmd[1] : "command");
         var process = new ProcessBuilder(cmd)
             .directory(cwd.toFile())
             .redirectErrorStream(true)
             .start();
+        var captured = new ByteArrayOutputStream();
+        var drainer = new Thread(() -> drain(process.getInputStream(), captured), "launchpad-git-drainer");
+        drainer.setDaemon(true);
+        drainer.start();
+
         if (!process.waitFor(GIT_TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
-            process.destroyForcibly();
-            throw new IOException("git timed out after " + GIT_TIMEOUT.toSeconds() + "s");
+            process.destroy();
+            if (!process.waitFor(DRAINER_JOIN_TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+            }
+            drainer.join(DRAINER_JOIN_TIMEOUT.toMillis());
+            throw new IOException("git " + verb + " exceeded " + GIT_TIMEOUT.toSeconds() + "s"
+                + tail(captured));
         }
+
+        drainer.join(DRAINER_JOIN_TIMEOUT.toMillis());
         if (process.exitValue() != 0) {
-            var output = new String(process.getInputStream().readAllBytes()).trim();
-            throw new IOException("git exited " + process.exitValue()
-                + (output.isEmpty() ? "" : ": " + output));
+            throw new IOException("git " + verb + " exited " + process.exitValue() + tail(captured));
         }
+    }
+
+    private static void drain(InputStream in, ByteArrayOutputStream sink) {
+        var buf = new byte[4096];
+        try (in) {
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                if (sink.size() < MAX_CAPTURED_OUTPUT_BYTES) {
+                    sink.write(buf, 0, Math.min(n, MAX_CAPTURED_OUTPUT_BYTES - sink.size()));
+                }
+            }
+        } catch (IOException ignored) {
+            // process killed or stream closed; whatever we captured is what we report
+        }
+    }
+
+    private static String tail(ByteArrayOutputStream captured) {
+        var out = captured.toString(StandardCharsets.UTF_8).trim();
+        return out.isEmpty() ? "" : ": " + out;
     }
 
     private static String hash(String url) {
