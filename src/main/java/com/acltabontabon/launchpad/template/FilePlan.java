@@ -16,21 +16,29 @@ public final class FilePlan {
         OVERWRITE,    // target exists; we are asked to replace it wholesale
         MERGE,        // target exists with markers - replace only the managed block
         SKIP,         // do not write anything
-        CORRUPTED     // markers are broken (reversed/duplicate/half-missing); requires explicit override
+        CORRUPTED,    // markers are broken (reversed/duplicate/half-missing); requires explicit override
+        UNREADABLE    // target exists but could not be read (permissions, lock, I/O error); never writes
     }
 
     public final GeneratedFile file;
     public final boolean exists;
     public final boolean hasMarkers;
-    public final String existingContent;   // null when !exists
+    public final String existingContent;   // null when !exists or UNREADABLE
+    public final String errorMessage;      // populated only for UNREADABLE; null otherwise
     private volatile Action action;
 
     public FilePlan(GeneratedFile file, boolean exists, boolean hasMarkers, String existingContent, Action action) {
+        this(file, exists, hasMarkers, existingContent, action, null);
+    }
+
+    public FilePlan(GeneratedFile file, boolean exists, boolean hasMarkers,
+                    String existingContent, Action action, String errorMessage) {
         this.file = file;
         this.exists = exists;
         this.hasMarkers = hasMarkers;
         this.existingContent = existingContent;
         this.action = action;
+        this.errorMessage = errorMessage;
     }
 
     public static FilePlan compute(GeneratedFile file, Path projectRoot) {
@@ -42,7 +50,11 @@ public final class FilePlan {
         try {
             existing = Files.readString(target);
         } catch (IOException e) {
-            return new FilePlan(file, true, false, null, Action.SKIP);
+            // Distinct from SKIP: the file exists but we cannot inspect it, so
+            // we cannot decide whether overwriting would clobber user content.
+            // Surface the cause and refuse to write until the user resolves it.
+            var msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            return new FilePlan(file, true, false, null, Action.UNREADABLE, msg);
         }
         var status = MergeMarkers.classify(existing);
         Action defaultAction = switch (status) {
@@ -62,7 +74,7 @@ public final class FilePlan {
         return switch (action) {
             case WRITE_NEW, OVERWRITE -> file.content();
             case MERGE -> MergeMarkers.mergeInto(existingContent, file.content());
-            case SKIP, CORRUPTED -> existingContent;   // unchanged
+            case SKIP, CORRUPTED, UNREADABLE -> existingContent;   // unchanged
         };
     }
 
@@ -74,6 +86,7 @@ public final class FilePlan {
             case MERGE -> "MERGE";
             case SKIP -> "SKIP";
             case CORRUPTED -> "CORRUPTED";
+            case UNREADABLE -> "UNREADABLE";
         };
     }
 }

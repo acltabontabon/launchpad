@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- **Unreadable target files no longer silently map to `SKIP`** (#6).
+  `FilePlan.compute` previously swallowed `IOException` from `Files.readString`
+  and returned `Action.SKIP` with `existingContent = null`, which made
+  permission-denied, locked, and transient I/O failures indistinguishable from
+  a normal "exists, no markers" file and risked clobbering the file via
+  `WRITE_NEW` on a later re-run. A new `Action.UNREADABLE` now carries the
+  underlying error message, never writes, and is treated as skipped by
+  `WriteService`. The Review screen shows the IOException detail in the preview
+  pane and refuses overwrite/merge overrides for unreadable files - only `x`
+  (skip) is accepted.
 - **Corrupted managed-block markers no longer silently discard user content
   on merge** (#3). `MergeMarkers.classify` now reports `NONE` / `VALID` /
   `CORRUPTED`; reversed-order markers, duplicates, and one-sided markers
