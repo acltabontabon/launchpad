@@ -439,16 +439,14 @@ public class ReviewView implements View {
                 int colon = err.indexOf(':');
                 if (colon > 0) failedPaths.add(err.substring(0, colon));
             }
-            var saved = new java.util.HashSet<Integer>(state.savedFileIndices);
             for (int i = 0; i < state.filePlans.size(); i++) {
                 var plan = state.filePlans.get(i);
                 if (plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.SKIP
                     || plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.CORRUPTED
                     || plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.UNREADABLE) continue;
                 if (failedPaths.contains(plan.file.relativePath())) continue;
-                saved.add(i);
+                state.savedFileIndices.add(i);
             }
-            state.savedFileIndices = saved;
 
             if (!result.errors().isEmpty()) {
                 state.reviewSaveError = true;

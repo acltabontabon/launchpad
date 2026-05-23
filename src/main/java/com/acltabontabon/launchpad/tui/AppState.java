@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -134,8 +135,10 @@ public class AppState {
     // Indices into generatedFiles whose plan was applied to disk successfully in
     // this session. ReviewView swaps these rows' chips from the planned action
     // (NEW / MERGE / OVERWRITE) to a "SAVED" pill so the user sees post-save
-    // truth instead of stale intent.
-    public volatile Set<Integer> savedFileIndices = new HashSet<>();
+    // truth instead of stale intent. Concurrent set: the TUI render loop calls
+    // contains() at ~12 fps while the save action thread calls add(); a plain
+    // HashSet would risk lost updates or CME during iteration.
+    public final Set<Integer> savedFileIndices = ConcurrentHashMap.newKeySet();
 
     // Text input cursor for path input
     public volatile int inputCursorPos = 0;
@@ -231,7 +234,7 @@ public class AppState {
         scanMessage.set("Waiting...");
         // A fresh scan produces a fresh file list; the previous run's "SAVED"
         // chips no longer apply to whatever GeneratedFile sits at index N now.
-        savedFileIndices = new HashSet<>();
+        savedFileIndices.clear();
         reviewSaveStatus.set("");
         reviewSaveError = false;
         auditFindingsCount.set(0);
