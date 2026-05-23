@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- **Ollama calls now have explicit timeouts so the TUI no longer freezes on a
+  stalled local model** (#1). A new `LaunchpadAiProperties`
+  (`launchpad.ai.connect-timeout`, `launchpad.ai.read-timeout`, defaults
+  10s / 2m) is bound through `@ConfigurationProperties`. `OllamaClientProvider`
+  wires those timeouts into both the `RestClient.Builder` (covers the
+  synchronous `.call()` path used by the `/new-task` interview) and the
+  `WebClient.Builder` (Netty connect + response timeout for streaming).
+  `ContextGeneratorService.streamPrompt` adds a Reactor `.timeout(readTimeout)`
+  on the streaming chain so a daemon that opens a connection but stops
+  emitting tokens surfaces a `TimeoutException` within budget instead of
+  hanging on `blockLast()`. `LaunchpadRunner.buildLlmErrorMessage` translates
+  the timeout into a "local model stalled - check Ollama, or raise
+  `launchpad.ai.read-timeout`" hint, and the scan catch routes its message
+  through the same helper so the Scanning screen shows the same advice.
 - **Unreadable target files no longer silently map to `SKIP`** (#6).
   `FilePlan.compute` previously swallowed `IOException` from `Files.readString`
   and returned `Action.SKIP` with `existingContent = null`, which made

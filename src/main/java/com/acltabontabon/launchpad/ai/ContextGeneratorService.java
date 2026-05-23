@@ -1,7 +1,9 @@
 package com.acltabontabon.launchpad.ai;
 
+import com.acltabontabon.launchpad.config.LaunchpadAiProperties;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.template.ContextTarget;
+import java.time.Duration;
 import java.util.List;
 import java.util.function.Consumer;
 import org.springframework.ai.chat.client.ChatClient;
@@ -43,10 +45,13 @@ public class ContextGeneratorService {
     private final ChatClient chatClient;
     private final PromptSelector promptSelector;
     private final OutputValidator validator = new OutputValidator();
+    private final Duration readTimeout;
 
-    public ContextGeneratorService(ChatClient.Builder builder, PromptSelector promptSelector) {
+    public ContextGeneratorService(ChatClient.Builder builder, PromptSelector promptSelector,
+        LaunchpadAiProperties aiProperties) {
         this.chatClient = builder.build();
         this.promptSelector = promptSelector;
+        this.readTimeout = aiProperties.readTimeout();
     }
 
     public GeneratedOutput generateProjectSummary(ProjectContext ctx, Consumer<String> onChunk) {
@@ -119,6 +124,10 @@ public class ContextGeneratorService {
             .user(u -> u.text(grounded).param("context", ctx.toPromptString()))
             .stream()
             .content()
+            // Per-chunk inactivity timeout: if the stream stops emitting tokens for
+            // longer than read-timeout (network drop, daemon hang, model stall),
+            // surface a TimeoutException instead of blocking the TUI thread forever.
+            .timeout(readTimeout)
             .doOnNext(chunk -> {
                 sb.append(chunk);
                 onChunk.accept(chunk);
