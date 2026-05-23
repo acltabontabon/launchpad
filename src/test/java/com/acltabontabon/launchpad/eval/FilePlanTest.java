@@ -30,6 +30,20 @@ class FilePlanTest {
     }
 
     @Test
+    void corruptedMarkersResolveToCorruptedActionAndDoNotMutateContent(@TempDir Path root) throws Exception {
+        var prelude = "# Important user notes\nLine A\nLine B\n";
+        var corrupted = prelude
+            + MergeMarkers.END + "\nstray\n" + MergeMarkers.START + "\nblock\n";
+        Files.writeString(root.resolve("CLAUDE.md"), corrupted);
+        var file = new GeneratedFile("CLAUDE.md", "# generated", GeneratedFile.FileKind.CONTEXT);
+        var plan = FilePlan.compute(file, root);
+        assertThat(plan.action()).isEqualTo(FilePlan.Action.CORRUPTED);
+        assertThat(plan.hasMarkers).isFalse();
+        assertThat(plan.statusChip()).isEqualTo("CORRUPTED");
+        assertThat(plan.resolvedContent()).isEqualTo(corrupted);
+    }
+
+    @Test
     void existingFileWithMarkersDefaultsToMerge(@TempDir Path root) throws Exception {
         Files.writeString(root.resolve("CLAUDE.md"),
             "# user prelude\n\n" + MergeMarkers.START + "\nold\n" + MergeMarkers.END + "\n");
