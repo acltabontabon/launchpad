@@ -15,7 +15,8 @@ public final class FilePlan {
         WRITE_NEW,    // target does not exist - safe to write
         OVERWRITE,    // target exists; we are asked to replace it wholesale
         MERGE,        // target exists with markers - replace only the managed block
-        SKIP          // do not write anything
+        SKIP,         // do not write anything
+        CORRUPTED     // markers are broken (reversed/duplicate/half-missing); requires explicit override
     }
 
     public final GeneratedFile file;
@@ -43,12 +44,13 @@ public final class FilePlan {
         } catch (IOException e) {
             return new FilePlan(file, true, false, null, Action.SKIP);
         }
-        boolean markers = MergeMarkers.hasMarkers(existing);
-        // Default: merge if markers are there, else skip (don't clobber hand-edited content).
-        // For non-context kinds (skills, rules) defaulting to OVERWRITE is reasonable since
-        // those paths are owned by Launchpad - but err on the safe side and let user opt in.
-        Action defaultAction = markers ? Action.MERGE : Action.SKIP;
-        return new FilePlan(file, true, markers, existing, defaultAction);
+        var status = MergeMarkers.classify(existing);
+        Action defaultAction = switch (status) {
+            case VALID -> Action.MERGE;
+            case CORRUPTED -> Action.CORRUPTED;
+            case NONE -> Action.SKIP;   // don't clobber hand-edited content
+        };
+        return new FilePlan(file, true, status == MergeMarkers.MarkerStatus.VALID, existing, defaultAction);
     }
 
     public Action action() { return action; }
@@ -60,7 +62,7 @@ public final class FilePlan {
         return switch (action) {
             case WRITE_NEW, OVERWRITE -> file.content();
             case MERGE -> MergeMarkers.mergeInto(existingContent, file.content());
-            case SKIP -> existingContent;   // unchanged
+            case SKIP, CORRUPTED -> existingContent;   // unchanged
         };
     }
 
@@ -71,6 +73,7 @@ public final class FilePlan {
             case OVERWRITE -> "OVERWRITE";
             case MERGE -> "MERGE";
             case SKIP -> "SKIP";
+            case CORRUPTED -> "CORRUPTED";
         };
     }
 }

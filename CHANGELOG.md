@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- **Corrupted managed-block markers no longer silently discard user content
+  on merge** (#3). `MergeMarkers.classify` now reports `NONE` / `VALID` /
+  `CORRUPTED`; reversed-order markers, duplicates, and one-sided markers
+  all map to `CORRUPTED`. `FilePlan.compute` resolves corrupted files to a
+  new `Action.CORRUPTED` whose `resolvedContent()` returns the existing
+  content unchanged. The Review screen renders a `CORRUPTED` chip and
+  requires an explicit `o` (overwrite) keypress to write; `m` (merge) is
+  refused. `mergeInto` no longer silently rewrites a malformed file - it
+  throws so the corruption surfaces instead of eating prelude/trailer text.
+
 ### Added
 - **Databricks framework path** (Terraform-deployed data pipelines, with
   DLT / Python / SQL facets)

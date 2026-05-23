@@ -281,6 +281,7 @@ public class ReviewView implements View {
             case OVERWRITE -> Styles.dangerChip();
             case MERGE -> Styles.cautionChip();
             case SKIP -> Styles.muteChip();
+            case CORRUPTED -> Styles.dangerChip();
         };
     }
 
@@ -372,6 +373,11 @@ public class ReviewView implements View {
     private void setActionForCurrent(AppState state, FilePlan.Action action) {
         var plan = state.currentFilePlan();
         if (plan == null) return;
+        // Markers are broken; MERGE would either throw or silently rewrite around
+        // the corruption. Force the user to choose OVERWRITE or SKIP.
+        if (plan.action() == FilePlan.Action.CORRUPTED && action == FilePlan.Action.MERGE) {
+            return;
+        }
         if (action == FilePlan.Action.OVERWRITE && !plan.exists) {
             plan.setAction(FilePlan.Action.WRITE_NEW);
         } else {
@@ -396,7 +402,8 @@ public class ReviewView implements View {
             var saved = new java.util.HashSet<Integer>(state.savedFileIndices);
             for (int i = 0; i < state.filePlans.size(); i++) {
                 var plan = state.filePlans.get(i);
-                if (plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.SKIP) continue;
+                if (plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.SKIP
+                    || plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.CORRUPTED) continue;
                 if (failedPaths.contains(plan.file.relativePath())) continue;
                 saved.add(i);
             }
