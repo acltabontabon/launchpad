@@ -41,11 +41,6 @@ public class McpConfigWriter {
         boolean anyBackup = false;
 
         for (var client : selectedClients) {
-            if (client.id() == ClientId.GENERIC) {
-                reports.add(new WriteReport(client.id(), WriteReport.Outcome.GENERIC_RENDERED,
-                    "snippet shown on next screen"));
-                continue;
-            }
             if (snippet == null) {
                 reports.add(new WriteReport(client.id(), WriteReport.Outcome.ERROR_DEV_MODE,
                     "install the native launchpad binary first"));

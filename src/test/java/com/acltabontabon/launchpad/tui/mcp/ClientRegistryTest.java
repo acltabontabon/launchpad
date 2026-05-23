@@ -64,11 +64,26 @@ class ClientRegistryTest {
     }
 
     @Test
-    void genericIsAlwaysPresentAndAlwaysReady(@TempDir Path home) {
+    void alreadyLinkedIsTrueWhenConfigCarriesLaunchpadEntry(@TempDir Path home) throws Exception {
         var registry = new ClientRegistry(() -> "Mac OS X", () -> home);
-        var generic = registry.discover().stream()
-            .filter(c -> c.id() == ClientId.GENERIC).findFirst().orElseThrow();
-        assertThat(generic.detected()).isTrue();
-        assertThat(generic.configPath()).isNull();
+        Files.createDirectories(home.resolve(".cursor"));
+        Files.writeString(home.resolve(".cursor/mcp.json"),
+            "{\"mcpServers\":{\"launchpad\":{\"command\":\"/usr/local/bin/launchpad\",\"args\":[\"mcp\"]}}}");
+
+        var cursor = registry.discover().stream()
+            .filter(c -> c.id() == ClientId.CURSOR).findFirst().orElseThrow();
+        assertThat(cursor.alreadyLinked()).isTrue();
+    }
+
+    @Test
+    void alreadyLinkedIsFalseWhenMcpServersHasOnlyOtherEntries(@TempDir Path home) throws Exception {
+        var registry = new ClientRegistry(() -> "Mac OS X", () -> home);
+        Files.createDirectories(home.resolve(".cursor"));
+        Files.writeString(home.resolve(".cursor/mcp.json"),
+            "{\"mcpServers\":{\"other\":{\"command\":\"node\",\"args\":[]}}}");
+
+        var cursor = registry.discover().stream()
+            .filter(c -> c.id() == ClientId.CURSOR).findFirst().orElseThrow();
+        assertThat(cursor.alreadyLinked()).isFalse();
     }
 }

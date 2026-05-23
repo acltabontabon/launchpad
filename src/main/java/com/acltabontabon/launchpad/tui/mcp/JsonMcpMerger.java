@@ -83,24 +83,20 @@ final class JsonMcpMerger {
         }
     }
 
-    /** Render a standalone JSON document for the GENERIC "copy snippet" option. */
-    static String renderStandalone(McpSnippet snippet) {
-        var root = MAPPER.createObjectNode();
-        var servers = root.putObject(SERVERS_KEY);
-        var entry = servers.putObject(LAUNCHPAD_KEY);
-        entry.put("command", snippet.command());
-        var args = entry.putArray("args");
-        for (var a : snippet.args()) args.add(a);
-        if (!snippet.env().isEmpty()) {
-            var env = entry.putObject("env");
-            for (Map.Entry<String, String> e : snippet.env().entrySet()) {
-                env.put(e.getKey(), e.getValue());
-            }
-        }
+    /**
+     * Best-effort check for an existing {@code mcpServers.launchpad} entry in a
+     * JSON config file. Returns false on missing file, parse errors, or any
+     * structural mismatch - the goal is to drive a UI badge, not gate a write.
+     */
+    static boolean hasLaunchpadEntry(String existingJson) {
+        if (existingJson == null || existingJson.isBlank()) return false;
         try {
-            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+            var tree = MAPPER.readTree(existingJson);
+            if (tree == null || !tree.isObject()) return false;
+            var servers = tree.get(SERVERS_KEY);
+            return servers != null && servers.isObject() && servers.has(LAUNCHPAD_KEY);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize snippet", e);
+            return false;
         }
     }
 

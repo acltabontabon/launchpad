@@ -86,9 +86,15 @@ class JsonMcpMergerTest {
     }
 
     @Test
-    void renderStandaloneProducesParseableJson() throws Exception {
-        var json = JsonMcpMerger.renderStandalone(SNIPPET);
-        var tree = M.readTree(json);
-        assertThat(tree.get("mcpServers").get("launchpad").get("command").asText()).isEqualTo("java");
+    void hasLaunchpadEntryDetectsExistingKey() {
+        assertThat(JsonMcpMerger.hasLaunchpadEntry(
+            "{\"mcpServers\":{\"launchpad\":{\"command\":\"x\",\"args\":[]}}}")).isTrue();
+        assertThat(JsonMcpMerger.hasLaunchpadEntry(
+            "{\"mcpServers\":{\"other\":{\"command\":\"x\",\"args\":[]}}}")).isFalse();
+        assertThat(JsonMcpMerger.hasLaunchpadEntry("")).isFalse();
+        assertThat(JsonMcpMerger.hasLaunchpadEntry(null)).isFalse();
+        assertThat(JsonMcpMerger.hasLaunchpadEntry("not json at all {{{")).isFalse();
+        assertThat(JsonMcpMerger.hasLaunchpadEntry("{\"mcpServers\":\"nope\"}")).isFalse();
     }
+
 }

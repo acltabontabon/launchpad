@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.tui.mcp;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -11,8 +12,10 @@ import org.springframework.stereotype.Component;
 /**
  * Resolves per-client MCP config file paths from the user's OS and home
  * directory. "Detected" means the parent dir exists for path-based rows;
- * GENERIC is always shown. Constructor accepts injectable suppliers so tests
- * can run against a temp home without touching the real filesystem.
+ * GENERIC is always shown. {@code alreadyLinked} is set when the config file
+ * already has a {@code mcpServers.launchpad} entry, so the picker can render
+ * it as pre-ticked. Constructor accepts injectable suppliers so tests can run
+ * against a temp home without touching the real filesystem.
  */
 @Component
 public class ClientRegistry {
@@ -32,11 +35,10 @@ public class ClientRegistry {
 
     public List<AiClient> discover() {
         var home = userHome.get();
-        var out = new ArrayList<AiClient>(4);
+        var out = new ArrayList<AiClient>(3);
         out.add(claudeDesktop(home));
         out.add(claudeCode(home));
         out.add(cursor(home));
-        out.add(new AiClient(ClientId.GENERIC, ClientId.GENERIC.displayName(), null, true));
         return List.copyOf(out);
     }
 
@@ -53,18 +55,27 @@ public class ClientRegistry {
             path = home.resolve(".config/Claude/claude_desktop_config.json");
         }
         return new AiClient(ClientId.CLAUDE_DESKTOP, ClientId.CLAUDE_DESKTOP.displayName(),
-            path, Files.isDirectory(path.getParent()));
+            path, Files.isDirectory(path.getParent()), hasLaunchpadEntry(path));
     }
 
     private AiClient claudeCode(Path home) {
         var path = home.resolve(".claude.json");
         return new AiClient(ClientId.CLAUDE_CODE, ClientId.CLAUDE_CODE.displayName(),
-            path, Files.isRegularFile(path));
+            path, Files.isRegularFile(path), hasLaunchpadEntry(path));
     }
 
     private AiClient cursor(Path home) {
         var path = home.resolve(".cursor/mcp.json");
         return new AiClient(ClientId.CURSOR, ClientId.CURSOR.displayName(),
-            path, Files.isDirectory(path.getParent()));
+            path, Files.isDirectory(path.getParent()), hasLaunchpadEntry(path));
+    }
+
+    private static boolean hasLaunchpadEntry(Path configPath) {
+        if (!Files.isRegularFile(configPath)) return false;
+        try {
+            return JsonMcpMerger.hasLaunchpadEntry(Files.readString(configPath));
+        } catch (IOException e) {
+            return false;
+        }
     }
 }

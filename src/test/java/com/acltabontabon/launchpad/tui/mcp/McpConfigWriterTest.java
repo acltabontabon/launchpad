@@ -21,7 +21,7 @@ class McpConfigWriterTest {
     void writesNewConfigAndDoesNotBackupWhenNoExistingFile(@TempDir Path home) throws Exception {
         var writer = new McpConfigWriter(home);
         var cursorPath = home.resolve(".cursor/mcp.json");
-        var client = new AiClient(ClientId.CURSOR, "Cursor", cursorPath, true);
+        var client = new AiClient(ClientId.CURSOR, "Cursor", cursorPath, true, false);
 
         var run = writer.apply(List.of(client), SNIPPET);
 
@@ -38,7 +38,7 @@ class McpConfigWriterTest {
         Files.createDirectories(cursorPath.getParent());
         var originalBody = "{\"mcpServers\":{\"other\":{\"command\":\"node\",\"args\":[]}}}";
         Files.writeString(cursorPath, originalBody);
-        var client = new AiClient(ClientId.CURSOR, "Cursor", cursorPath, true);
+        var client = new AiClient(ClientId.CURSOR, "Cursor", cursorPath, true, false);
 
         var run = writer.apply(List.of(client), SNIPPET);
 
@@ -58,7 +58,7 @@ class McpConfigWriterTest {
         Files.createDirectories(cursorPath.getParent());
         var existing = "{\"mcpServers\":{\"launchpad\":{\"command\":\"old\",\"args\":[]}}}";
         Files.writeString(cursorPath, existing);
-        var client = new AiClient(ClientId.CURSOR, "Cursor", cursorPath, true);
+        var client = new AiClient(ClientId.CURSOR, "Cursor", cursorPath, true, false);
 
         var run = writer.apply(List.of(client), SNIPPET);
 
@@ -73,7 +73,7 @@ class McpConfigWriterTest {
         Files.createDirectories(cursorPath.getParent());
         var existing = "{\"mcpServers\":\"oops\"}";
         Files.writeString(cursorPath, existing);
-        var client = new AiClient(ClientId.CURSOR, "Cursor", cursorPath, true);
+        var client = new AiClient(ClientId.CURSOR, "Cursor", cursorPath, true, false);
 
         var run = writer.apply(List.of(client), SNIPPET);
 
@@ -82,20 +82,9 @@ class McpConfigWriterTest {
     }
 
     @Test
-    void genericClientRendersWithoutWriting(@TempDir Path home) {
-        var writer = new McpConfigWriter(home);
-        var generic = new AiClient(ClientId.GENERIC, "Generic", null, true);
-
-        var run = writer.apply(List.of(generic), SNIPPET);
-
-        assertThat(run.reports().get(0).outcome()).isEqualTo(WriteReport.Outcome.GENERIC_RENDERED);
-        assertThat(run.backupDir()).isNull();
-    }
-
-    @Test
     void devModeReportsErrorPerFileWritingClient(@TempDir Path home) {
         var writer = new McpConfigWriter(home);
-        var client = new AiClient(ClientId.CURSOR, "Cursor", home.resolve(".cursor/mcp.json"), true);
+        var client = new AiClient(ClientId.CURSOR, "Cursor", home.resolve(".cursor/mcp.json"), true, false);
 
         var run = writer.apply(List.of(client), null);
 

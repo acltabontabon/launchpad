@@ -156,9 +156,6 @@ public class AppState {
     public final AtomicReference<Set<ClientId>> mcpSelected = new AtomicReference<>(new HashSet<>());
     public final AtomicReference<List<WriteReport>> mcpReports = new AtomicReference<>(new ArrayList<>());
     public volatile int mcpSelectionIndex = 0;
-    // Result-screen rendered snippet (populated when GENERIC is selected, or for
-    // copy-anyway display). Null when nothing to show.
-    public volatile String mcpRenderedSnippet = null;
     // Backup dir reported by the writer (null when nothing was backed up).
     public volatile String mcpBackupDir = null;
 

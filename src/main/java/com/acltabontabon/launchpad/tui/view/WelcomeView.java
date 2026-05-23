@@ -267,8 +267,25 @@ public class WelcomeView implements View {
     private void renderPalette(Frame frame, Rect area, AppState state) {
         var filtered = CommandPalette.filter(state.commandInput);
 
-        // Match the system-check card geometry exactly so swapping in feels stable.
-        int cardWidth = Math.min(area.width() - 4, 64);
+        // Pad ids to the longest in the full command set (not just the filtered
+        // subset) so descriptions stay column-aligned as the user types. Same
+        // reason we size the card off ALL: width should not jitter while typing.
+        int idWidth = CommandPalette.ALL.stream()
+            .mapToInt(c -> c.id().length())
+            .max()
+            .orElse(0);
+        int maxDescLen = CommandPalette.ALL.stream()
+            .mapToInt(c -> c.description().length())
+            .max()
+            .orElse(0);
+
+        // Card geometry: inner content needs idWidth + gap + description, plus
+        // a small margin for the cursor symbol and breathing room. Clamp to the
+        // available area so narrow terminals still render gracefully.
+        int gap = 3;
+        int desiredInner = idWidth + gap + maxDescLen + 4;
+        int headerWidth = ("commands  " + Icons.SEP + "  " + state.commandInput).length() + 6;
+        int cardWidth = Math.min(area.width() - 4, Math.max(desiredInner, headerWidth));
         int cardHeight = Math.min(area.height(), Math.max(6, filtered.size() + 4));
         int leftPad = Math.max(0, (area.width() - cardWidth) / 2);
         var cardArea = new Rect(area.x() + leftPad, area.y(), cardWidth, cardHeight);
@@ -289,11 +306,14 @@ public class WelcomeView implements View {
             return;
         }
 
+        String gapStr = " ".repeat(gap);
         var items = filtered.stream()
             .map(c -> ListItem.from(
                 Line.from(
-                    Span.styled(c.id(), Style.create().fg(Theme.text).bold()),
-                    Span.styled("    " + c.description(), Styles.muted())
+                    Span.styled(
+                        String.format("%-" + idWidth + "s", c.id()),
+                        Style.create().fg(Theme.text).bold()),
+                    Span.styled(gapStr + c.description(), Styles.muted())
                 )
             ))
             .toArray(ListItem[]::new);

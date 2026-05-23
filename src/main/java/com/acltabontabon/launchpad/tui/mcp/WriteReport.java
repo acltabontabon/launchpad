@@ -7,7 +7,6 @@ public record WriteReport(ClientId id, Outcome outcome, String detail) {
         SKIPPED_KEY_EXISTS,
         ERROR_NOT_OBJECT,
         ERROR_IO,
-        ERROR_DEV_MODE,
-        GENERIC_RENDERED
+        ERROR_DEV_MODE
     }
 }

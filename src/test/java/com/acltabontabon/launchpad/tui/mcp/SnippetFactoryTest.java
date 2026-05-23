@@ -34,11 +34,4 @@ class SnippetFactoryTest {
         assertThat(new SnippetFactory(detector).build(LaunchMode.NATIVE)).isEmpty();
     }
 
-    @Test
-    void placeholderPointsAtAbsoluteBinaryPath() {
-        var detector = mock(LaunchModeDetector.class);
-        var placeholder = new SnippetFactory(detector).placeholder();
-        assertThat(placeholder.command()).isEqualTo("/abs/path/to/launchpad");
-        assertThat(placeholder.args()).containsExactly("mcp");
-    }
 }

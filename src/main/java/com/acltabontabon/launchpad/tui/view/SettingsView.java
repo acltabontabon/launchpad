@@ -136,22 +136,21 @@ public class SettingsView implements View {
         for (int i = 0; i < clients.size(); i++) {
             var c = clients.get(i);
             boolean isCursor = i == state.mcpSelectionIndex;
-            boolean isOn = selected.contains(c.id());
-            boolean isWritable = c.id() == ClientId.GENERIC || c.detected();
+            boolean isOn = c.alreadyLinked() || selected.contains(c.id());
+            boolean isWritable = c.detected();
 
             String checkbox = isOn ? "[x] " : "[ ] ";
             String prefix = isCursor ? Icons.CURSOR + " " : "  ";
             String badge = badgeFor(c);
 
-            var checkboxStyle = isOn ? Styles.focus() : Styles.muted();
+            var checkboxStyle = c.alreadyLinked() ? Styles.success()
+                : isOn ? Styles.focus() : Styles.muted();
             var nameStyle = isWritable
                 ? (isCursor ? Styles.focus() : Styles.body())
                 : Styles.muted();
             var pathStyle = Styles.dim();
 
-            String pathText = c.configPath() == null
-                ? "  " + Icons.SEP + "  no file, snippet rendered for copy"
-                : "  " + Icons.SEP + "  " + c.configPath();
+            String pathText = "  " + Icons.SEP + "  " + c.configPath();
 
             lines.add(Line.from(
                 Span.styled(prefix, Styles.muted()),
@@ -197,12 +196,11 @@ public class SettingsView implements View {
 
         var lines = new ArrayList<Line>();
         for (var c : picked) {
-            String target = c.configPath() == null ? "(snippet only, no file write)" : c.configPath().toString();
             lines.add(Line.from(
                 Span.styled("  " + Icons.ARROW_RIGHT + " ", Styles.muted()),
                 Span.styled(c.displayName(), Styles.body()),
                 Span.styled("  " + Icons.SEP + "  ", Styles.muted()),
-                Span.styled(target, Styles.dim())
+                Span.styled(c.configPath().toString(), Styles.dim())
             ));
         }
         if (lines.isEmpty()) {
@@ -213,14 +211,12 @@ public class SettingsView implements View {
 
     private void renderResult(Frame frame, Rect area, AppState state) {
         var reports = state.mcpReports.get();
-        int snippetLines = state.mcpRenderedSnippet == null ? 0 : countLines(state.mcpRenderedSnippet) + 3;
 
         var rows = Layout.vertical()
             .constraints(
                 Constraint.length(2),
                 Constraint.length(3),
                 Constraint.length(reports.size() + 2),
-                Constraint.length(snippetLines),
                 Constraint.min(0)
             )
             .split(area);
@@ -244,37 +240,17 @@ public class SettingsView implements View {
         for (var r : reports) {
             lines.add(Line.from(
                 Span.styled("  " + outcomeIcon(r.outcome()) + "  ", outcomeStyle(r.outcome())),
-                Span.styled(displayNameOf(r.id()), Styles.body()),
+                Span.styled(r.id().displayName(), Styles.body()),
                 Span.styled("  " + Icons.SEP + "  ", Styles.muted()),
                 Span.styled(r.detail() == null ? "" : r.detail(), Styles.dim())
             ));
         }
         frame.renderWidget(Paragraph.builder().text(Text.from(lines.toArray(new Line[0]))).build(), inner);
-
-        if (snippetLines > 0) {
-            var snippetArea = centeredColumn(rows.get(3), 80);
-            var sc = Card.of("Snippet (copy into any MCP-aware client)").build();
-            var si = sc.inner(snippetArea);
-            frame.renderWidget(sc, snippetArea);
-            var snippetLinesList = new ArrayList<Line>();
-            for (var l : state.mcpRenderedSnippet.split("\n", -1)) {
-                snippetLinesList.add(Line.from(Span.styled(l, Styles.code())));
-            }
-            frame.renderWidget(
-                Paragraph.builder().text(Text.from(snippetLinesList.toArray(new Line[0]))).build(), si);
-        }
-    }
-
-    private static int countLines(String s) {
-        int n = 1;
-        for (int i = 0; i < s.length(); i++) if (s.charAt(i) == '\n') n++;
-        return n;
     }
 
     private static String outcomeIcon(WriteReport.Outcome o) {
         return switch (o) {
             case WRITTEN -> Icons.CHECK;
-            case GENERIC_RENDERED -> Icons.SPARK;
             case SKIPPED_KEY_EXISTS -> Icons.WARN;
             case ERROR_NOT_OBJECT, ERROR_IO, ERROR_DEV_MODE -> Icons.CROSS;
         };
@@ -282,23 +258,19 @@ public class SettingsView implements View {
 
     private static Style outcomeStyle(WriteReport.Outcome o) {
         return switch (o) {
-            case WRITTEN, GENERIC_RENDERED -> Styles.success();
+            case WRITTEN -> Styles.success();
             case SKIPPED_KEY_EXISTS -> Styles.warning();
             case ERROR_NOT_OBJECT, ERROR_IO, ERROR_DEV_MODE -> Styles.error();
         };
     }
 
-    private static String displayNameOf(ClientId id) {
-        return id.displayName();
-    }
-
     private static String badgeFor(AiClient c) {
-        if (c.id() == ClientId.GENERIC) return "[ready]";
+        if (c.alreadyLinked()) return "[linked]";
         return c.detected() ? "[detected]" : "[not found]";
     }
 
     private static Style badgeStyle(AiClient c) {
-        if (c.id() == ClientId.GENERIC) return Styles.success();
+        if (c.alreadyLinked()) return Styles.success();
         return c.detected() ? Styles.success() : Styles.muted();
     }
 
@@ -467,7 +439,6 @@ public class SettingsView implements View {
     private boolean handleResult(KeyEvent key, AppState state) {
         if (key.isKey(KeyCode.ENTER) || key.isKey(KeyCode.ESCAPE)) {
             state.settingsMode = SettingsMode.FIELDS;
-            state.mcpRenderedSnippet = null;
             state.mcpBackupDir = null;
             return true;
         }
@@ -480,7 +451,6 @@ public class SettingsView implements View {
         state.mcpReports.set(new ArrayList<>());
         state.mcpSelectionIndex = 0;
         state.settingsErrorMessage = null;
-        state.mcpRenderedSnippet = null;
         state.mcpBackupDir = null;
         state.settingsMode = SettingsMode.MCP_PICKER;
     }
@@ -489,8 +459,13 @@ public class SettingsView implements View {
         if (clients.isEmpty()) return;
         var idx = Math.min(state.mcpSelectionIndex, clients.size() - 1);
         var client = clients.get(idx);
-        // Non-detected file-writing clients cannot be selected. GENERIC and detected rows can.
-        if (client.id() != ClientId.GENERIC && !client.detected()) {
+        if (client.alreadyLinked()) {
+            state.settingsErrorMessage = client.displayName()
+                + " is already linked - remove the launchpad entry from "
+                + client.configPath() + " to re-link";
+            return;
+        }
+        if (!client.detected()) {
             state.settingsErrorMessage = client.displayName() + " is not installed on this machine";
             return;
         }
@@ -502,7 +477,7 @@ public class SettingsView implements View {
     }
 
     private void runWrite(AppState state) {
-        Optional<McpSnippet> snippet = snippetFactory.build();
+        var snippet = snippetFactory.build();
         var clients = state.mcpClients.get();
         var selected = state.mcpSelected.get();
         var picked = new ArrayList<AiClient>();
@@ -512,16 +487,6 @@ public class SettingsView implements View {
         var run = mcpWriter.apply(picked, snippet.orElse(null));
         state.mcpReports.set(run.reports());
         state.mcpBackupDir = run.backupDir() == null ? null : run.backupDir().toString();
-
-        // Pick a snippet to render on the result screen if Generic was selected,
-        // or if there is no working snippet (DEV) so the user still has something to copy.
-        boolean genericPicked = selected.contains(ClientId.GENERIC);
-        if (genericPicked || snippet.isEmpty()) {
-            var toRender = snippet.orElseGet(snippetFactory::placeholder);
-            state.mcpRenderedSnippet = snippetFactory.renderStandalone(toRender);
-        } else {
-            state.mcpRenderedSnippet = null;
-        }
         state.settingsMode = SettingsMode.MCP_RESULT;
     }
 
