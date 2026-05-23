@@ -16,7 +16,6 @@ import com.acltabontabon.launchpad.task.TaskAdvisorService;
 import com.acltabontabon.launchpad.template.ContextTemplateEngine;
 import com.acltabontabon.launchpad.tui.components.Footer;
 import com.acltabontabon.launchpad.tui.components.Header;
-import com.acltabontabon.launchpad.tui.view.HelpView;
 import com.acltabontabon.launchpad.tui.view.ProjectSelectView;
 import com.acltabontabon.launchpad.tui.view.ProjectsView;
 import com.acltabontabon.launchpad.tui.view.ReviewView;
@@ -64,7 +63,6 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final TaskInputView taskInputView;
     private final TaskInterviewView taskInterviewView;
     private final TaskResultView taskResultView;
-    private final HelpView helpView;
 
     private final ProjectScanner scanner;
     private final ScanStore scanStore;
@@ -92,7 +90,6 @@ public class LaunchpadRunner implements ApplicationRunner {
         TaskInputView taskInputView,
         TaskInterviewView taskInterviewView,
         TaskResultView taskResultView,
-        HelpView helpView,
         ProjectScanner scanner,
         ScanStore scanStore,
         ProjectRegistry projectRegistry,
@@ -115,7 +112,6 @@ public class LaunchpadRunner implements ApplicationRunner {
         this.taskInputView = taskInputView;
         this.taskInterviewView = taskInterviewView;
         this.taskResultView = taskResultView;
-        this.helpView = helpView;
         this.scanner = scanner;
         this.scanStore = scanStore;
         this.projectRegistry = projectRegistry;
@@ -579,7 +575,6 @@ public class LaunchpadRunner implements ApplicationRunner {
             case TASK_RESULT    -> taskResultView;
             case SETTINGS       -> settingsView;
             case PROJECTS       -> projectsView;
-            case HELP           -> helpView;
         };
     }
 }

@@ -45,12 +45,6 @@ public final class CommandPalette {
             (state, runner) -> state.currentScreen = AppState.Screen.SETTINGS
         ),
         new Command(
-            "/help",
-            "Help",
-            "Show available commands and key shortcuts",
-            (state, runner) -> state.currentScreen = AppState.Screen.HELP
-        ),
-        new Command(
             "/quit",
             "Quit",
             "Exit Launchpad",

@@ -4,6 +4,13 @@ import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.tui.AppState;
 import com.acltabontabon.launchpad.tui.components.Card;
 import com.acltabontabon.launchpad.tui.components.KeyHint;
+import com.acltabontabon.launchpad.tui.mcp.AiClient;
+import com.acltabontabon.launchpad.tui.mcp.ClientId;
+import com.acltabontabon.launchpad.tui.mcp.ClientRegistry;
+import com.acltabontabon.launchpad.tui.mcp.McpConfigWriter;
+import com.acltabontabon.launchpad.tui.mcp.McpSnippet;
+import com.acltabontabon.launchpad.tui.mcp.SnippetFactory;
+import com.acltabontabon.launchpad.tui.mcp.WriteReport;
 import com.acltabontabon.launchpad.tui.theme.Icons;
 import com.acltabontabon.launchpad.tui.theme.Styles;
 import com.acltabontabon.launchpad.tui.theme.Theme;
@@ -23,7 +30,10 @@ import dev.tamboui.widgets.paragraph.Paragraph;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class SettingsView implements View {
@@ -31,26 +41,47 @@ public class SettingsView implements View {
     private static final int FIELD_BASE_URL = 0;
     private static final int FIELD_MODEL = 1;
     private static final int FIELD_REMOTE_STANDARDS = 2;
-    private static final int FIELD_COUNT = 3;
+    private static final int FIELD_CONNECT_ACTION = 3;
+    private static final int FIELD_COUNT = 4;
 
     private final LaunchpadSettings settings;
+    private final ClientRegistry clientRegistry;
+    private final SnippetFactory snippetFactory;
+    private final McpConfigWriter mcpWriter;
 
-    public SettingsView(LaunchpadSettings settings) {
+    public SettingsView(LaunchpadSettings settings,
+                        ClientRegistry clientRegistry,
+                        SnippetFactory snippetFactory,
+                        McpConfigWriter mcpWriter) {
         this.settings = settings;
+        this.clientRegistry = clientRegistry;
+        this.snippetFactory = snippetFactory;
+        this.mcpWriter = mcpWriter;
     }
 
     @Override
     public void render(Frame frame, Rect area, AppState state) {
+        switch (state.settingsMode) {
+            case FIELDS -> renderFields(frame, area, state);
+            case MCP_PICKER -> renderPicker(frame, area, state);
+            case MCP_CONFIRM -> renderConfirm(frame, area, state);
+            case MCP_RESULT -> renderResult(frame, area, state);
+        }
+    }
+
+    private void renderFields(Frame frame, Rect area, AppState state) {
         var rows = Layout.vertical()
             .constraints(
-                Constraint.length(2),  // top spacer
-                Constraint.length(3),  // heading + subhead
-                Constraint.length(3),  // base URL
-                Constraint.length(1),  // gap
-                Constraint.length(3),  // model
-                Constraint.length(1),  // gap
-                Constraint.length(3),  // remote standards
-                Constraint.length(2),  // error
+                Constraint.length(2),
+                Constraint.length(3),
+                Constraint.length(3),
+                Constraint.length(1),
+                Constraint.length(3),
+                Constraint.length(1),
+                Constraint.length(3),
+                Constraint.length(1),
+                Constraint.length(3),
+                Constraint.length(2),
                 Constraint.min(0)
             )
             .split(area);
@@ -63,10 +94,212 @@ public class SettingsView implements View {
             state.settingsModelInput, state.settingsFocusIndex == FIELD_MODEL);
         renderField(frame, rows.get(6), "Remote standards URL  " + Icons.SEP + "  optional",
             state.settingsRemoteStandardsUrlInput, state.settingsFocusIndex == FIELD_REMOTE_STANDARDS);
+        renderActionRow(frame, rows.get(8),
+            "Connect to AI tool",
+            "wire Launchpad into Claude Desktop / Code / Cursor (MCP)",
+            state.settingsFocusIndex == FIELD_CONNECT_ACTION);
 
         if (state.settingsErrorMessage != null) {
-            renderError(frame, rows.get(7), state.settingsErrorMessage);
+            renderError(frame, rows.get(9), state.settingsErrorMessage);
         }
+    }
+
+    private void renderPicker(Frame frame, Rect area, AppState state) {
+        var clients = state.mcpClients.get();
+        var selected = state.mcpSelected.get();
+        int rowCount = Math.max(clients.size(), 1);
+
+        var rows = Layout.vertical()
+            .constraints(
+                Constraint.length(2),
+                Constraint.length(3),
+                Constraint.length(rowCount + 2),
+                Constraint.length(2),
+                Constraint.min(0)
+            )
+            .split(area);
+
+        var heading = Text.from(
+            Line.from(Span.styled("  Connect to AI tool", Styles.heading())),
+            Line.from(Span.styled(
+                "  Pick which clients to wire up. Existing files are backed up before writing.",
+                Styles.caption()))
+        );
+        frame.renderWidget(Paragraph.builder().text(heading).build(), rows.get(1));
+
+        var listArea = centeredColumn(rows.get(2), 80);
+        var card = Card.of("Detected clients").build();
+        var inner = card.inner(listArea);
+        frame.renderWidget(card, listArea);
+
+        var lines = new ArrayList<Line>(clients.size());
+        for (int i = 0; i < clients.size(); i++) {
+            var c = clients.get(i);
+            boolean isCursor = i == state.mcpSelectionIndex;
+            boolean isOn = selected.contains(c.id());
+            boolean isWritable = c.id() == ClientId.GENERIC || c.detected();
+
+            String checkbox = isOn ? "[x] " : "[ ] ";
+            String prefix = isCursor ? Icons.CURSOR + " " : "  ";
+            String badge = badgeFor(c);
+
+            var checkboxStyle = isOn ? Styles.focus() : Styles.muted();
+            var nameStyle = isWritable
+                ? (isCursor ? Styles.focus() : Styles.body())
+                : Styles.muted();
+            var pathStyle = Styles.dim();
+
+            String pathText = c.configPath() == null
+                ? "  " + Icons.SEP + "  no file, snippet rendered for copy"
+                : "  " + Icons.SEP + "  " + c.configPath();
+
+            lines.add(Line.from(
+                Span.styled(prefix, Styles.muted()),
+                Span.styled(checkbox, checkboxStyle),
+                Span.styled(c.displayName(), nameStyle),
+                Span.styled("  " + badge, badgeStyle(c)),
+                Span.styled(pathText, pathStyle)
+            ));
+        }
+        frame.renderWidget(Paragraph.builder().text(Text.from(lines.toArray(new Line[0]))).build(), inner);
+
+        if (state.settingsErrorMessage != null) {
+            renderError(frame, rows.get(3), state.settingsErrorMessage);
+        }
+    }
+
+    private void renderConfirm(Frame frame, Rect area, AppState state) {
+        var clients = state.mcpClients.get();
+        var selected = state.mcpSelected.get();
+        var picked = clients.stream().filter(c -> selected.contains(c.id())).toList();
+
+        var rows = Layout.vertical()
+            .constraints(
+                Constraint.length(2),
+                Constraint.length(3),
+                Constraint.length(picked.size() + 4),
+                Constraint.min(0)
+            )
+            .split(area);
+
+        var heading = Text.from(
+            Line.from(Span.styled("  Confirm write", Styles.heading())),
+            Line.from(Span.styled(
+                "  Existing files will be backed up to ~/.launchpad/backups/<ts>/ before merge.",
+                Styles.caption()))
+        );
+        frame.renderWidget(Paragraph.builder().text(heading).build(), rows.get(1));
+
+        var listArea = centeredColumn(rows.get(2), 80);
+        var card = Card.of("Will write " + picked.size() + " file" + (picked.size() == 1 ? "" : "s")).build();
+        var inner = card.inner(listArea);
+        frame.renderWidget(card, listArea);
+
+        var lines = new ArrayList<Line>();
+        for (var c : picked) {
+            String target = c.configPath() == null ? "(snippet only, no file write)" : c.configPath().toString();
+            lines.add(Line.from(
+                Span.styled("  " + Icons.ARROW_RIGHT + " ", Styles.muted()),
+                Span.styled(c.displayName(), Styles.body()),
+                Span.styled("  " + Icons.SEP + "  ", Styles.muted()),
+                Span.styled(target, Styles.dim())
+            ));
+        }
+        if (lines.isEmpty()) {
+            lines.add(Line.from(Span.styled("  (no clients selected)", Styles.muted())));
+        }
+        frame.renderWidget(Paragraph.builder().text(Text.from(lines.toArray(new Line[0]))).build(), inner);
+    }
+
+    private void renderResult(Frame frame, Rect area, AppState state) {
+        var reports = state.mcpReports.get();
+        int snippetLines = state.mcpRenderedSnippet == null ? 0 : countLines(state.mcpRenderedSnippet) + 3;
+
+        var rows = Layout.vertical()
+            .constraints(
+                Constraint.length(2),
+                Constraint.length(3),
+                Constraint.length(reports.size() + 2),
+                Constraint.length(snippetLines),
+                Constraint.min(0)
+            )
+            .split(area);
+
+        var heading = Text.from(
+            Line.from(Span.styled("  Results", Styles.heading())),
+            Line.from(Span.styled(
+                state.mcpBackupDir == null
+                    ? "  No files modified."
+                    : "  Backups: " + state.mcpBackupDir,
+                Styles.caption()))
+        );
+        frame.renderWidget(Paragraph.builder().text(heading).build(), rows.get(1));
+
+        var listArea = centeredColumn(rows.get(2), 80);
+        var card = Card.of("Per-client outcome").build();
+        var inner = card.inner(listArea);
+        frame.renderWidget(card, listArea);
+
+        var lines = new ArrayList<Line>(reports.size());
+        for (var r : reports) {
+            lines.add(Line.from(
+                Span.styled("  " + outcomeIcon(r.outcome()) + "  ", outcomeStyle(r.outcome())),
+                Span.styled(displayNameOf(r.id()), Styles.body()),
+                Span.styled("  " + Icons.SEP + "  ", Styles.muted()),
+                Span.styled(r.detail() == null ? "" : r.detail(), Styles.dim())
+            ));
+        }
+        frame.renderWidget(Paragraph.builder().text(Text.from(lines.toArray(new Line[0]))).build(), inner);
+
+        if (snippetLines > 0) {
+            var snippetArea = centeredColumn(rows.get(3), 80);
+            var sc = Card.of("Snippet (copy into any MCP-aware client)").build();
+            var si = sc.inner(snippetArea);
+            frame.renderWidget(sc, snippetArea);
+            var snippetLinesList = new ArrayList<Line>();
+            for (var l : state.mcpRenderedSnippet.split("\n", -1)) {
+                snippetLinesList.add(Line.from(Span.styled(l, Styles.code())));
+            }
+            frame.renderWidget(
+                Paragraph.builder().text(Text.from(snippetLinesList.toArray(new Line[0]))).build(), si);
+        }
+    }
+
+    private static int countLines(String s) {
+        int n = 1;
+        for (int i = 0; i < s.length(); i++) if (s.charAt(i) == '\n') n++;
+        return n;
+    }
+
+    private static String outcomeIcon(WriteReport.Outcome o) {
+        return switch (o) {
+            case WRITTEN -> Icons.CHECK;
+            case GENERIC_RENDERED -> Icons.SPARK;
+            case SKIPPED_KEY_EXISTS -> Icons.WARN;
+            case ERROR_NOT_OBJECT, ERROR_IO, ERROR_DEV_MODE -> Icons.CROSS;
+        };
+    }
+
+    private static Style outcomeStyle(WriteReport.Outcome o) {
+        return switch (o) {
+            case WRITTEN, GENERIC_RENDERED -> Styles.success();
+            case SKIPPED_KEY_EXISTS -> Styles.warning();
+            case ERROR_NOT_OBJECT, ERROR_IO, ERROR_DEV_MODE -> Styles.error();
+        };
+    }
+
+    private static String displayNameOf(ClientId id) {
+        return id.displayName();
+    }
+
+    private static String badgeFor(AiClient c) {
+        if (c.id() == ClientId.GENERIC) return "[ready]";
+        return c.detected() ? "[detected]" : "[not found]";
+    }
+
+    private static Style badgeStyle(AiClient c) {
+        if (c.id() == ClientId.GENERIC) return Styles.success();
+        return c.detected() ? Styles.success() : Styles.muted();
     }
 
     private static void renderHeading(Frame frame, Rect area) {
@@ -76,8 +309,7 @@ public class SettingsView implements View {
                 "  These persist to ~/.launchpad/config.properties.",
                 Styles.caption()))
         );
-        var p = Paragraph.builder().text(content).build();
-        frame.renderWidget(p, area);
+        frame.renderWidget(Paragraph.builder().text(content).build(), area);
     }
 
     private static void renderField(Frame frame, Rect area, String label, String value, boolean focused) {
@@ -91,8 +323,22 @@ public class SettingsView implements View {
                 Span.styled(value, Styles.code()),
                 Span.styled("█", Style.create().fg(Theme.fuel)))
             : Line.from(Span.styled(value, Styles.muted()));
-        var p = Paragraph.builder().text(Text.from(line)).build();
-        frame.renderWidget(p, inner);
+        frame.renderWidget(Paragraph.builder().text(Text.from(line)).build(), inner);
+    }
+
+    private static void renderActionRow(Frame frame, Rect area, String label, String hint, boolean focused) {
+        var fieldArea = centeredColumn(area, 80);
+        var card = Card.of(label).active(focused).build();
+        var inner = card.inner(fieldArea);
+        frame.renderWidget(card, fieldArea);
+
+        var line = Line.from(
+            Span.styled(Icons.ARROW_RIGHT + "  ", focused ? Styles.focus() : Styles.muted()),
+            Span.styled("press enter  ", focused ? Styles.focus() : Styles.muted()),
+            Span.styled(Icons.SEP + "  ", Styles.muted()),
+            Span.styled(hint, Styles.dim())
+        );
+        frame.renderWidget(Paragraph.builder().text(Text.from(line)).build(), inner);
     }
 
     private static void renderError(Frame frame, Rect area, String message) {
@@ -101,8 +347,7 @@ public class SettingsView implements View {
             Span.styled(" " + Icons.CROSS + "  ", Styles.error()),
             Span.styled(message, Styles.error())
         );
-        var p = Paragraph.builder().text(Text.from(line)).build();
-        frame.renderWidget(p, fieldArea);
+        frame.renderWidget(Paragraph.builder().text(Text.from(line)).build(), fieldArea);
     }
 
     private static Rect centeredColumn(Rect area, int width) {
@@ -113,43 +358,171 @@ public class SettingsView implements View {
 
     @Override
     public List<KeyHint> footerHints(AppState state) {
-        return List.of(
-            new KeyHint("tab", "next field"),
-            new KeyHint("enter", "save"),
-            new KeyHint("esc", "cancel")
-        );
+        return switch (state.settingsMode) {
+            case FIELDS -> List.of(
+                new KeyHint("tab", "next field"),
+                new KeyHint("enter", "save / open"),
+                new KeyHint("esc", "cancel"));
+            case MCP_PICKER -> List.of(
+                new KeyHint("↑↓", "move"),
+                new KeyHint("space", "toggle"),
+                new KeyHint("enter", "continue"),
+                new KeyHint("esc", "back"));
+            case MCP_CONFIRM -> List.of(
+                new KeyHint("enter", "write"),
+                new KeyHint("esc", "back"));
+            case MCP_RESULT -> List.of(
+                new KeyHint("enter", "done"),
+                new KeyHint("esc", "done"));
+        };
     }
 
     @Override
     public boolean handleEvent(Event event, TuiRunner runner, AppState state) {
         if (!(event instanceof KeyEvent key)) return false;
+        return switch (state.settingsMode) {
+            case FIELDS -> handleFields(key, state);
+            case MCP_PICKER -> handlePicker(key, state);
+            case MCP_CONFIRM -> handleConfirm(key, state);
+            case MCP_RESULT -> handleResult(key, state);
+        };
+    }
 
+    private boolean handleFields(KeyEvent key, AppState state) {
         if (key.isKey(KeyCode.ESCAPE)) {
             state.settingsErrorMessage = null;
             state.currentScreen = AppState.Screen.WELCOME;
             return true;
         }
-
         if (key.isKey(KeyCode.ENTER)) {
+            if (state.settingsFocusIndex == FIELD_CONNECT_ACTION) {
+                openPicker(state);
+                return true;
+            }
             return save(state);
         }
-
         if (key.isKey(KeyCode.TAB)) {
             state.settingsFocusIndex = (state.settingsFocusIndex + 1) % FIELD_COUNT;
             return true;
         }
-
+        if (state.settingsFocusIndex == FIELD_CONNECT_ACTION) {
+            // Action row swallows character input so stray keys don't accumulate.
+            return true;
+        }
         if (key.isKey(KeyCode.BACKSPACE)) {
             popChar(state);
             return true;
         }
-
         if (key.code() == KeyCode.CHAR) {
             appendChar(state, key.character());
             return true;
         }
-
         return false;
+    }
+
+    private boolean handlePicker(KeyEvent key, AppState state) {
+        var clients = state.mcpClients.get();
+        if (key.isKey(KeyCode.ESCAPE)) {
+            state.settingsMode = SettingsMode.FIELDS;
+            state.settingsErrorMessage = null;
+            return true;
+        }
+        if (key.isKey(KeyCode.UP)) {
+            state.mcpSelectionIndex = Math.floorMod(state.mcpSelectionIndex - 1, Math.max(clients.size(), 1));
+            return true;
+        }
+        if (key.isKey(KeyCode.DOWN)) {
+            state.mcpSelectionIndex = Math.floorMod(state.mcpSelectionIndex + 1, Math.max(clients.size(), 1));
+            return true;
+        }
+        if (key.code() == KeyCode.CHAR && key.character() == ' ') {
+            toggleSelection(state, clients);
+            return true;
+        }
+        if (key.isKey(KeyCode.ENTER)) {
+            var selected = state.mcpSelected.get();
+            if (selected.isEmpty()) {
+                state.settingsErrorMessage = "Pick at least one client (space to toggle)";
+                return true;
+            }
+            state.settingsErrorMessage = null;
+            state.settingsMode = SettingsMode.MCP_CONFIRM;
+            return true;
+        }
+        return false;
+    }
+
+    private boolean handleConfirm(KeyEvent key, AppState state) {
+        if (key.isKey(KeyCode.ESCAPE)) {
+            state.settingsMode = SettingsMode.MCP_PICKER;
+            return true;
+        }
+        if (key.isKey(KeyCode.ENTER)) {
+            runWrite(state);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean handleResult(KeyEvent key, AppState state) {
+        if (key.isKey(KeyCode.ENTER) || key.isKey(KeyCode.ESCAPE)) {
+            state.settingsMode = SettingsMode.FIELDS;
+            state.mcpRenderedSnippet = null;
+            state.mcpBackupDir = null;
+            return true;
+        }
+        return false;
+    }
+
+    private void openPicker(AppState state) {
+        state.mcpClients.set(clientRegistry.discover());
+        state.mcpSelected.set(new HashSet<>());
+        state.mcpReports.set(new ArrayList<>());
+        state.mcpSelectionIndex = 0;
+        state.settingsErrorMessage = null;
+        state.mcpRenderedSnippet = null;
+        state.mcpBackupDir = null;
+        state.settingsMode = SettingsMode.MCP_PICKER;
+    }
+
+    private static void toggleSelection(AppState state, List<AiClient> clients) {
+        if (clients.isEmpty()) return;
+        var idx = Math.min(state.mcpSelectionIndex, clients.size() - 1);
+        var client = clients.get(idx);
+        // Non-detected file-writing clients cannot be selected. GENERIC and detected rows can.
+        if (client.id() != ClientId.GENERIC && !client.detected()) {
+            state.settingsErrorMessage = client.displayName() + " is not installed on this machine";
+            return;
+        }
+        state.settingsErrorMessage = null;
+        var current = state.mcpSelected.get();
+        var next = new HashSet<>(current);
+        if (!next.remove(client.id())) next.add(client.id());
+        state.mcpSelected.set(next);
+    }
+
+    private void runWrite(AppState state) {
+        Optional<McpSnippet> snippet = snippetFactory.build();
+        var clients = state.mcpClients.get();
+        var selected = state.mcpSelected.get();
+        var picked = new ArrayList<AiClient>();
+        for (var c : clients) {
+            if (selected.contains(c.id())) picked.add(c);
+        }
+        var run = mcpWriter.apply(picked, snippet.orElse(null));
+        state.mcpReports.set(run.reports());
+        state.mcpBackupDir = run.backupDir() == null ? null : run.backupDir().toString();
+
+        // Pick a snippet to render on the result screen if Generic was selected,
+        // or if there is no working snippet (DEV) so the user still has something to copy.
+        boolean genericPicked = selected.contains(ClientId.GENERIC);
+        if (genericPicked || snippet.isEmpty()) {
+            var toRender = snippet.orElseGet(snippetFactory::placeholder);
+            state.mcpRenderedSnippet = snippetFactory.renderStandalone(toRender);
+        } else {
+            state.mcpRenderedSnippet = null;
+        }
+        state.settingsMode = SettingsMode.MCP_RESULT;
     }
 
     private boolean save(AppState state) {

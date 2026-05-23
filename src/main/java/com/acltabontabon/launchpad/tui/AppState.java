@@ -7,6 +7,10 @@ import com.acltabontabon.launchpad.task.TaskTurn;
 import com.acltabontabon.launchpad.template.ContextTarget;
 import com.acltabontabon.launchpad.template.FilePlan;
 import com.acltabontabon.launchpad.template.GeneratedFile;
+import com.acltabontabon.launchpad.tui.mcp.AiClient;
+import com.acltabontabon.launchpad.tui.mcp.ClientId;
+import com.acltabontabon.launchpad.tui.mcp.WriteReport;
+import com.acltabontabon.launchpad.tui.view.SettingsMode;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,8 +41,7 @@ public class AppState {
         // command palette. Keep them last so the stepper's ordinal-indexed highlight
         // covers only the in-flow screens.
         SETTINGS,
-        PROJECTS,
-        HELP
+        PROJECTS
     }
 
     public enum Phase {
@@ -141,8 +144,23 @@ public class AppState {
     public volatile String settingsBaseUrlInput = "";
     public volatile String settingsModelInput = "";
     public volatile String settingsRemoteStandardsUrlInput = "";
-    public volatile int settingsFocusIndex = 0; // 0 = base URL, 1 = model, 2 = remote standards URL
+    // 0 = base URL, 1 = model, 2 = remote standards URL, 3 = "Connect to AI tool" action row
+    public volatile int settingsFocusIndex = 0;
     public volatile String settingsErrorMessage = null;
+
+    // /settings sub-mode. Default FIELDS = the three property inputs; the
+    // MCP_* modes drive the "Connect to AI tool" flow that writes Launchpad's
+    // MCP server snippet into Claude / Cursor config files.
+    public volatile SettingsMode settingsMode = SettingsMode.FIELDS;
+    public final AtomicReference<List<AiClient>> mcpClients = new AtomicReference<>(new ArrayList<>());
+    public final AtomicReference<Set<ClientId>> mcpSelected = new AtomicReference<>(new HashSet<>());
+    public final AtomicReference<List<WriteReport>> mcpReports = new AtomicReference<>(new ArrayList<>());
+    public volatile int mcpSelectionIndex = 0;
+    // Result-screen rendered snippet (populated when GENERIC is selected, or for
+    // copy-anyway display). Null when nothing to show.
+    public volatile String mcpRenderedSnippet = null;
+    // Backup dir reported by the writer (null when nothing was backed up).
+    public volatile String mcpBackupDir = null;
 
     // Welcome screen command palette
     public volatile String commandInput = "";
