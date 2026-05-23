@@ -58,6 +58,14 @@
             <artifactId>spring-ai-starter-model-ollama</artifactId>
         </dependency>
 
+        <!-- Spring AI MCP server (stdio transport) - exposes Launchpad's scan / standards /
+             audit results as MCP tools and resources so any MCP client (Claude Code, Cursor,
+             Cline, Continue, Zed) can query them. -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server</artifactId>
+        </dependency>
+
         <!-- YAML parsing for engineering standards (rules.yml, skills.yml) -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>

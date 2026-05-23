@@ -2,6 +2,10 @@
 
 A friendly terminal companion that gets your project ready for AI coding assistants.
 
+> 📘 **Looking for step-by-step instructions?** [USAGE.md](USAGE.md) walks you from install through hooking Launchpad up to your AI tool as an MCP server, addressing projects by name, and troubleshooting the common gotchas.
+>
+> 💰 **Want to know what this actually saves you?** [BENEFITS.md](BENEFITS.md) breaks down the three benefit levers (cost, ambiguity, cross-reference) with tables, diagrams, and concrete token-cost numbers per session, per developer, and per team.
+
 ## What is Launchpad?
 
 Launchpad is a small desktop tool that runs in your terminal. Point it at any project on your computer, pick the AI assistant you use (Claude or Cursor), and it produces the context files those assistants need to understand your codebase.
@@ -62,6 +66,43 @@ Out of the box Launchpad talks to Ollama at `http://localhost:11434` using the `
    ```
 
 The TUI config file takes precedence over the bundled defaults; env vars and CLI args feed the defaults, so they win only when no user file exists.
+
+## Use Launchpad as an MCP server
+
+Once you have generated context for a project, Launchpad can stay useful in your editor too. The `launchpad mcp` subcommand starts a Model Context Protocol server over stdio. Any MCP-aware client (Claude Code, Cursor, Cline, Continue, Zed, and others) can register it and call four tools that are unique to Launchpad:
+
+- `list_projects()` - lists every project the user has used Launchpad on (name, path, stack, last-scanned time). Call this first when the user says "my projects" or doesn't remember a path.
+- `scan_project(project)` - returns a structured summary (stack, framework, dependencies, packages, source files). Cached for 24 hours so repeat calls are instant. `project` accepts a short name from `list_projects` or an absolute path.
+- `get_standards(project)` - returns the rules, skills, and checklists that apply to the project, as structured data.
+- `get_audit_findings(project)` - runs the standards audit (or returns the cached SARIF) and lists every violation with file path, line, and rule.
+
+A SARIF resource at `launchpad://audit/<abs-project-path>` exposes the same findings in the OASIS-standard format that VS Code SARIF Viewer, IntelliJ Qodana, and GitHub code-scanning consume natively.
+
+Register Launchpad with your MCP client using the same shape every client accepts:
+
+```json
+{
+  "launchpad": {
+    "command": "java",
+    "args": ["-jar", "/abs/path/to/launchpad-0.1.0-SNAPSHOT.jar", "mcp"]
+  }
+}
+```
+
+### Address projects by name, not by path
+
+The registry at `~/.launchpad/projects.json` enrolls every project the TUI scans (no extra step - it happens automatically when you reach the Review screen of `/init` or `/new-task`). From any MCP client you can then say:
+
+> "Use launchpad to audit Pragmata."
+> "Which of my projects in launchpad use Spring Boot? Pull the standards for the newest one."
+
+The agent calls `list_projects` to learn the names, then passes the chosen name into the other tools as `project`. No absolute paths typed, no per-session state on the server (every call is self-contained, so concurrent sessions in Claude Code and Cursor cannot confuse each other). Browse and prune the registry from the TUI via `/projects` (`enter` re-opens a project, `d` removes an entry, `p` prunes paths that no longer exist).
+
+> **Privacy note:** The registry stays on your machine, but any value `list_projects` returns is visible to the AI tool that called it. If you would rather not have a particular repo path leak to a cloud model, remove it via `/projects → d` or edit `~/.launchpad/projects.json` directly.
+
+> **Note:** MCP mode is currently supported on the JVM jar. The GraalVM native binary builds successfully and runs the TUI just fine, but the Spring AI MCP server (2.0.0-M6) bootstrap doesn't yet reflect cleanly under AOT - the tool schema generator fails when the JSON schema for tool inputs is built at runtime. Use `java -jar` for `mcp`; the JVM startup is sub-second on a warm system.
+
+Launchpad deliberately does not expose file reads, file writes, or git operations - the official `mcp-server-filesystem` and `mcp-server-git` already cover those. Use Launchpad's MCP server for what is unique to Launchpad: project intelligence and standards enforcement, computed locally with no cloud tokens spent.
 
 ## Who it's for
 

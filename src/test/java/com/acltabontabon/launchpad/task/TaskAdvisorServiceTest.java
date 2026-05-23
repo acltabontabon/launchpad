@@ -672,10 +672,10 @@ class TaskAdvisorServiceTest {
     }
 
     private static Rule rule(String id, String severity, String title) {
-        return new Rule(id, title, severity, "A description.", "A rationale.", Scope.empty(), null);
+        return new Rule(id, title, severity, "A description.", "A rationale.", Scope.empty(), null, null);
     }
 
     private static Rule ruleWithDesc(String id, String severity, String description) {
-        return new Rule(id, "Title-" + id, severity, description, null, Scope.empty(), null);
+        return new Rule(id, "Title-" + id, severity, description, null, Scope.empty(), null, null);
     }
 }

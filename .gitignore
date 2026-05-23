@@ -54,3 +54,12 @@ logs/
 HELP.md
 application-local.properties
 application-local.yml
+
+# Launchpad: per-project scan/audit cache + backups it produces when run against itself.
+# (The dotfile is a runtime artifact, not source - the on-disk standards override at
+# .launchpad/standards/ is fine to commit but lives next to runtime files in the same dir.)
+.launchpad/scan.json
+.launchpad/audit.md
+.launchpad/audit.sarif.json
+.launchpad/backups/
+.launchpad/tasks/

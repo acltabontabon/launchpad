@@ -64,7 +64,15 @@ public final class Header {
     private static List<Span> breadcrumb(AppState state) {
         var segs = new ArrayList<Span>();
         switch (state.currentScreen) {
-            case WELCOME -> segs.add(Span.styled("AI Context Generator", Styles.dim()));
+            case WELCOME -> {
+                var model = state.activeModel == null ? "" : state.activeModel;
+                if (model.isBlank()) {
+                    segs.add(Span.styled("model: not configured", Styles.dim()));
+                } else {
+                    segs.add(Span.styled("model", Styles.dim()));
+                    segs.add(Span.styled("  " + model, Styles.muted()));
+                }
+            }
             case PROJECT_SELECT -> {
                 segs.add(Span.styled("Init", Styles.muted()));
                 segs.add(Span.styled("  " + Icons.ARROW_RIGHT + "  ", Styles.dim()));

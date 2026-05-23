@@ -1,9 +1,12 @@
 package com.acltabontabon.launchpad.scanner;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 /**
  * One dependency declaration. `scope` is "runtime" / "dev" / "test" /
  * "provided" / null when not derivable from the source format.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record Dependency(String name, String version, String scope) {
 
     public String display() {

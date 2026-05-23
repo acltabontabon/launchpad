@@ -29,10 +29,26 @@ public final class CommandPalette {
             }
         ),
         new Command(
+            "/projects",
+            "Projects",
+            "Browse projects you have used Launchpad on (MCP-addressable by name)",
+            (state, runner) -> {
+                state.projectsCursorIndex = 0;
+                state.projectsFlashMessage = "";
+                state.currentScreen = AppState.Screen.PROJECTS;
+            }
+        ),
+        new Command(
             "/settings",
             "Settings",
             "Configure Ollama and remote standards repo",
             (state, runner) -> state.currentScreen = AppState.Screen.SETTINGS
+        ),
+        new Command(
+            "/help",
+            "Help",
+            "Show available commands and key shortcuts",
+            (state, runner) -> state.currentScreen = AppState.Screen.HELP
         ),
         new Command(
             "/quit",

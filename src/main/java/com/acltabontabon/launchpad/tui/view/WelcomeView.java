@@ -319,9 +319,6 @@ public class WelcomeView implements View {
             );
         }
         return List.of(
-            new KeyHint("/", "commands"),
-            new KeyHint("r", "refresh"),
-            new KeyHint("?", "help"),
             new KeyHint("q", "quit")
         );
     }

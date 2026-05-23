@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Launchpad logging configuration.
+
+  In MCP mode, stdout is owned by the JSON-RPC protocol - any Spring log line
+  written there would corrupt the stream. We route ALL Spring logs to stderr
+  in that profile, and quiet the noisy bean-post-processor warnings the MCP
+  starter triggers during initialisation.
+
+  In TUI mode the default Spring Boot logging policy is preserved (logs muted
+  via application.properties so the terminal UI owns the display).
+-->
+<configuration>
+    <springProfile name="mcp">
+        <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+            <target>System.err</target>
+            <encoder>
+                <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+
+        <!--
+          The MCP server autoconfig wires bean-post-processors that aren't
+          eligible for auto-proxying - that's expected by design but emits
+          three WARN lines on every boot. Silence them so MCP-mode startup
+          is quiet.
+        -->
+        <logger name="org.springframework.context.support.PostProcessorRegistrationDelegate$BeanPostProcessorChecker"
+                level="ERROR"/>
+
+        <root level="WARN">
+            <appender-ref ref="STDERR"/>
+        </root>
+        <logger name="com.acltabontabon.launchpad" level="INFO"/>
+    </springProfile>
+
+    <springProfile name="!mcp">
+        <!-- TUI mode keeps Spring's default policy; muting is done in application.properties. -->
+        <include resource="org/springframework/boot/logging/logback/base.xml"/>
+    </springProfile>
+</configuration>

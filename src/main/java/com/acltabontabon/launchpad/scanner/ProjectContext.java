@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.scanner;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import java.util.Map;
 
@@ -11,6 +12,7 @@ import java.util.Map;
  * `toPromptString` renders a token-budget-aware view for the LLM - prefer it
  * over assembling prompt content from raw fields, so the budget cap holds.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record ProjectContext(
     String name,
     String rootPath,

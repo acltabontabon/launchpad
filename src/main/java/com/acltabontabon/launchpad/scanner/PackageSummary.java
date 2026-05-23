@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.scanner;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 /**
@@ -8,6 +9,7 @@ import java.util.List;
  * file list when packing the prompt context, so the model gets shape
  * instead of an opaque ls -R dump.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record PackageSummary(
     String path,                  // relative dir path, e.g. "src/main/java/com/acme/users"
     int fileCount,

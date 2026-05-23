@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.scanner;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -8,6 +9,7 @@ import java.util.List;
  * "Java / Maven" form so prompts and rules can branch on framework, not just
  * build tool.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record StackProfile(
     String language,        // "Java", "TypeScript", "Python", "Rust", "Go", "Ruby", ...
     String buildTool,       // "Maven", "Gradle", "npm", "pip", "cargo", ...

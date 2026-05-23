@@ -11,10 +11,16 @@ public record Rule(
     @JsonAlias("content") String description,
     String rationale,
     Scope scope,
-    Integer priority
+    Integer priority,
+    Check check
 ) {
     public Rule {
         if (scope == null) scope = Scope.empty();
+    }
+
+    /** True when this rule carries audit machinery; false for doc-only rules. */
+    public boolean isAuditable() {
+        return check != null && check.kind() != null && !check.kind().isBlank();
     }
 
     /** Priority for sorting; lower = more important. Defaults to 99 if not set in YAML. */

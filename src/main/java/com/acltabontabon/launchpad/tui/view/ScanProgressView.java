@@ -122,6 +122,7 @@ public class ScanProgressView implements View {
         var lines = new ArrayList<Line>();
         lines.add(blank());
         lines.add(phaseRow(AppState.Phase.SCAN_FILES, "Scan project files", current, state));
+        lines.add(phaseRow(AppState.Phase.AUDIT_STANDARDS, "Audit against standards", current, state));
         lines.add(phaseRow(AppState.Phase.GENERATE_SUMMARY, "Generate project summary", current, state));
         lines.add(phaseRow(AppState.Phase.GENERATE_TARGET, "Generate " + target + " content", current, state));
         lines.add(phaseRow(AppState.Phase.ASSEMBLE, "Assemble output files", current, state));
@@ -148,6 +149,7 @@ public class ScanProgressView implements View {
         } else if (done || rowIdx < curIdx) {
             icon = Icons.CHECK;
             style = Styles.success();
+            suffix = completedSuffix(row, state);
         } else if (rowIdx == curIdx) {
             icon = Icons.CURSOR;
             style = Styles.focus();
@@ -167,7 +169,28 @@ public class ScanProgressView implements View {
             int chunks = state.streamedChunks.get();
             return "    " + elapsedSec + "s  " + Icons.SEP + "  " + chunks + " chunks";
         }
+        if (phase == AppState.Phase.AUDIT_STANDARDS) {
+            int rulesEvaluated = state.auditRulesEvaluated.get();
+            int findings = state.auditFindingsCount.get();
+            if (rulesEvaluated > 0) {
+                return "    " + elapsedSec + "s  " + Icons.SEP + "  "
+                    + rulesEvaluated + " rules, " + findings + " findings";
+            }
+        }
         return elapsedSec > 0 ? "    " + elapsedSec + "s" : "";
+    }
+
+    private String completedSuffix(AppState.Phase phase, AppState state) {
+        if (phase == AppState.Phase.AUDIT_STANDARDS && state.auditRulesEvaluated.get() > 0) {
+            int findings = state.auditFindingsCount.get();
+            if (findings == 0) {
+                return "    " + Icons.SEP + "  clean";
+            }
+            return "    " + Icons.SEP + "  "
+                + state.auditMustCount.get() + " must, "
+                + state.auditShouldCount.get() + " should";
+        }
+        return "";
     }
 
     private boolean isAiPhase(AppState.Phase phase) {

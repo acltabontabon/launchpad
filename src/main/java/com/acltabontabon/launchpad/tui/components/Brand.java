@@ -52,8 +52,8 @@ public final class Brand {
             Line.from(Span.styled("", Style.create())),
             Line.from(Span.styled("LAUNCHPAD", wordmarkStyle)),
             Line.from(Span.styled("─────────", ruleStyle)),
-            Line.from(Span.styled("AI Context Generator", subStyle)),
-            Line.from(Span.styled("Save tokens. Ship faster.", tagStyle))
+            Line.from(Span.styled("Local AI Context Prep", subStyle)),
+            Line.from(Span.styled("Sharper prompts. Smaller bills.", tagStyle))
         );
     }
 }

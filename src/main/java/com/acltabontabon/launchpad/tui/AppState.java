@@ -33,13 +33,17 @@ public class AppState {
         TASK_INPUT,
         TASK_INTERVIEW,
         TASK_RESULT,
-        // SETTINGS is off the linear flow - reached from WELCOME via 'c'. Keep last
-        // so the stepper's ordinal-indexed highlight covers only the in-flow screens.
-        SETTINGS
+        // SETTINGS / PROJECTS are off the linear flow - reached from WELCOME via the
+        // command palette. Keep them last so the stepper's ordinal-indexed highlight
+        // covers only the in-flow screens.
+        SETTINGS,
+        PROJECTS,
+        HELP
     }
 
     public enum Phase {
         SCAN_FILES,
+        AUDIT_STANDARDS,
         GENERATE_SUMMARY,
         GENERATE_TARGET,
         ASSEMBLE,
@@ -97,6 +101,15 @@ public class AppState {
     public volatile boolean scanError = false;
     public volatile String scanErrorMessage = null;
 
+    // Audit phase (updated from background thread). When no rules carry a `check`
+    // block, the audit is skipped and these fields stay zero / null.
+    public final AtomicInteger auditFindingsCount = new AtomicInteger(0);
+    public final AtomicInteger auditMustCount = new AtomicInteger(0);
+    public final AtomicInteger auditShouldCount = new AtomicInteger(0);
+    public final AtomicInteger auditRulesEvaluated = new AtomicInteger(0);
+    public volatile String auditMarkdownPath = null;
+    public volatile String auditSarifPath = null;
+
     // Generated output
     public volatile List<GeneratedFile> generatedFiles = new ArrayList<>();
     public volatile int reviewFileIndex = 0;
@@ -119,6 +132,11 @@ public class AppState {
     // Text input cursor for path input
     public volatile int inputCursorPos = 0;
 
+    // Active Ollama model name (e.g. "qwen2.5-coder:7b"). Surfaced in the Welcome
+    // header so the user knows which local model will do the work. Updated on
+    // startup and whenever LaunchpadSettings.OllamaSettingsChanged fires.
+    public volatile String activeModel = "";
+
     // Settings screen input state (Ollama base URL + model + remote standards URL)
     public volatile String settingsBaseUrlInput = "";
     public volatile String settingsModelInput = "";
@@ -130,6 +148,10 @@ public class AppState {
     public volatile String commandInput = "";
     public volatile int commandCursorIndex = 0;
     public volatile String welcomeFlashMessage = "";
+
+    // Projects screen
+    public volatile int projectsCursorIndex = 0;
+    public volatile String projectsFlashMessage = "";
 
     // /new-task flow state. taskFlow gates the post-scan branch in LaunchpadRunner -
     // when true, the pipeline scans only and routes to TASK_INPUT instead of generating
@@ -179,6 +201,12 @@ public class AppState {
         savedFileIndices = new HashSet<>();
         reviewSaveStatus.set("");
         reviewSaveError = false;
+        auditFindingsCount.set(0);
+        auditMustCount.set(0);
+        auditShouldCount.set(0);
+        auditRulesEvaluated.set(0);
+        auditMarkdownPath = null;
+        auditSarifPath = null;
     }
 
     /** Clear all per-scan review state so leaving Review back to Welcome lets a

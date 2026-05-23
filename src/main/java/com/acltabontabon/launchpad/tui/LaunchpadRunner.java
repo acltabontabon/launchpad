@@ -3,7 +3,12 @@ package com.acltabontabon.launchpad.tui;
 import com.acltabontabon.launchpad.ai.ContextGeneratorService;
 import com.acltabontabon.launchpad.ai.OllamaHealthChecker;
 import com.acltabontabon.launchpad.ai.OllamaStatus;
+import com.acltabontabon.launchpad.audit.AuditService;
+import com.acltabontabon.launchpad.config.LaunchpadSettings;
+import com.acltabontabon.launchpad.config.ProjectRegistry;
 import com.acltabontabon.launchpad.scanner.ProjectScanner;
+import com.acltabontabon.launchpad.scanner.ScanStore;
+import com.acltabontabon.launchpad.scanner.StackProfile;
 import com.acltabontabon.launchpad.standards.RemoteStandardsChecker;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
@@ -11,7 +16,9 @@ import com.acltabontabon.launchpad.task.TaskAdvisorService;
 import com.acltabontabon.launchpad.template.ContextTemplateEngine;
 import com.acltabontabon.launchpad.tui.components.Footer;
 import com.acltabontabon.launchpad.tui.components.Header;
+import com.acltabontabon.launchpad.tui.view.HelpView;
 import com.acltabontabon.launchpad.tui.view.ProjectSelectView;
+import com.acltabontabon.launchpad.tui.view.ProjectsView;
 import com.acltabontabon.launchpad.tui.view.ReviewView;
 import com.acltabontabon.launchpad.tui.view.ScanProgressView;
 import com.acltabontabon.launchpad.tui.view.SettingsView;
@@ -31,6 +38,7 @@ import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.TickEvent;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -41,6 +49,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CompletableFuture;
 
 @Component
+@ConditionalOnProperty(name = "launchpad.mode", havingValue = "tui", matchIfMissing = true)
 public class LaunchpadRunner implements ApplicationRunner {
 
     private final AppState state = new AppState();
@@ -51,17 +60,23 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final ScanProgressView scanProgressView;
     private final ReviewView reviewView;
     private final SettingsView settingsView;
+    private final ProjectsView projectsView;
     private final TaskInputView taskInputView;
     private final TaskInterviewView taskInterviewView;
     private final TaskResultView taskResultView;
+    private final HelpView helpView;
 
     private final ProjectScanner scanner;
+    private final ScanStore scanStore;
+    private final ProjectRegistry projectRegistry;
+    private final AuditService auditService;
     private final ContextGeneratorService generatorService;
     private final OllamaHealthChecker healthChecker;
     private final RemoteStandardsChecker remoteStandardsChecker;
     private final ContextTemplateEngine templateEngine;
     private final TaskAdvisorService taskAdvisor;
     private final StandardsLoader standardsLoader;
+    private final LaunchpadSettings settings;
 
     private static final DateTimeFormatter TASK_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final int TASK_RUNAWAY_CAP = 15;
@@ -73,16 +88,22 @@ public class LaunchpadRunner implements ApplicationRunner {
         ScanProgressView scanProgressView,
         ReviewView reviewView,
         SettingsView settingsView,
+        ProjectsView projectsView,
         TaskInputView taskInputView,
         TaskInterviewView taskInterviewView,
         TaskResultView taskResultView,
+        HelpView helpView,
         ProjectScanner scanner,
+        ScanStore scanStore,
+        ProjectRegistry projectRegistry,
+        AuditService auditService,
         ContextGeneratorService generatorService,
         OllamaHealthChecker healthChecker,
         RemoteStandardsChecker remoteStandardsChecker,
         ContextTemplateEngine templateEngine,
         TaskAdvisorService taskAdvisor,
-        StandardsLoader standardsLoader
+        StandardsLoader standardsLoader,
+        LaunchpadSettings settings
     ) {
         this.welcomeView = welcomeView;
         this.projectSelectView = projectSelectView;
@@ -90,16 +111,28 @@ public class LaunchpadRunner implements ApplicationRunner {
         this.scanProgressView = scanProgressView;
         this.reviewView = reviewView;
         this.settingsView = settingsView;
+        this.projectsView = projectsView;
         this.taskInputView = taskInputView;
         this.taskInterviewView = taskInterviewView;
         this.taskResultView = taskResultView;
+        this.helpView = helpView;
         this.scanner = scanner;
+        this.scanStore = scanStore;
+        this.projectRegistry = projectRegistry;
+        this.auditService = auditService;
         this.generatorService = generatorService;
         this.healthChecker = healthChecker;
         this.remoteStandardsChecker = remoteStandardsChecker;
         this.templateEngine = templateEngine;
         this.taskAdvisor = taskAdvisor;
         this.standardsLoader = standardsLoader;
+        this.settings = settings;
+        this.state.activeModel = settings.snapshot().model();
+    }
+
+    @org.springframework.context.event.EventListener
+    void onOllamaSettingsChanged(LaunchpadSettings.OllamaSettingsChanged event) {
+        state.activeModel = event.snapshot().model();
     }
 
     @Override
@@ -208,6 +241,11 @@ public class LaunchpadRunner implements ApplicationRunner {
                     int p = 5 + (int) (20 * (1 - Math.exp(-n / 30.0)));
                     state.scanProgress.set(Math.min(25, p));
                 });
+
+                var projectRootForAudit = Path.of(state.projectPath).toAbsolutePath();
+                scanStore.save(projectRootForAudit, ctx);
+                registerProjectQuietly(projectRootForAudit, ctx.stack());
+                runAuditPhase(ctx, projectRootForAudit);
 
                 if (state.taskFlow) {
                     // /new-task: scan-only. Stash the context and jump straight to the
@@ -453,6 +491,59 @@ public class LaunchpadRunner implements ApplicationRunner {
         return s.isEmpty() ? "task" : s;
     }
 
+    /**
+     * Enroll the project in the user-global registry so MCP clients can address
+     * it by short name across sessions. Registry write failures are not fatal -
+     * the scan / audit / generation flow continues regardless. The message is
+     * swallowed quietly because the user did not explicitly ask to register;
+     * the registry is a side-effect of normal use.
+     */
+    private void registerProjectQuietly(Path projectRoot, StackProfile stack) {
+        try {
+            projectRegistry.register(projectRoot, describeStack(stack));
+        } catch (RuntimeException ignored) {
+            // Best-effort - never block the scan pipeline on a registry write.
+        }
+    }
+
+    private static String describeStack(StackProfile stack) {
+        if (stack == null) return null;
+        var language = stack.language();
+        var framework = stack.framework();
+        if (language != null && framework != null && !framework.isBlank()) {
+            return language + " / " + framework;
+        }
+        return language;
+    }
+
+    /**
+     * Runs the audit between scan and generation. Silently no-ops when no rules
+     * in the active standards pack carry a {@code check} block - keeps existing
+     * setups (no audit defined) unchanged. The two output files
+     * ({@code .launchpad/audit.md}, {@code .launchpad/audit.sarif.json}) are
+     * written for downstream tooling (TUI, MCP server, IDE SARIF viewers).
+     */
+    private void runAuditPhase(com.acltabontabon.launchpad.scanner.ProjectContext ctx, Path projectRoot) {
+        try {
+            beginPhase(AppState.Phase.AUDIT_STANDARDS, 26, "Auditing project against standards...");
+            var result = auditService.run(ctx, projectRoot, progress ->
+                state.scanMessage.set("Auditing: " + progress.ruleId()
+                    + " (" + progress.index() + "/" + progress.total() + ")"));
+            state.auditRulesEvaluated.set(result.rulesAudited());
+            state.auditFindingsCount.set(result.findings().size());
+            var counts = result.countsBySeverity();
+            state.auditMustCount.set(counts.getOrDefault("must", 0L).intValue()
+                + counts.getOrDefault("never", 0L).intValue());
+            state.auditShouldCount.set(counts.getOrDefault("should", 0L).intValue());
+            state.auditMarkdownPath = result.markdownPath() == null ? null : result.markdownPath().toString();
+            state.auditSarifPath = result.sarifPath() == null ? null : result.sarifPath().toString();
+        } catch (RuntimeException e) {
+            // Audit failures are non-fatal - the user still gets context generation.
+            // The message surfaces in the next phase's status briefly.
+            state.scanMessage.set("Audit skipped: " + e.getMessage());
+        }
+    }
+
     private void beginPhase(AppState.Phase phase, int baseProgress, String message) {
         state.currentPhase.set(phase);
         state.scanProgress.set(baseProgress);
@@ -487,6 +578,8 @@ public class LaunchpadRunner implements ApplicationRunner {
             case TASK_INTERVIEW -> taskInterviewView;
             case TASK_RESULT    -> taskResultView;
             case SETTINGS       -> settingsView;
+            case PROJECTS       -> projectsView;
+            case HELP           -> helpView;
         };
     }
 }
