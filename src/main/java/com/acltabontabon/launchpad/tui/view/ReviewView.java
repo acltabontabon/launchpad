@@ -324,7 +324,8 @@ public class ReviewView implements View {
             new KeyHint("m", "merge"),
             new KeyHint("x", "skip"),
             new KeyHint("d", "diff"),
-            new KeyHint("s", "save all")
+            new KeyHint("s", "save all"),
+            new KeyHint("esc", "home")
         );
     }
 
@@ -332,6 +333,11 @@ public class ReviewView implements View {
     public boolean handleEvent(Event event, TuiRunner runner, AppState state) {
         if (!(event instanceof KeyEvent key)) return false;
 
+        if (key.isKey(KeyCode.ESCAPE)) {
+            state.resetReviewFlow();
+            state.currentScreen = AppState.Screen.WELCOME;
+            return true;
+        }
         if (key.isKey(KeyCode.DOWN) || key.isChar('j')) {
             state.nextReviewFile();
             return true;

@@ -12,16 +12,21 @@ import java.util.regex.Pattern;
  * Checks LLM output for the obvious failure modes:
  *   1. Empty / suspiciously short content
  *   2. Missing structural markers the prompt asked for (## headings)
- *   3. Backtick-quoted file paths that don't exist in the scanned project
- *      (hallucination - common with smaller local models)
  * Returns a list of human-readable warnings. Empty list = passed.
+ * Hallucinated file references are handled by {@link #cleanHallucinations}
+ * which strips them silently - the validator does not double-report them.
  */
 public final class OutputValidator {
 
     private static final int MIN_CONTENT_CHARS = 120;
-    private static final int MAX_HALLUCINATION_WARNINGS = 5;
     private static final Pattern BACKTICKED_PATH = Pattern.compile(
         "`([A-Za-z0-9_\\-./]+\\.(java|kt|py|ts|tsx|js|jsx|go|rs|cs|rb|swift|xml|yml|yaml|toml|json|md|properties))`");
+    // Spring profile config convention: application-<profile>.{properties,yml,yaml}.
+    // These are real files in countless Spring projects even when the scanner
+    // didn't find one - the model citing them is a convention reference, not a
+    // hallucination, so we allowlist the shape.
+    private static final Pattern SPRING_PROFILE_CONFIG = Pattern.compile(
+        "application-[A-Za-z0-9_-]+\\.(properties|yml|yaml)");
 
     public List<String> validate(String content, ProjectContext ctx, List<String> requiredHeadings) {
         var warnings = new ArrayList<String>();
@@ -37,7 +42,6 @@ public final class OutputValidator {
                 warnings.add("missing required section: " + heading);
             }
         }
-        addHallucinationWarnings(content, ctx, warnings);
         return warnings;
     }
 
@@ -137,25 +141,9 @@ public final class OutputValidator {
             String ref = m.group(1);
             String basename = ref.contains("/") ? ref.substring(ref.lastIndexOf('/') + 1) : ref;
             if (sourceSet.contains(ref) || basenames.contains(basename)) continue;
+            if (SPRING_PROFILE_CONFIG.matcher(basename).matches()) continue;
             hits.add(ref);
         }
         return hits;
-    }
-
-    private static void addHallucinationWarnings(String content, ProjectContext ctx, List<String> warnings) {
-        Set<String> sourceSet = new HashSet<>(ctx.sourceFiles());
-        Set<String> basenames = buildBasenameAllowlist(ctx);
-
-        Matcher m = BACKTICKED_PATH.matcher(content);
-        var seen = new HashSet<String>();
-        int reported = 0;
-        while (m.find() && reported < MAX_HALLUCINATION_WARNINGS) {
-            String ref = m.group(1);
-            if (!seen.add(ref)) continue;
-            String basename = ref.contains("/") ? ref.substring(ref.lastIndexOf('/') + 1) : ref;
-            if (sourceSet.contains(ref) || basenames.contains(basename)) continue;
-            warnings.add("model referenced `" + ref + "` which is not in the scanned project");
-            reported++;
-        }
     }
 }

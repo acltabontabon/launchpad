@@ -229,10 +229,11 @@ public class LaunchpadRunner implements ApplicationRunner {
                 var targetContent = generatorService.generateTargetSpecificContent(ctx, state.selectedTarget,
                     chunk -> onAiChunk(chunk, 60, 85));
 
-                // Collect validation warnings so the Review screen can surface them.
+                // Surface only the user-actionable validation signals (empty/short
+                // output, hallucination strips). Internal retry detail is dropped -
+                // the retry already produced the winning output, and "we retried"
+                // isn't something the user can act on.
                 var warnings = new java.util.ArrayList<String>();
-                if (summary.retried()) warnings.add("summary phase retried once after a format violation");
-                if (targetContent.retried()) warnings.add(state.selectedTarget.displayName + " phase retried once after a format violation");
                 summary.warnings().forEach(w -> warnings.add("summary: " + w));
                 targetContent.warnings().forEach(w -> warnings.add(state.selectedTarget.displayName.toLowerCase() + ": " + w));
                 state.generationWarnings = warnings;

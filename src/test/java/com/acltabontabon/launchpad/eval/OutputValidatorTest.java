@@ -9,14 +9,15 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Exercises {@link OutputValidator} against real scanned context. Confirms
- * that hallucinated path references are flagged and that real ones are not.
+ * that structural failures surface as warnings and that hallucinated path
+ * references are stripped (not double-reported) by {@link OutputValidator#cleanHallucinations}.
  */
 class OutputValidatorTest {
 
     private final OutputValidator validator = new OutputValidator();
 
     @Test
-    void flagsMissingSectionAndHallucinatedPath() throws Exception {
+    void flagsMissingSectionsButNotHallucinatedPaths() throws Exception {
         var root = FixtureSupport.fixturePath("spring-boot");
         var ctx = ProjectScanner.forTesting().scan(root.toString(), msg -> { });
 
@@ -32,8 +33,40 @@ class OutputValidatorTest {
 
         assertThat(warnings).anyMatch(w -> w.contains("## Overview"));
         assertThat(warnings).anyMatch(w -> w.contains("## Architecture"));
-        assertThat(warnings).anyMatch(w -> w.contains("Made/Up.java"));
+        // Hallucination handling is the cleaner's job - validate() must not duplicate it.
+        assertThat(warnings).noneMatch(w -> w.contains("Made/Up.java"));
         assertThat(warnings).noneMatch(w -> w.contains("UserService.java"));
+    }
+
+    @Test
+    void cleanHallucinationsStripsInventedPaths() throws Exception {
+        var root = FixtureSupport.fixturePath("spring-boot");
+        var ctx = ProjectScanner.forTesting().scan(root.toString(), msg -> { });
+
+        String output = """
+            See `src/main/java/com/example/users/UserService.java` for the real thing.
+            And `src/main/java/com/example/completely/Made/Up.java` is invented.
+            """;
+
+        var clean = validator.cleanHallucinations(output, ctx);
+        assertThat(clean.strippedCount()).isEqualTo(1);
+        assertThat(clean.content()).doesNotContain("Made/Up.java");
+        assertThat(clean.content()).contains("UserService.java");
+    }
+
+    @Test
+    void cleanHallucinationsAllowsSpringProfileConfigConvention() throws Exception {
+        var root = FixtureSupport.fixturePath("spring-boot");
+        var ctx = ProjectScanner.forTesting().scan(root.toString(), msg -> { });
+
+        String output = """
+            Dev overrides live in `application-dev.yml` and prod in `application-prod.properties`.
+            """;
+
+        var clean = validator.cleanHallucinations(output, ctx);
+        assertThat(clean.strippedCount()).isZero();
+        assertThat(clean.content()).contains("application-dev.yml");
+        assertThat(clean.content()).contains("application-prod.properties");
     }
 
     @Test

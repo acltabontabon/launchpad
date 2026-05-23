@@ -25,7 +25,7 @@ import org.springframework.test.context.TestPropertySource;
 @SpringBootTest
 @TestPropertySource(properties = {
     "spring.ai.ollama.base-url=${LAUNCHPAD_EVAL_OLLAMA_URL:http://localhost:11434}",
-    "spring.ai.ollama.chat.options.model=${LAUNCHPAD_EVAL_MODEL:llama3.2}"
+    "spring.ai.ollama.chat.options.model=${LAUNCHPAD_EVAL_MODEL:qwen2.5-coder:7b}"
 })
 class GenerationEvalIT {
 

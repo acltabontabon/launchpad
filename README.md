@@ -46,11 +46,11 @@ That's the whole loop. No accounts, no cloud, no API keys.
 
 - A computer running macOS, Linux, or Windows.
 - [Ollama](https://ollama.com) installed and running locally - this is the engine that powers the writing. Launchpad talks to it on your machine; nothing is sent anywhere else.
-- A pulled model (the default is `llama3.2`, but you can switch to any model Ollama supports).
+- A pulled model (the default is `qwen2.5-coder:7b`, but you can switch to any model Ollama supports).
 
 ## Configuration
 
-Out of the box Launchpad talks to Ollama at `http://localhost:11434` using the `llama3.2` model. If Ollama lives somewhere else - a homelab box, a remote dev machine, or just a different port - you can point Launchpad at it in any of three ways:
+Out of the box Launchpad talks to Ollama at `http://localhost:11434` using the `qwen2.5-coder:7b` model (a code-aware 7B model chosen for its grounded handling of file paths and project structure - swap in any model Ollama supports if you prefer). If Ollama lives somewhere else - a homelab box, a remote dev machine, or just a different port - you can point Launchpad at it in any of three ways:
 
 1. **In the TUI (recommended)** - press `c` on the Welcome screen. Edit the base URL and model, hit Enter to save. Changes apply immediately, no restart, and persist to `~/.launchpad/config.properties`.
 2. **Edit the config file directly** - `~/.launchpad/config.properties` (created on first save). Keys are `spring.ai.ollama.base-url` and `spring.ai.ollama.chat.options.model`. Note: Java's properties format escapes `:` in URLs, so the file shows `http\://host\:11434`; that round-trips correctly when read back.

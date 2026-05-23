@@ -181,6 +181,18 @@ public class AppState {
         reviewSaveError = false;
     }
 
+    /** Clear all per-scan review state so leaving Review back to Welcome lets a
+     *  follow-up scan start clean. Resets the scan latch too so the next pass
+     *  through Scanning fires a fresh generation. */
+    public void resetReviewFlow() {
+        resetScanLatch();
+        generatedFiles = new ArrayList<>();
+        filePlans = new ArrayList<>();
+        generationWarnings = new ArrayList<>();
+        reviewShowDiff = false;
+        reviewFileIndex = 0;
+    }
+
     public void resetTaskFlow() {
         taskFlow = false;
         taskProjectContext = null;

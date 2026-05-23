@@ -89,22 +89,23 @@ public class ContextGeneratorService {
 
     /**
      * Strips hallucinated file references from the winning content before it
-     * ships, and records how many were removed as a separate warning. The
-     * underlying "model referenced X" warnings are kept too so the user can see
-     * what the model invented.
+     * ships. Only user-actionable warnings are surfaced. "missing required
+     * section" drives the retry decision internally but is dropped from the
+     * user-facing list, since the assembled output still embeds the content
+     * under a labeled section either way. Hallucination stripping is silent
+     * for the same reason: the cleanup already happened, nothing for the
+     * user to do.
      */
     private GeneratedOutput finalize(String content, List<String> warnings, ProjectContext ctx, boolean retried) {
         var clean = validator.cleanHallucinations(content, ctx);
-        var combined = new java.util.ArrayList<>(warnings);
-        if (clean.strippedCount() > 0) {
-            combined.add("stripped " + clean.strippedCount()
-                + " hallucinated file reference"
-                + (clean.strippedCount() == 1 ? "" : "s")
-                + " from the output");
+        var userVisible = new java.util.ArrayList<String>();
+        for (var w : warnings) {
+            if (w.startsWith("missing required")) continue;
+            userVisible.add(w);
         }
-        return combined.isEmpty()
+        return userVisible.isEmpty()
             ? GeneratedOutput.ok(clean.content(), retried)
-            : GeneratedOutput.withWarnings(clean.content(), combined, retried);
+            : GeneratedOutput.withWarnings(clean.content(), userVisible, retried);
     }
 
     private String streamPrompt(String template, ProjectContext ctx, Consumer<String> onChunk) {
