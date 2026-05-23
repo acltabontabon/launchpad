@@ -356,6 +356,16 @@ public class WelcomeView implements View {
         }
 
         if (key.code() == KeyCode.CHAR) {
+            // Only accept text input when the palette is already open, or when the
+            // keystroke is the '/' that opens it. Without this guard, any stray
+            // letter silently accumulates into commandInput and the render check
+            // (commandInput.startsWith("/")) never opens the palette - the screen
+            // looks frozen because every subsequent keypress mutates an invisible
+            // buffer instead of falling through to global handlers (q to quit).
+            boolean paletteOpen = state.commandInput.startsWith("/");
+            if (!paletteOpen && key.character() != '/') {
+                return false;
+            }
             state.commandInput = state.commandInput + key.character();
             state.commandCursorIndex = 0;
             state.welcomeFlashMessage = "";

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Welcome screen no longer "freezes" on stray keystrokes. Pressing `q` (or any non-`/` character) used to silently accumulate into the command-palette buffer without opening the palette, leaving the screen visually unchanged while subsequent keys did nothing. `q` now quits from Welcome when the palette is closed (matching the footer hint), and `WelcomeView` only accepts text input when the palette is already open or the keystroke is the `/` that opens it.
+
 ### Added
 - Project Select now shows a live "matches" card listing every sibling directory that prefix-matches the unfinished path segment. `↑↓` browses, `tab` accepts the highlighted match (or the ghost suggestion when the list is hidden), `enter` continues.
 - Review screen now shows a green `SAVED` chip on files successfully written this session, distinguishing them from the planned `NEW` / `MERGE` / `OVERWRITE` chips.

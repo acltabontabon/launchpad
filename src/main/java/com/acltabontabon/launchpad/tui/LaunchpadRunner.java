@@ -122,17 +122,19 @@ public class LaunchpadRunner implements ApplicationRunner {
         }
 
         // Global quit - q from any screen except text-input screens.
-        // WELCOME accepts text (slash-command palette) - quitting goes through /quit.
+        // WELCOME accepts q as quit when the palette is closed; once the user has
+        // opened the palette by typing '/', q is a filter character (e.g. /quit).
         // TASK_INPUT / TASK_INTERVIEW accept text (description, answers); TASK_RESULT
         // uses q as "back to welcome" instead of quit so the user can start another task.
         if (event instanceof KeyEvent key
                 && key.isChar('q')
                 && state.currentScreen != AppState.Screen.PROJECT_SELECT
                 && state.currentScreen != AppState.Screen.SETTINGS
-                && state.currentScreen != AppState.Screen.WELCOME
                 && state.currentScreen != AppState.Screen.TASK_INPUT
                 && state.currentScreen != AppState.Screen.TASK_INTERVIEW
-                && state.currentScreen != AppState.Screen.TASK_RESULT) {
+                && state.currentScreen != AppState.Screen.TASK_RESULT
+                && !(state.currentScreen == AppState.Screen.WELCOME
+                     && state.commandInput.startsWith("/"))) {
             runner.quit();
             return true;
         }
