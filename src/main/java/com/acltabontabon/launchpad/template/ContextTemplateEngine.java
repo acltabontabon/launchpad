@@ -92,7 +92,9 @@ public class ContextTemplateEngine {
                 GeneratedFile.FileKind.CONTEXT));
         }
 
-        files.add(new GeneratedFile(".ai/index.md", buildAiIndex(ctx, skills, !checklists.isEmpty(), !prompts.isEmpty()),
+        files.add(new GeneratedFile(".ai/index.md",
+            buildAiIndex(ctx, skills, !checklists.isEmpty(), !prompts.isEmpty(),
+                llmSkills != null && !llmSkills.isBlank()),
             GeneratedFile.FileKind.INDEX));
         files.add(new GeneratedFile(".ai/engineering-rules.md", buildEngineeringRulesMd(rules),
             GeneratedFile.FileKind.RULES));
@@ -105,6 +107,10 @@ public class ContextTemplateEngine {
         if (!prompts.isEmpty()) {
             files.add(new GeneratedFile(".ai/prompts.md", buildPromptsMd(prompts),
                 GeneratedFile.FileKind.RULES));
+        }
+        if (llmSkills != null && !llmSkills.isBlank()) {
+            files.add(new GeneratedFile(".ai/project-notes.md", buildProjectNotesMd(ctx, llmSkills),
+                GeneratedFile.FileKind.CONTEXT));
         }
 
         skills.forEach(s -> files.add(new GeneratedFile(
@@ -150,6 +156,10 @@ public class ContextTemplateEngine {
             files.add(new GeneratedFile(".cursor/rules/prompts.mdc", buildCursorPrompts(prompts),
                 GeneratedFile.FileKind.RULES));
         }
+        if (llmRules != null && !llmRules.isBlank()) {
+            files.add(new GeneratedFile(".cursor/rules/project-notes.mdc",
+                buildCursorProjectNotes(ctx, llmRules), GeneratedFile.FileKind.CONTEXT));
+        }
         return files;
     }
 
@@ -183,35 +193,9 @@ public class ContextTemplateEngine {
         appendWorkspaceSection(sb, ctx);
 
         var includes = output.includes() != null ? output.includes() : List.<String>of();
+        appendStandardsPointers(sb, includes, skills, checklists, prompts,
+            llmGenerated != null && !llmGenerated.isBlank(), withFrontmatter);
 
-        if (includes.contains("rules")) {
-            sb.append("## Engineering Rules\n\n");
-            if (rules.isEmpty()) {
-                sb.append(RULES_PLACEHOLDER).append("\n");
-            } else {
-                rules.forEach(rule -> appendRule(sb, rule));
-            }
-        }
-        if (includes.contains("skills")) {
-            sb.append("## Workflow Skills\n\n");
-            if (skills.isEmpty()) {
-                sb.append(SKILLS_PLACEHOLDER).append("\n");
-            } else {
-                skills.forEach(skill -> appendSkill(sb, skill));
-            }
-        }
-        if (includes.contains("checklists") && !checklists.isEmpty()) {
-            sb.append("## Checklists\n\n");
-            checklists.forEach(c -> appendChecklist(sb, c));
-        }
-        if (includes.contains("prompts") && !prompts.isEmpty()) {
-            sb.append("## Reusable Prompts\n\n");
-            prompts.forEach(p -> appendPrompt(sb, p));
-        }
-
-        if (llmGenerated != null && !llmGenerated.isBlank()) {
-            sb.append("## Project-Specific Notes\n\n").append(llmGenerated).append("\n");
-        }
         return sb.toString();
     }
 
@@ -333,67 +317,72 @@ public class ContextTemplateEngine {
         return sb.toString();
     }
 
-    // === Rule / Skill / Checklist / Prompt inline appenders ===
+    // === Standards pointer section (adapter-driven primary file) ===
 
-    private static void appendRule(StringBuilder sb, Rule rule) {
-        sb.append("### ").append(rule.title());
-        if (rule.severity() != null && !rule.severity().isBlank()) {
-            sb.append("  ·  ").append(rule.severity());
-        }
-        sb.append("\n\n");
-        if (rule.description() != null && !rule.description().isBlank()) {
-            sb.append(rule.description().strip()).append("\n\n");
-        }
-        if (rule.rationale() != null && !rule.rationale().isBlank()) {
-            sb.append("_Why:_ ").append(rule.rationale().strip()).append("\n\n");
-        }
-    }
+    /**
+     * Renders the adapter's `includes` list as pointers to the canonical companion files
+     * under `.ai/` (Claude) or `.cursor/rules/` (Cursor) instead of inlining the bodies.
+     * Keeps the primary entry-point file lightweight and avoids drift between the two
+     * copies of every rule / skill / checklist / prompt.
+     */
+    private static void appendStandardsPointers(
+        StringBuilder sb, List<String> includes,
+        List<Skill> skills, List<Checklist> checklists, List<Prompt> prompts,
+        boolean hasProjectNotes, boolean cursor
+    ) {
+        if (includes.isEmpty() && !hasProjectNotes) return;
 
-    private static void appendSkill(StringBuilder sb, Skill skill) {
-        sb.append("### ").append(skillTitle(skill)).append("\n\n");
-        if (skill.trigger() != null && !skill.trigger().isBlank()) {
-            sb.append("**Trigger:** ").append(skill.trigger().strip()).append("\n\n");
+        var entries = new ArrayList<String>();
+        if (includes.contains("rules")) {
+            entries.add(cursor
+                ? "- **Engineering rules:** see `.cursor/rules/engineering.mdc`"
+                : "- **Engineering rules:** see `.ai/engineering-rules.md`");
         }
-        if (skill.steps() != null && !skill.steps().isEmpty()) {
-            sb.append("**Steps:**\n");
-            int i = 1;
-            for (var step : skill.steps()) {
-                sb.append(i++).append(". ").append(step).append("\n");
-            }
-            sb.append("\n");
-        }
-        if (skill.outputExpectations() != null && !skill.outputExpectations().isEmpty()) {
-            sb.append("**Expected Output:**\n");
-            skill.outputExpectations().forEach(o -> sb.append("- ").append(o).append("\n"));
-            sb.append("\n");
-        }
-        if (skill.notes() != null && !skill.notes().isBlank()) {
-            sb.append("**Notes:** ").append(skill.notes().strip()).append("\n\n");
-        }
-    }
-
-    private static void appendChecklist(StringBuilder sb, Checklist checklist) {
-        sb.append("### ").append(checklist.title() != null ? checklist.title() : titleFromId(checklist.id())).append("\n\n");
-        if (checklist.items() != null) {
-            for (ChecklistItem item : checklist.items()) {
-                sb.append("- [ ] ").append(item.text());
-                if (item.required()) sb.append("  *");
-                sb.append("\n");
+        if (includes.contains("skills")) {
+            if (cursor) {
+                entries.add("- **Workflow skills:** see `.cursor/rules/skills.mdc`");
+            } else {
+                var body = new StringBuilder("- **Workflow skills:** invoke via `/<skill-id>` (definitions under `.claude/skills/`)");
+                if (!skills.isEmpty()) {
+                    body.append("\n");
+                    skills.forEach(s -> body.append("  - `/").append(s.id()).append("`")
+                        .append(s.trigger() == null || s.trigger().isBlank() ? "" : " - " + s.trigger().strip())
+                        .append("\n"));
+                    // Trim trailing newline so the outer join stays consistent
+                    body.setLength(body.length() - 1);
+                }
+                entries.add(body.toString());
             }
         }
+        if (includes.contains("checklists") && !checklists.isEmpty()) {
+            entries.add(cursor
+                ? "- **Checklists:** see `.cursor/rules/checklists.mdc`"
+                : "- **Checklists:** see `.ai/checklists.md`");
+        }
+        if (includes.contains("prompts") && !prompts.isEmpty()) {
+            entries.add(cursor
+                ? "- **Reusable prompts:** see `.cursor/rules/prompts.mdc`"
+                : "- **Reusable prompts:** see `.ai/prompts.md`");
+        }
+        if (hasProjectNotes) {
+            entries.add(cursor
+                ? "- **Project-specific notes:** see `.cursor/rules/project-notes.mdc`"
+                : "- **Project-specific notes:** see `.ai/project-notes.md`");
+        }
+
+        if (entries.isEmpty()) return;
+
+        sb.append("## Standards\n\n");
+        sb.append("Canonical sources for this project's engineering standards. The primary file ")
+          .append("references them so a single edit propagates everywhere.\n\n");
+        entries.forEach(e -> sb.append(e).append("\n"));
         sb.append("\n");
-    }
-
-    private static void appendPrompt(StringBuilder sb, Prompt prompt) {
-        sb.append("### ").append(prompt.title() != null ? prompt.title() : titleFromId(prompt.id())).append("\n\n");
-        if (prompt.template() != null && !prompt.template().isBlank()) {
-            sb.append("```\n").append(prompt.template().strip()).append("\n```\n\n");
-        }
     }
 
     // === Secondary files ===
 
-    private String buildAiIndex(ProjectContext ctx, List<Skill> skills, boolean hasChecklists, boolean hasPrompts) {
+    private String buildAiIndex(ProjectContext ctx, List<Skill> skills, boolean hasChecklists,
+                                 boolean hasPrompts, boolean hasProjectNotes) {
         var sb = new StringBuilder();
         sb.append("# Project Index - ").append(ctx.name()).append("\n\n");
         sb.append("| File | Purpose |\n");
@@ -403,6 +392,7 @@ public class ContextTemplateEngine {
         sb.append("| `.ai/stack.md` | Stack details and dependency notes |\n");
         if (hasChecklists) sb.append("| `.ai/checklists.md` | Verification checklists |\n");
         if (hasPrompts) sb.append("| `.ai/prompts.md` | Reusable prompt templates |\n");
+        if (hasProjectNotes) sb.append("| `.ai/project-notes.md` | Project-specific notes from local AI |\n");
         sb.append("| `.claude/skills/` | Curated workflow skills (invocable via `/<skill-id>`) |\n");
         if (!skills.isEmpty()) {
             sb.append("\n## Available Skills\n\n");
@@ -485,6 +475,23 @@ public class ContextTemplateEngine {
             }
             sb.append("\n");
         });
+        return sb.toString();
+    }
+
+    private String buildProjectNotesMd(ProjectContext ctx, String llmContent) {
+        var sb = new StringBuilder();
+        sb.append("# Project-Specific Notes - ").append(ctx.name()).append("\n\n");
+        sb.append("Notes generated for this project by the local AI from the scanned codebase. ")
+          .append("These complement the engineering rules and workflow skills in this folder.\n\n");
+        sb.append(llmContent.strip()).append("\n");
+        return sb.toString();
+    }
+
+    private String buildCursorProjectNotes(ProjectContext ctx, String llmContent) {
+        var sb = new StringBuilder();
+        sb.append("---\ndescription: Project-specific notes for ").append(ctx.name())
+          .append("\nglobs: **/*\n---\n\n");
+        sb.append(llmContent.strip()).append("\n");
         return sb.toString();
     }
 
