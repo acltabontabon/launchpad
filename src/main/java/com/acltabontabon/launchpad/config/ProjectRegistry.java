@@ -87,9 +87,17 @@ public class ProjectRegistry {
         this.current = new AtomicReference<>(loadFromDisk());
     }
 
-    /** Immutable snapshot of all registered projects, ordered by lastScannedAt desc then name. */
+    /**
+     * Immutable snapshot of all registered projects, ordered by lastScannedAt desc then name.
+     * Each entry is overlaid with its per-project {@code .launchpad/project.yml} metadata
+     * (tags, workspace, relatedTo) when present. The overlay is read-only - it never
+     * mutates {@code projects.json}.
+     */
     public List<RegisteredProject> all() {
-        var snapshot = new ArrayList<>(current.get());
+        var snapshot = new ArrayList<RegisteredProject>(current.get().size());
+        for (var p : current.get()) {
+            snapshot.add(overlayMetadata(p));
+        }
         snapshot.sort((a, b) -> {
             var aWhen = a.lastScannedAt();
             var bWhen = b.lastScannedAt();
@@ -100,6 +108,13 @@ public class ProjectRegistry {
             return cmp != 0 ? cmp : a.name().compareToIgnoreCase(b.name());
         });
         return Collections.unmodifiableList(snapshot);
+    }
+
+    private static RegisteredProject overlayMetadata(RegisteredProject base) {
+        var overlay = ProjectMetadataFile.load(Path.of(base.path()));
+        if (overlay.isEmpty()) return base;
+        var meta = overlay.get();
+        return base.withMetadata(meta.tags(), meta.workspace(), meta.relatedTo());
     }
 
     /** Exact name lookup (case-insensitive). */

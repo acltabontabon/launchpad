@@ -23,11 +23,33 @@ public record ProjectContext(
     List<Dependency> dependencies,
     Map<String, String> fileSnippets,    // key build / config file → first N lines
     List<PackageSummary> packageSummaries,
-    String existingContextSummary        // first ~800 chars of existing CLAUDE.md / .cursorrules, or null
+    String existingContextSummary,       // first ~800 chars of existing CLAUDE.md / .cursorrules, or null
+    DocumentationIndex documentation     // discovered docs (MkDocs / Antora / plain / none)
 ) {
 
     /** Approximate character budget for the prompt-side rendering of this context. */
     private static final int DEFAULT_BUDGET_CHARS = 8_000;
+
+    /** Convenience overload for callers that don't carry a documentation index (tests, legacy). */
+    public ProjectContext(
+        String name,
+        String rootPath,
+        StackProfile stack,
+        List<String> sourceFiles,
+        List<String> testClassNames,
+        Map<String, String> entryPoints,
+        List<Dependency> dependencies,
+        Map<String, String> fileSnippets,
+        List<PackageSummary> packageSummaries,
+        String existingContextSummary
+    ) {
+        this(name, rootPath, stack, sourceFiles, testClassNames, entryPoints, dependencies,
+            fileSnippets, packageSummaries, existingContextSummary, DocumentationIndex.none());
+    }
+
+    public ProjectContext {
+        if (documentation == null) documentation = DocumentationIndex.none();
+    }
 
     public String toPromptString() {
         return toPromptString(DEFAULT_BUDGET_CHARS);
@@ -82,6 +104,15 @@ public record ProjectContext(
                 sb.append("- ... and ").append(dependencies.size() - limit).append(" more\n");
             }
             sb.append("\n");
+        }
+
+        if (documentation != null && !documentation.isEmpty()) {
+            sb.append("## Documentation\n");
+            sb.append("Format: ").append(documentation.format()).append("\n");
+            if (documentation.siteName() != null && !documentation.siteName().isBlank()) {
+                sb.append("Site: ").append(documentation.siteName()).append("\n");
+            }
+            sb.append("Pages: ").append(documentation.pages().size()).append("\n\n");
         }
 
         if (existingContextSummary != null && !existingContextSummary.isBlank()

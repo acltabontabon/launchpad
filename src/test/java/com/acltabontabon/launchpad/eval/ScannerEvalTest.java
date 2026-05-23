@@ -128,6 +128,15 @@ class ScannerEvalTest {
             }
         }
 
+        // Existing fixtures do not ship an mkdocs.yml or antora.yml, so the docs
+        // detector MUST NOT misclassify them. PLAIN (README-only) and NONE are both fine.
+        var docFormat = ctx.documentation().format();
+        assertThat(docFormat)
+            .as("documentation format for %s must not be MKDOCS or ANTORA", fixture.name())
+            .isNotIn(
+                com.acltabontabon.launchpad.scanner.DocumentationIndex.Format.MKDOCS,
+                com.acltabontabon.launchpad.scanner.DocumentationIndex.Format.ANTORA);
+
         // toPromptString stays within budget and doesn't dump raw source list.
         var prompt = ctx.toPromptString();
         assertThat(prompt.length()).isLessThanOrEqualTo(8_500);

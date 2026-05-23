@@ -1,5 +1,8 @@
 package com.acltabontabon.launchpad.scanner;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Mutable accumulator for file-tree signals captured during the project walk.
  * The visitor flips flags in-place; post-walk each framework's profile
@@ -36,6 +39,16 @@ final class ScanSignals {
     boolean hasSqlSource;
     /** Any source file begins with the Databricks notebook magic comment. */
     boolean hasNotebookMagic;
+
+    // --- Documentation ---
+    /** {@code mkdocs.yml} present at the project root. */
+    boolean hasMkdocsConfig;
+    /** {@code antora.yml} present anywhere in the tree. */
+    boolean hasAntoraConfig;
+    /** A {@code docs/}, {@code documentation/}, {@code doc/}, or {@code site/} directory exists. */
+    boolean hasDocsFolder;
+    /** Relative paths of every doc file (Markdown, AsciiDoc, RST) observed during the walk. */
+    final List<String> docFiles = new ArrayList<>();
 
     SpringProfileDetector.Signals springSignals() {
         return new SpringProfileDetector.Signals(

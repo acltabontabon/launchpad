@@ -26,15 +26,20 @@ import org.springframework.aot.hint.TypeReference;
  * tried first but GraalVM's glob handling failed to bundle the depth-2 files,
  * so we use the legacy regex resource-config which is bulletproof.
  * <p>
- * <b>Known limitation:</b> the reflection hints below are necessary but not
- * sufficient for full native MCP support on Spring AI 2.0.0-M6. With
- * {@code @ConditionalOnProperty} gating the MCP beans, Spring AOT prunes them
- * at build time (the property is unset during AOT, so the condition resolves
- * false). Without the gate, the MCP autoconfig instantiates {@code toolSpecs}
- * eagerly in every mode, which breaks TUI startup. Resolving this cleanly
- * requires either (a) running AOT with the {@code mcp} profile active so the
- * beans survive native compilation, or (b) two separate main classes. Until
- * that is sorted, MCP mode runs on the JVM jar.
+ * <b>MCP under native:</b> the previous "known limitation" was that
+ * {@code @ConditionalOnProperty} on {@link LaunchpadMcpTools} /
+ * {@link LaunchpadMcpResources} gets evaluated at Spring AOT build time, and
+ * the AOT JVM has no {@code launchpad.mode} property set, so the beans were
+ * pruned and the native binary served an empty tool list. The fix was to
+ * remove the condition: Spring AI's
+ * {@code AbstractAnnotatedMethodBeanFactoryInitializationAotProcessor} walks
+ * live bean definitions during AOT and registers every {@code @McpTool}
+ * parameter type for reflection, so the bean must be present at AOT time.
+ * The MCP transport stays dormant in TUI mode because
+ * {@code spring.ai.mcp.server.stdio} is set only by the {@code mcp} profile
+ * (see {@code application-mcp.properties}). {@code LaunchpadRunner} likewise
+ * lost its condition and now early-returns when {@code launchpad.mode=mcp},
+ * so the TUI does not try to grab the terminal in MCP mode.
  */
 public class LaunchpadRuntimeHints implements RuntimeHintsRegistrar {
 
@@ -88,6 +93,9 @@ public class LaunchpadRuntimeHints implements RuntimeHintsRegistrar {
             // Without these the TUI Projects screen is silently empty under native.
             "com.acltabontabon.launchpad.config.ProjectRegistry$Document",
             "com.acltabontabon.launchpad.config.RegisteredProject",
+            // Per-project relationship metadata at <projectRoot>/.launchpad/project.yml,
+            // overlaid into RegisteredProject on every registry read.
+            "com.acltabontabon.launchpad.config.ProjectMetadataFile",
             // Per-project scan persisted to <projectRoot>/.launchpad/scan.json by ScanStore.
             // Read back by MCP tools and any tooling that resumes from cache.
             "com.acltabontabon.launchpad.scanner.ProjectContext",
@@ -95,7 +103,11 @@ public class LaunchpadRuntimeHints implements RuntimeHintsRegistrar {
             "com.acltabontabon.launchpad.scanner.SpringProfile",
             "com.acltabontabon.launchpad.scanner.DatabricksProfile",
             "com.acltabontabon.launchpad.scanner.Dependency",
-            "com.acltabontabon.launchpad.scanner.PackageSummary"
+            "com.acltabontabon.launchpad.scanner.PackageSummary",
+            // Documentation index persisted as part of ProjectContext. Without these
+            // the docs section of scan.json round-trips as null under native image.
+            "com.acltabontabon.launchpad.scanner.DocumentationIndex",
+            "com.acltabontabon.launchpad.scanner.DocumentationPage"
         };
         for (String fqn : jacksonRecordTypes) {
             hints.reflection().registerType(TypeReference.of(fqn),

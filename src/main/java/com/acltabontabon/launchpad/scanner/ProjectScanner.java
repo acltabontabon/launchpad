@@ -47,6 +47,19 @@ public class ProjectScanner {
         "databricks.yml"
     );
 
+    // Documentation file extensions tracked into ScanSignals.docFiles. Kept
+    // separate from isSourceFile() so doc files do not inflate source counts
+    // or feed the package summariser.
+    private static final Set<String> DOC_EXTENSIONS = Set.of(
+        ".md", ".markdown", ".adoc", ".asciidoc", ".rst"
+    );
+
+    // Directories whose mere presence implies the project has a docs area
+    // (even when no doc-marker file is at the project root).
+    private static final Set<String> DOC_DIR_NAMES = Set.of(
+        "docs", "documentation", "doc", "site"
+    );
+
     private static final Set<String> TEST_PATTERNS = Set.of("test", "tests", "spec", "specs", "__tests__");
 
     private final long maxFileSizeKb;
@@ -56,6 +69,7 @@ public class ProjectScanner {
     private final StructureSummarizer structureSummarizer = new StructureSummarizer();
     private final SpringProfileDetector springProfileDetector = new SpringProfileDetector();
     private final DatabricksProfileDetector databricksProfileDetector = new DatabricksProfileDetector();
+    private final DocumentationDetector documentationDetector = new DocumentationDetector();
 
     public ProjectScanner(
         @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb,
@@ -92,6 +106,9 @@ public class ProjectScanner {
                 if (!dir.equals(root)) {
                     var rel = root.relativize(dir);
                     if (gitignore.isIgnored(rel, true)) return FileVisitResult.SKIP_SUBTREE;
+                    if (DOC_DIR_NAMES.contains(name.toLowerCase())) {
+                        signals.hasDocsFolder = true;
+                    }
                     progressCallback.accept("Scanning " + truncateLeft(rel.toString(), 70) + "/");
                 }
                 return FileVisitResult.CONTINUE;
@@ -145,6 +162,17 @@ public class ProjectScanner {
                     if ("databricks.yml".equals(fileName)) {
                         signals.hasDatabricksYml = true;
                     }
+                }
+
+                if ("mkdocs.yml".equals(fileName) && file.getParent().equals(root)) {
+                    signals.hasMkdocsConfig = true;
+                }
+                if ("antora.yml".equals(fileName)) {
+                    signals.hasAntoraConfig = true;
+                    signals.docFiles.add(relative);
+                }
+                if (hasDocExtension(fileName)) {
+                    signals.docFiles.add(relative);
                 }
 
                 if (relative.endsWith("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
@@ -208,13 +236,22 @@ public class ProjectScanner {
 
         var entryPoints = detectEntryPoints(root, sourceFiles, stack);
         var existingContext = readExistingContextSummary(root);
+        var documentation = documentationDetector.detect(root, signals);
 
         return new ProjectContext(
             projectName, rootPath, stack,
             sourceFiles, testClassNames,
             entryPoints, dependencies, snippets, packageSummaries,
-            existingContext
+            existingContext, documentation
         );
+    }
+
+    private static boolean hasDocExtension(String fileName) {
+        String lower = fileName.toLowerCase();
+        for (String ext : DOC_EXTENSIONS) {
+            if (lower.endsWith(ext)) return true;
+        }
+        return false;
     }
 
     /**

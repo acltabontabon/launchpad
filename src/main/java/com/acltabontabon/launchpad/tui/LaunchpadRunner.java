@@ -37,7 +37,6 @@ import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.TickEvent;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -47,8 +46,17 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * The interactive TUI application runner.
+ * <p>
+ * This bean is declared unconditionally so that GraalVM AOT keeps it in every
+ * native image (Spring AOT evaluates {@code @ConditionalOnProperty} at build
+ * time, which prunes whichever side does not match the AOT-time property and
+ * makes the binary one-mode-only). The mode check happens at runtime in
+ * {@link #run(ApplicationArguments)} instead: in MCP mode we return
+ * immediately so the TUI never tries to grab the terminal.
+ */
 @Component
-@ConditionalOnProperty(name = "launchpad.mode", havingValue = "tui", matchIfMissing = true)
 public class LaunchpadRunner implements ApplicationRunner {
 
     private final AppState state = new AppState();
@@ -138,6 +146,13 @@ public class LaunchpadRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
+        // In MCP mode the JSON-RPC server owns stdin/stdout and the process has
+        // no usable TTY - starting the TUI here would crash on "Failed to get
+        // terminal attributes". `launchpad.mode` is set by LaunchpadApplication
+        // before SpringApplication.run, so it is reliable at this point.
+        if ("mcp".equals(System.getProperty("launchpad.mode"))) {
+            return;
+        }
         var config = TuiConfig.builder()
             .tickRate(Duration.ofMillis(80))  // ~12fps - enough for smooth spinner
             .build();

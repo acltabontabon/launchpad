@@ -1,5 +1,7 @@
 package com.acltabontabon.launchpad.template;
 
+import com.acltabontabon.launchpad.config.ProjectRegistry;
+import com.acltabontabon.launchpad.config.RegisteredProject;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.standards.Adapter;
 import com.acltabontabon.launchpad.standards.AdapterOutput;
@@ -34,9 +36,11 @@ import org.springframework.stereotype.Component;
 public class ContextTemplateEngine {
 
     private final StandardsLoader standardsLoader;
+    private final ProjectRegistry projectRegistry;
 
-    public ContextTemplateEngine(StandardsLoader standardsLoader) {
+    public ContextTemplateEngine(StandardsLoader standardsLoader, ProjectRegistry projectRegistry) {
         this.standardsLoader = standardsLoader;
+        this.projectRegistry = projectRegistry;
     }
 
     public List<GeneratedFile> buildFiles(
@@ -176,6 +180,8 @@ public class ContextTemplateEngine {
         sb.append("## Project Overview\n\n").append(safe(summary, "_(none generated)_")).append("\n\n");
         sb.append("## Stack\n\n").append(ctx.stack().displayName()).append("\n\n");
 
+        appendWorkspaceSection(sb, ctx);
+
         var includes = output.includes() != null ? output.includes() : List.<String>of();
 
         if (includes.contains("rules")) {
@@ -212,6 +218,7 @@ public class ContextTemplateEngine {
     // === Legacy primary files (no adapter) ===
 
     private String buildLegacyClaudeMd(ProjectContext ctx, String summary, String llmSkills) {
+        var workspace = renderWorkspaceSection(ctx);
         return """
             # %s
 
@@ -225,7 +232,7 @@ public class ContextTemplateEngine {
 
             %s
 
-            ## Key Files
+            %s## Key Files
 
             %s
 
@@ -248,12 +255,14 @@ public class ContextTemplateEngine {
                 ctx.name(),
                 summary,
                 ctx.stack().displayName(),
+                workspace,
                 formatFileList(ctx.sourceFiles(), 20),
                 llmSkills == null || llmSkills.isBlank() ? "_(none generated)_" : llmSkills
             );
     }
 
     private String buildLegacyCursorRules(ProjectContext ctx, String summary, String generatedRules) {
+        var workspace = renderWorkspaceSection(ctx);
         return """
             # Cursor Rules - %s
 
@@ -264,7 +273,7 @@ public class ContextTemplateEngine {
             ## Stack
             %s
 
-            ## Project-Specific Rules
+            %s## Project-Specific Rules
 
             %s
 
@@ -272,7 +281,7 @@ public class ContextTemplateEngine {
 
             See `.cursor/rules/engineering.mdc` for the full engineering rule set,
             and `.cursor/rules/skills.mdc` for curated workflow skills.
-            """.formatted(ctx.name(), summary, ctx.stack().displayName(), generatedRules);
+            """.formatted(ctx.name(), summary, ctx.stack().displayName(), workspace, generatedRules);
     }
 
     // === Skill files (Claude) ===
@@ -609,5 +618,49 @@ public class ContextTemplateEngine {
 
     private static String safe(String s, String fallback) {
         return s == null || s.isBlank() ? fallback : s;
+    }
+
+    // ── Workspace section (cross-project reference) ──────────────────────────
+
+    /**
+     * Appends a Workspace section listing every other Launchpad-managed project
+     * on the machine, so an MCP-capable agent reading this file knows it can
+     * reach sibling context without leaving the session. No-ops when there are
+     * no siblings, so single-project users see no clutter.
+     */
+    private void appendWorkspaceSection(StringBuilder sb, ProjectContext ctx) {
+        var section = renderWorkspaceSection(ctx);
+        if (!section.isEmpty()) sb.append(section);
+    }
+
+    private String renderWorkspaceSection(ProjectContext ctx) {
+        var current = Path.of(ctx.rootPath()).toAbsolutePath().normalize().toString();
+        var siblings = projectRegistry.all().stream()
+            .filter(p -> !current.equals(p.path()))
+            .toList();
+        if (siblings.isEmpty()) return "";
+
+        var sb = new StringBuilder();
+        sb.append("## Workspace\n\n");
+        sb.append("Other Launchpad-managed projects on this machine. An MCP client connected to ");
+        sb.append("Launchpad's local server (`launchpad mcp`) can read their context without ");
+        sb.append("leaving this session.\n\n");
+        sb.append("| Project | Stack | Path |\n");
+        sb.append("|---------|-------|------|\n");
+        for (RegisteredProject p : siblings) {
+            sb.append("| `").append(p.name()).append("` | ")
+              .append(p.stack() == null ? "" : p.stack()).append(" | `")
+              .append(p.path()).append("` |\n");
+        }
+        sb.append("\n**Cross-project MCP tools:**\n");
+        sb.append("- `list_projects` - enumerate every registered project\n");
+        sb.append("- `scan_project(project)` - stack, deps, packages, sample symbols\n");
+        sb.append("- `get_standards(project)` - rules / skills / checklists that apply\n");
+        sb.append("- `get_audit_findings(project)` - SARIF findings from last audit\n");
+        sb.append("- `get_file(project, path)` / `list_files(project, glob)` - read source on demand\n");
+        sb.append("- `compare_standards(a, b)` - common / a-only / b-only rules\n\n");
+        sb.append("**Resources (tree-browsable):** `launchpad://projects`, ");
+        sb.append("`launchpad://scan/{name}`, `launchpad://audit/{abs-path}`\n\n");
+        return sb.toString();
     }
 }

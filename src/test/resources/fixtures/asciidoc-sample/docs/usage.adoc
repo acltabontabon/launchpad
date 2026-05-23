@@ -1,0 +1,9 @@
+= Usage
+
+Construct a `Client` with a base URL, then call `fetch` to retrieve a page.
+
+[source,java]
+----
+Client client = new Client("https://api.example.com");
+String body = client.fetch("/users");
+----

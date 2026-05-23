@@ -1,0 +1,8 @@
+= Sample AsciiDoc Library
+
+Welcome to the Sample AsciiDoc Library. This is a small fixture that exercises
+Launchpad's detection of plain AsciiDoc documentation without a MkDocs config.
+
+== Getting Started
+
+Refer to the usage page for a worked example.

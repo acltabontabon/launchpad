@@ -149,4 +149,45 @@ class ProjectRegistryTest {
 
         assertThat(registry.all()).isEmpty();
     }
+
+    @Test
+    void allOverlaysProjectYmlMetadata(@TempDir Path tmp) throws Exception {
+        var registry = new ProjectRegistry(tmp.resolve("projects.json"));
+        var project = Files.createDirectory(tmp.resolve("shop-api"));
+        Files.createDirectory(project.resolve(".launchpad"));
+        Files.writeString(project.resolve(".launchpad/project.yml"), """
+            tags: [backend, payments]
+            workspace: shop
+            relatedTo: [shop-frontend]
+            """);
+        registry.register(project, "Java/Spring Boot");
+
+        var overlaid = registry.findByName("shop-api").orElseThrow();
+        assertThat(overlaid.tags()).isEmpty();  // findByName does not overlay - lightweight lookup
+
+        var snapshot = registry.all();
+        assertThat(snapshot).hasSize(1);
+        var first = snapshot.get(0);
+        assertThat(first.workspace()).isEqualTo("shop");
+        assertThat(first.tags()).containsExactly("backend", "payments");
+        assertThat(first.relatedTo()).containsExactly("shop-frontend");
+    }
+
+    @Test
+    void overlayDoesNotMutateRegistryFile(@TempDir Path tmp) throws Exception {
+        var registryFile = tmp.resolve("projects.json");
+        var registry = new ProjectRegistry(registryFile);
+        var project = Files.createDirectory(tmp.resolve("widgets"));
+        Files.createDirectory(project.resolve(".launchpad"));
+        Files.writeString(project.resolve(".launchpad/project.yml"), "workspace: misc\n");
+        registry.register(project, "Java");
+
+        var beforeBytes = Files.readString(registryFile);
+        var overlaid = registry.all();
+        var afterBytes = Files.readString(registryFile);
+
+        assertThat(overlaid).first().extracting(RegisteredProject::workspace).isEqualTo("misc");
+        assertThat(afterBytes).isEqualTo(beforeBytes);
+        assertThat(afterBytes).doesNotContain("workspace");
+    }
 }
