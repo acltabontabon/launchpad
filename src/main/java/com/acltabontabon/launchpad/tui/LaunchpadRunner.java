@@ -289,7 +289,7 @@ public class LaunchpadRunner implements ApplicationRunner {
 
             } catch (Exception e) {
                 state.scanError = true;
-                state.scanMessage.set("Error: " + e.getMessage());
+                state.scanMessage.set(buildLlmErrorMessage("generation", e));
                 state.scanComplete = true;
             }
         });
@@ -439,6 +439,10 @@ public class LaunchpadRunner implements ApplicationRunner {
         var msg = e.getMessage() == null ? e.toString() : e.getMessage();
         var lower = msg.toLowerCase();
         var base = phase + " failed: " + msg;
+        if (isTimeout(e)) {
+            return phase + " timed out: the local model stalled. Check that Ollama is "
+                + "responsive, or raise `launchpad.ai.read-timeout` in settings.";
+        }
         if (lower.contains("500") || lower.contains("truncat") || lower.contains("context")) {
             return base + "  -  hint: the prompt may have exceeded Ollama's loaded context window "
                 + "(check the Ollama log for 'truncating input prompt'). Try a model with a larger "
@@ -448,6 +452,15 @@ public class LaunchpadRunner implements ApplicationRunner {
             return base + "  -  hint: Ollama may not be running. Check the Welcome screen's status badge.";
         }
         return base;
+    }
+
+    /** True if any cause in the chain is a {@link java.util.concurrent.TimeoutException}. */
+    private static boolean isTimeout(Throwable e) {
+        for (var t = e; t != null; t = t.getCause()) {
+            if (t instanceof java.util.concurrent.TimeoutException) return true;
+            if (t == t.getCause()) return false;
+        }
+        return false;
     }
 
     /**
