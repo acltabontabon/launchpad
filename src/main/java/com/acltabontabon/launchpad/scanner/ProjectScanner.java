@@ -51,6 +51,7 @@ public class ProjectScanner {
     private final StackDetector stackDetector = new StackDetector();
     private final DependencyExtractor dependencyExtractor = new DependencyExtractor();
     private final StructureSummarizer structureSummarizer = new StructureSummarizer();
+    private final SpringProfileDetector springProfileDetector = new SpringProfileDetector();
 
     public ProjectScanner(
         @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb,
@@ -75,6 +76,8 @@ public class ProjectScanner {
         Map<String, String> fullBuildContent = new LinkedHashMap<>();
         Map<String, String> snippets = new LinkedHashMap<>();
         int[] fileCount = {0};
+        boolean[] hasAutoConfigImports = {false};
+        boolean[] hasSpringFactories = {false};
 
         progressCallback.accept("Scanning file tree...");
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
@@ -128,6 +131,15 @@ public class ProjectScanner {
                     }
                 }
 
+                if (relative.endsWith("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
+                    || relative.endsWith("META-INF\\spring\\org.springframework.boot.autoconfigure.AutoConfiguration.imports")) {
+                    hasAutoConfigImports[0] = true;
+                }
+                if (relative.endsWith("META-INF/spring.factories")
+                    || relative.endsWith("META-INF\\spring.factories")) {
+                    hasSpringFactories[0] = true;
+                }
+
                 return FileVisitResult.CONTINUE;
             }
         });
@@ -137,6 +149,13 @@ public class ProjectScanner {
 
         progressCallback.accept("Extracting dependencies...");
         var dependencies = dependencyExtractor.extract(fileNameKeyed(fullBuildContent));
+
+        if (stack.isSpring()) {
+            boolean hasAutoConfigAnnotation = findAutoConfigurationAnnotation(root, sourceFiles);
+            var signals = new SpringProfileDetector.Signals(
+                hasAutoConfigImports[0], hasSpringFactories[0], hasAutoConfigAnnotation);
+            stack = stack.withSpringProfile(springProfileDetector.detect(dependencies, signals));
+        }
 
         progressCallback.accept("Summarising source structure...");
         var packageSummaries = structureSummarizer.summarize(root, sourceFiles);
@@ -213,6 +232,23 @@ public class ProjectScanner {
             findPythonMain(root, sourceFiles).ifPresent(p -> entryPoints.put("main", p));
         }
         return entryPoints;
+    }
+
+    /**
+     * Short-circuit scan for the @AutoConfiguration annotation. Used as a
+     * corroborating starter-library signal because libraries may carry the
+     * source annotation before the build generates the AutoConfiguration.imports
+     * file. Stops at the first match.
+     */
+    private static boolean findAutoConfigurationAnnotation(Path root, List<String> sourceFiles) {
+        for (var rel : sourceFiles) {
+            if (!rel.endsWith(".java")) continue;
+            try {
+                var content = Files.readString(root.resolve(rel));
+                if (content.contains("@AutoConfiguration")) return true;
+            } catch (IOException ignored) { }
+        }
+        return false;
     }
 
     private static java.util.Optional<String> findJavaSpringBootMain(Path root, List<String> sourceFiles) {

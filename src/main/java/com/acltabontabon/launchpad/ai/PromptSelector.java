@@ -8,9 +8,18 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 /**
- * Picks a stack-specific prompt template from src/main/resources/prompts/
- * based on the detected framework. Falls back to "generic" when no
- * framework-specific template exists.
+ * Picks a prompt template for the requested kind + stack. For Spring projects
+ * on the three generation kinds (summary, skills, rules) it delegates to
+ * {@link SpringPromptComposer} which assembles a base template plus sub-stack
+ * facet sections. Everything else falls back to the per-kind generic template
+ * under {@code prompts/<kind>/generic.txt}.
+ * <p>
+ * Kinds are deliberately named after the output <em>format</em>
+ * (SUMMARY / SKILLS / RULES) rather than the consuming vendor. A bulleted-rules
+ * format can be emitted into Cursor's {@code .cursorrules}, an Aider
+ * {@code CONVENTIONS.md}, or any other tool's equivalent without rewriting the
+ * prompt - the vendor-specific decision lives at the output-adapter layer,
+ * not in the prompt content.
  */
 @Component
 public class PromptSelector {
@@ -18,7 +27,7 @@ public class PromptSelector {
     public enum Kind {
         SUMMARY("summary"),
         SKILLS("skills"),
-        CURSOR_RULES("cursor-rules"),
+        RULES("rules"),
         TASK_INTERVIEW("task/interview"),
         TASK_FINALIZE("task/finalize");
 
@@ -26,7 +35,16 @@ public class PromptSelector {
         Kind(String dir) { this.dir = dir; }
     }
 
+    private final SpringPromptComposer springComposer;
+
+    public PromptSelector(SpringPromptComposer springComposer) {
+        this.springComposer = springComposer;
+    }
+
     public String load(Kind kind, StackProfile stack) {
+        if (isComposableKind(kind) && "spring".equals(slugFor(stack))) {
+            return springComposer.compose(kind, stack == null ? null : stack.springProfile());
+        }
         String slug = slugFor(stack);
         String primary = "prompts/" + kind.dir + "/" + slug + ".txt";
         try {
@@ -44,19 +62,22 @@ public class PromptSelector {
 
     /** Returns the chosen template slug for telemetry / logging. */
     public String chosenSlug(Kind kind, StackProfile stack) {
+        if (isComposableKind(kind) && "spring".equals(slugFor(stack))) {
+            return "spring";
+        }
         String slug = slugFor(stack);
         var primary = new ClassPathResource("prompts/" + kind.dir + "/" + slug + ".txt");
         return primary.exists() ? slug : "generic";
+    }
+
+    private static boolean isComposableKind(Kind kind) {
+        return kind == Kind.SUMMARY || kind == Kind.SKILLS || kind == Kind.RULES;
     }
 
     private static String slugFor(StackProfile stack) {
         if (stack == null || stack.framework() == null) return "generic";
         String f = stack.framework().toLowerCase();
         if (f.contains("spring")) return "spring";
-        if (f.contains("next")) return "next";
-        if (f.contains("django")) return "django";
-        if (f.contains("fastapi")) return "fastapi";
-        if (f.contains("rails")) return "rails";
         return "generic";
     }
 

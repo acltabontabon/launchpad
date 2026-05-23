@@ -1,0 +1,23 @@
+=== SUMMARY ===
+
+Spring Data JPA is on the classpath. In the "## Spring Specifics" section, include:
+- Persistence: JPA (Hibernate)
+- Whether entities live in a dedicated package and what naming convention is used
+- Whether repositories extend JpaRepository, CrudRepository, or define custom Query methods
+
+In "## Gotchas", call out: N+1 query risks on lazy associations, transaction boundaries (where @Transactional sits), and whether open-session-in-view is enabled.
+
+=== SKILLS ===
+
+Include a skill named "add-jpa-entity-and-repository" that:
+- Names the actual entities package from the context
+- Uses @Entity with explicit @Table when the table name differs from the class
+- Defines the repository under the actual repositories package
+- Covers writing a slice test with @DataJpaTest
+
+=== RULES ===
+
+Add rules covering:
+- **Transaction boundaries**: @Transactional sits on the application service, not on repository or controller methods.
+- **Avoid N+1**: use @EntityGraph or fetch joins when iterating associations; never rely on session-in-view.
+- **Records for query results**: use interface or record projections for read queries instead of returning the full entity.

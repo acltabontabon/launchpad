@@ -1,0 +1,23 @@
+=== SUMMARY ===
+
+Spring Data R2DBC is on the classpath. In the "## Spring Specifics" section, include:
+- Persistence: R2DBC (reactive, non-blocking)
+- Whether reactive repositories extend ReactiveCrudRepository or use DatabaseClient directly
+- Which R2DBC driver is in use (Postgres, MySQL, H2)
+
+In "## Gotchas", call out: R2DBC has no JPA-style relationship management - associations are loaded by the developer with explicit queries, and transactions are scoped via TransactionalOperator (not @Transactional on a blocking method).
+
+=== SKILLS ===
+
+Include a skill named "add-r2dbc-repository" that:
+- Uses ReactiveCrudRepository for simple CRUD
+- Uses DatabaseClient for richer queries
+- Returns Mono/Flux of typed records
+- Names the actual persistence package from the context
+
+=== RULES ===
+
+Add rules covering:
+- **No JPA mixing**: do not introduce spring-data-jpa or Hibernate alongside R2DBC.
+- **Reactive transactions**: use TransactionalOperator.transactional() inside a reactive chain - @Transactional only works for blocking methods.
+- **Records as row mappings**: map rows into records; do not use mutable entity classes.

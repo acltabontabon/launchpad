@@ -1,0 +1,24 @@
+=== SUMMARY ===
+
+Spring AI is on the classpath. In the "## Spring Specifics" section, include:
+- AI integration: Spring AI ChatClient
+- Which providers are wired (OpenAI, Anthropic, Ollama, Azure, Bedrock, ...) - infer from starters in the dependency list
+- Whether tool calling, function calling, or RAG (vector stores) appear to be in use
+
+In "## Gotchas", call out: model output must be validated before acting on it, provider switches go through configuration not code, and prompt strings should be built by a pure function so they're testable.
+
+=== SKILLS ===
+
+Include a skill named "add-spring-ai-call" that:
+- Lives inside an application service (never a controller)
+- Receives a typed request record, returns a typed result record
+- Builds the final prompt from a pure function that's separately testable
+- Validates the model output before returning
+
+=== RULES ===
+
+Add rules covering:
+- **Model calls behind the application boundary**: ChatClient lives inside services, never in controllers or views.
+- **No vendor types in domain**: do not import OpenAI, Anthropic, or Ollama types outside the AI adapter package - rely on Spring AI abstractions.
+- **Prompts are testable**: build the final prompt string from a pure function over a request record; assert on the string in tests.
+- **Validate model output**: parse and validate before acting; treat malformed output as a recoverable error.

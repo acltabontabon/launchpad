@@ -8,17 +8,34 @@ import java.util.List;
  * Structured view of a project's tech stack. Replaces the legacy single-string
  * "Java / Maven" form so prompts and rules can branch on framework, not just
  * build tool.
+ * <p>
+ * `springProfile` is populated only when {@link #framework()} is a Spring
+ * variant, and carries sub-stack signals (web, persistence, ai, ...) used by
+ * the prompt composer to pull the right facet files.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StackProfile(
     String language,        // "Java", "TypeScript", "Python", "Rust", "Go", "Ruby", ...
     String buildTool,       // "Maven", "Gradle", "npm", "pip", "cargo", ...
     String framework,       // "Spring Boot", "Next.js", "Django", "FastAPI", "Rails", ... or null
-    List<String> runtimeHints
+    List<String> runtimeHints,
+    SpringProfile springProfile
 ) {
 
+    public StackProfile(String language, String buildTool, String framework, List<String> runtimeHints) {
+        this(language, buildTool, framework, runtimeHints, null);
+    }
+
     public static StackProfile unknown() {
-        return new StackProfile("Unknown", null, null, List.of());
+        return new StackProfile("Unknown", null, null, List.of(), null);
+    }
+
+    public StackProfile withSpringProfile(SpringProfile sp) {
+        return new StackProfile(language, buildTool, framework, runtimeHints, sp);
+    }
+
+    public boolean isSpring() {
+        return framework != null && framework.toLowerCase().contains("spring");
     }
 
     /** Single-line human label, e.g. "Spring Boot / Java / Maven". */

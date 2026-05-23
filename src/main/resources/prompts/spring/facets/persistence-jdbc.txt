@@ -1,0 +1,23 @@
+=== SUMMARY ===
+
+Spring JDBC is on the classpath (no JPA). In the "## Spring Specifics" section, include:
+- Persistence: JDBC (JdbcTemplate / JdbcClient / Spring Data JDBC)
+- Whether the project uses Spring Data JDBC repositories or hand-written JdbcTemplate calls
+- Where SQL is defined (inline strings, .sql files, schema migrations)
+
+In "## Gotchas", call out: SQL injection risk if any query is built by string concatenation, and whether a migration tool (Flyway, Liquibase) manages schema.
+
+=== SKILLS ===
+
+Include a skill named "add-jdbc-query" that:
+- Uses JdbcClient (preferred) or JdbcTemplate
+- Always uses named parameters - never string concatenation
+- Returns a typed record via RowMapper or a constructor reference
+- Names the actual persistence package from the context
+
+=== RULES ===
+
+Add rules covering:
+- **Parameterized queries only**: never concatenate user input into SQL. Use named parameters via JdbcClient.
+- **Migrations own the schema**: schema changes go through Flyway/Liquibase, never via runtime DDL.
+- **Records for rows**: map ResultSet rows into records, not Map<String, Object>.

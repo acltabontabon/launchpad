@@ -1,0 +1,22 @@
+=== SUMMARY ===
+
+Spring MVC is on the classpath. In the "## Spring Specifics" section, include:
+- Web stack: spring-web (Servlet/MVC)
+- Whether @RestController or @Controller predominates
+- Whether @ControllerAdvice is used for exception handling
+- Whether RFC 7807 ProblemDetail is in use (Spring 6+)
+
+=== SKILLS ===
+
+Include a skill named "add-rest-endpoint" that:
+- Names the actual base controllers package from the context
+- Uses constructor injection (final fields, single constructor, no @Autowired)
+- Returns a typed response record, not Map<String, Object>
+- Mentions where validation annotations (@Valid, jakarta.validation) belong
+
+=== RULES ===
+
+Add rules covering:
+- **Thin controllers**: parse input, call one service, shape a response - no business logic in controllers.
+- **RFC 7807 errors**: error responses use `application/problem+json` (ProblemDetail), not custom envelopes.
+- **Request/response records**: define typed records co-located with the controller, never expose entity classes directly.

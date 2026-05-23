@@ -1,0 +1,23 @@
+=== SUMMARY ===
+
+Spring Security is on the classpath. In the "## Spring Specifics" section, include:
+- Security: Spring Security
+- Auth model: form login, basic auth, OAuth2 resource server, OAuth2 client - infer from dependencies and config classes
+- Where the SecurityFilterChain @Bean is defined (the class name from the context)
+
+In "## Gotchas", call out: a missing SecurityFilterChain bean falls back to Spring Security's defaults (which lock everything down), and method-level @PreAuthorize requires @EnableMethodSecurity.
+
+=== SKILLS ===
+
+Include a skill named "add-secured-endpoint" that:
+- References the actual SecurityFilterChain class from the context
+- Uses @PreAuthorize for method-level checks (with @EnableMethodSecurity present)
+- Notes the project's password hashing choice (Argon2, bcrypt) if observable
+- Mentions how authentication is tested (e.g. @WithMockUser)
+
+=== RULES ===
+
+Add rules covering:
+- **Default-deny endpoints**: every new endpoint requires authentication unless added to a documented anonymous allow-list.
+- **Modern password hashing**: passwords use Argon2id (preferred), scrypt, or bcrypt - never SHA-256 or MD5.
+- **No hand-rolled auth**: rely on Spring Security primitives; do not implement session, token, or password-reset flows from scratch.

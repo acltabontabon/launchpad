@@ -24,7 +24,7 @@ public class ContextGeneratorService {
     // "## Skill\n", or any other variation where the model drops the colon. The
     // downstream ContextTemplateEngine handles further parsing.
     private static final List<String> SKILLS_HEADINGS = List.of("## Skill");
-    private static final List<String> CURSOR_HEADINGS = List.of("-");  // bullet list; weaker check
+    private static final List<String> RULES_HEADINGS = List.of("-");  // bullet list; weaker check
 
     private static final String RETRY_REMINDER = """
 
@@ -62,8 +62,8 @@ public class ContextGeneratorService {
     public GeneratedOutput generateTargetSpecificContent(ProjectContext ctx, ContextTarget target, Consumer<String> onChunk) {
         return switch (target) {
             case CURSOR -> {
-                var template = promptSelector.load(PromptSelector.Kind.CURSOR_RULES, ctx.stack());
-                yield runWithValidation(template, ctx, CURSOR_HEADINGS, onChunk);
+                var template = promptSelector.load(PromptSelector.Kind.RULES, ctx.stack());
+                yield runWithValidation(template, ctx, RULES_HEADINGS, onChunk);
             }
             case CLAUDE -> generateSkills(ctx, onChunk);
         };

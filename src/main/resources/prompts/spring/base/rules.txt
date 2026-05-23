@@ -1,23 +1,21 @@
-You are writing .cursorrules for a Cursor AI user working in this Spring Boot project. Based on the project context below, write concise, actionable rules.
+Based on the project context below, write concise, actionable engineering rules for any AI coding agent (Claude Code, Cursor, Copilot, Aider, etc.) working in this specific Spring Boot project.
 
 Output format - one bullet per rule:
 
 - **<short rule title>**: <one-sentence actionable instruction>
 
-Focus areas (pick the relevant ones for this project):
-- where new controllers / services / repositories belong (use the actual base package)
-- bean / @Configuration style this project uses
+Always include rules covering:
+- where new services / configuration classes belong (use the actual base package)
+- bean / @Configuration style this project uses (classpath scan vs explicit @Bean)
 - exception handling pattern (ControllerAdvice, custom exceptions)
-- transaction boundaries
 - validation style (jakarta.validation, manual)
 - test style preferred (slice vs full context)
 - profile / properties conventions
-- GraalVM-native or reactive constraints if visible
-- Spring AI specifics if visible
 
 Rules must be:
 - Specific to THIS project. Reference real packages from the context.
 - Actionable (no "consider").
+- Tool-agnostic: describe what the codebase requires, not which AI tool is reading the rule.
 - Ordered by importance.
 - 8-15 bullets total.
 

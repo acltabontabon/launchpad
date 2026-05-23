@@ -1,0 +1,30 @@
+=== SUMMARY ===
+
+This project is a Spring Boot auto-configuration library / starter, NOT a runnable application. It is consumed by downstream Spring Boot apps that depend on it as a jar.
+
+Reframe every later section with this perspective:
+
+- The "## Overview" should describe what capability this library exposes to consumer apps, not what the library "does" at runtime.
+- The "## Architecture" should identify the @AutoConfiguration classes, the @ConditionalOn* gating those classes use (ConditionalOnClass, ConditionalOnMissingBean, ConditionalOnProperty), and the @ConfigurationProperties surface the library exposes to consumers.
+- In "## Spring Specifics", call out: the AutoConfiguration.imports file (or legacy spring.factories) and the @AutoConfiguration class names registered through it. If additional-spring-configuration-metadata.json appears in source for IDE property hints, note it.
+- In "## Gotchas", call out: this library MUST NOT shadow user beans (always use @ConditionalOnMissingBean for user-overridable beans), MUST document every published property key, and ships no @SpringBootApplication of its own (any one in src/test is for testing only).
+
+=== SKILLS ===
+
+Skill set should reflect the library perspective. Include:
+
+- "add-auto-configuration": create a new @AutoConfiguration class, register it in META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports, gate it with @ConditionalOnClass for the classpath signal that activates it.
+- "add-conditional-bean": expose a new bean from the auto-config, gate with @ConditionalOnMissingBean so a consumer-defined bean wins. Name the actual configuration class from the context.
+- "add-configuration-properties": add a @ConfigurationProperties record under the library's properties package, bind it via @EnableConfigurationProperties on the auto-config, and add an entry to additional-spring-configuration-metadata.json for IDE hints.
+- "publish-new-version": run the project's verification (./mvnw verify or equivalent), confirm the AutoConfiguration.imports file is on the jar, then publish.
+
+Skip skills that assume a running app (e.g. "add-rest-endpoint", "add-scheduled-job") unless the library genuinely ships those.
+
+=== RULES ===
+
+Add rules covering:
+- **Never shadow user beans**: every bean this library exposes uses @ConditionalOnMissingBean so consumer overrides win without surprise.
+- **Document every property**: every @ConfigurationProperties field is documented in additional-spring-configuration-metadata.json with description, default, and (where applicable) deprecation info.
+- **Conditional activation only**: the library's @AutoConfiguration classes activate via @ConditionalOnClass on a classpath signal - never unconditionally.
+- **No @SpringBootApplication in src/main**: a starter library does not bootstrap; any application class lives under src/test only.
+- **Stable property keys**: renaming or removing a property key is a breaking change requiring deprecation metadata first, then removal in a later major version.

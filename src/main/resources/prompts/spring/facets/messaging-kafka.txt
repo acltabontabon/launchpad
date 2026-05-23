@@ -1,0 +1,23 @@
+=== SUMMARY ===
+
+spring-kafka is on the classpath. In the "## Spring Specifics" section, include:
+- Messaging: Apache Kafka via spring-kafka
+- Whether the project uses @KafkaListener annotated consumers, KafkaTemplate producers, or Kafka Streams
+- Whether topic names are centralised in a typed config or scattered as @Value reads
+
+In "## Gotchas", call out: consumer error handling (DefaultErrorHandler, dead-letter topic), and that retries on idempotent consumers can produce duplicate side-effects if not handled.
+
+=== SKILLS ===
+
+Include a skill named "add-kafka-consumer" that:
+- Names the actual messaging package from the context
+- Defines a typed payload record
+- Configures the topic name through @ConfigurationProperties, not @Value
+- Includes a DLT (dead-letter topic) handler
+
+=== RULES ===
+
+Add rules covering:
+- **Idempotent consumers**: handlers must tolerate redelivery without producing duplicate side-effects.
+- **DLT for every listener**: every @KafkaListener has an explicit dead-letter destination, not just default retry.
+- **Typed payloads**: deserialize into records, not Maps; reject malformed payloads early.

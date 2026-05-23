@@ -7,19 +7,16 @@ Based on the following Spring Boot project context, suggest 5-8 developer tasks 
 2. ...
 **Notes:** <project-specific gotchas, or "_(none)_">
 
-Suggested topics to draw from (pick the ones that fit this project):
-- add a REST endpoint / controller method
-- add a service + bean wiring
-- add a JPA entity + repository
-- add a @ConfigurationProperties section
-- add a new application profile
-- add a scheduled / async task
-- add an integration test (slice test or @SpringBootTest)
-- add a Spring AI tool / chat client config (if Spring AI is in deps)
+Always include at least one skill for:
+- adding a service + constructor-injected bean wiring
+- adding a @ConfigurationProperties section
+- adding a new application profile
+- adding a scheduled / async task
+- adding an integration test (slice test or @SpringBootTest)
 
 Rules:
 - Skills must reference real packages from the context. Do not invent.
-- Steps must mention the specific project's conventions (e.g. base package, where controllers go).
+- Steps must mention the specific project's conventions (e.g. base package, where existing services live).
 - Aim for 6 skills.
 
 PROJECT CONTEXT:

@@ -41,6 +41,12 @@ public record ProjectContext(
         if (stack.framework() != null) {
             sb.append("Framework: ").append(stack.framework()).append("\n");
         }
+        if (stack.springProfile() != null) {
+            var facets = stack.springProfile().facets();
+            if (!facets.isEmpty()) {
+                sb.append("Spring sub-stack: ").append(String.join(", ", facets)).append("\n");
+            }
+        }
         sb.append("Source file count: ").append(sourceFiles.size()).append("\n");
         if (!testClassNames.isEmpty()) {
             sb.append("Test file count: ").append(testClassNames.size()).append("\n");

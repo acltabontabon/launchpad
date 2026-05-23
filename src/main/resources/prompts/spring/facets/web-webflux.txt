@@ -1,0 +1,22 @@
+=== SUMMARY ===
+
+Spring WebFlux is on the classpath. In the "## Spring Specifics" section, include:
+- Web stack: spring-webflux (reactive, Netty)
+- Whether the project uses annotated controllers (@RestController + Mono/Flux returns) or functional routing (RouterFunction)
+- Whether reactive persistence (R2DBC, reactive Mongo) is paired with it
+
+In "## Gotchas", call out that blocking calls inside reactive pipelines (JDBC, file IO, Thread.sleep) will starve the event loop.
+
+=== SKILLS ===
+
+Include a skill named "add-reactive-endpoint" that:
+- Uses Mono<T> / Flux<T> return types
+- Names the actual base package from the context
+- Notes that blocking work must be moved off the event loop (Schedulers.boundedElastic)
+
+=== RULES ===
+
+Add rules covering:
+- **No blocking in reactive pipelines**: never call JDBC, file IO, or Thread.sleep inside a Mono/Flux chain - use Schedulers.boundedElastic for unavoidable blocking work.
+- **Return Mono/Flux at the controller**: controllers expose Mono<T> or Flux<T>, never the materialized T.
+- **Backpressure-aware operators**: prefer flatMap with concurrency limits over plain map for IO-bound stages.

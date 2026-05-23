@@ -31,6 +31,15 @@ public record ProjectFixture(
                 List.of("Spring", "JPA", "REST")
             ),
             new ProjectFixture(
+                "spring-boot-starter",
+                "spring-boot-starter",
+                "Java", "Maven", "Spring Boot",
+                null,   // a starter library has no application entry point
+                List.of("spring-boot-autoconfigure", "spring-boot-configuration-processor"),
+                List.of("WidgetAutoConfiguration", "WidgetProperties", "WidgetService"),
+                List.of("autoconfiguration", "starter", "ConditionalOnClass")
+            ),
+            new ProjectFixture(
                 "nextjs",
                 "nextjs",
                 "TypeScript", "npm", "Next.js",

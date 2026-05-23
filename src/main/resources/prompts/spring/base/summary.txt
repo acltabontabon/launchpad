@@ -6,7 +6,7 @@ Your output MUST include these sections, in order, with exact headings:
 One paragraph: what the project is and what it does. Identify whether it's a REST API, batch job, CLI, message-driven service, or other shape.
 
 ## Architecture
-Identify: the layering (controller/service/repository, hexagonal, modular monolith, etc.), whether @ConfigurationProperties is used heavily, Spring AI / Spring Cloud / Spring Security usage if present.
+Identify: the layering (controller/service/repository, hexagonal, modular monolith, etc.) and whether @ConfigurationProperties is used heavily.
 
 ## Key Modules
 Bulleted list of the most important packages and their responsibilities. Map package names to roles (controllers, services, repositories, config, domain).
@@ -14,15 +14,13 @@ Bulleted list of the most important packages and their responsibilities. Map pac
 ## Spring Specifics
 - Entry point class (the @SpringBootApplication-annotated one)
 - Bean / configuration style: classpath scan vs explicit @Bean methods
-- Persistence: JPA / JDBC / R2DBC / none
-- Web stack: spring-web vs spring-webflux vs no web (CLI app)
 - Notable starters from the dependency list
 
 ## Conventions
 Bulleted list: naming for controllers/services, exception handling pattern, validation style, test style (slice tests vs @SpringBootTest), profile usage.
 
 ## Gotchas
-Things that would trip up an AI agent: custom bean wiring, native-image constraints if GraalVM is in play, non-default property files, anything async / scheduled.
+Things that would trip up an AI agent: custom bean wiring, non-default property files, anything async / scheduled.
 
 Rules:
 - Be specific. Reference only files, packages, classes, or starters that appear in the context.

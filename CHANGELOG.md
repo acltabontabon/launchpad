@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Composable Spring prompt system**
+  - New `SpringProfile` record on `StackProfile`, populated from the dependency
+    list when the framework is Spring. Carries sub-stack signals: web (mvc /
+    webflux), persistence (jpa / jdbc / r2dbc), spring-ai, spring-cloud,
+    spring-security, messaging (kafka / rabbit), graalvm-native, and
+    starter-library.
+  - New `SpringPromptComposer` that assembles each generation prompt from a
+    base template (`prompts/spring/base/{summary,skills,cursor-rules}.txt`)
+    plus per-facet additions (`prompts/spring/facets/<id>.txt`). Lets the
+    Spring prompt scale by composition instead of single-file duplication.
+  - Composed facet list is logged at INFO per generation for visibility.
+  - `starter-library` facet distinguishes Spring Boot auto-configuration
+    libraries from runnable applications. Detected via three positive,
+    library-exclusive signals (any one is sufficient): presence of
+    `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`,
+    legacy `META-INF/spring.factories`, or an `@AutoConfiguration` annotation
+    in any `.java` source file (catches libraries whose generated imports
+    file hasn't been built yet). When set, the facet reframes the prompt for
+    the library perspective (auto-config classes, `@ConditionalOn*` gating,
+    `@ConfigurationProperties` surface, never-shadow-user-beans guidance) and
+    is composed first so the framing applies to every later sub-stack facet.
+  - New `spring-boot-starter` eval fixture under
+    `src/test/resources/fixtures/spring-boot-starter/` exercises the full
+    detection pipeline end-to-end (real `pom.xml`, real
+    `AutoConfiguration.imports`, real `@AutoConfiguration`-annotated source).
+    The existing `spring-boot` app fixture now carries an explicit
+    negative-guard assertion: it must NOT be misclassified as a starter
+    library. This pairing protects against future signal additions that
+    might silently misfire on regular apps.
+
 - **MCP Integration**
   - AI tool flow in `/settings` for automatic MCP config (Claude, Cursor).
   - MCP server mode via `launchpad mcp` exposing tools and SARIF resources.
@@ -29,6 +59,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New `BENEFITS.md` (token-cost analysis) and `USAGE.md` (setup guide).
 
 ### Changed
+- **Narrowed specialized prompts to Spring only.** Deleted the per-framework
+  templates for Next.js, Django, FastAPI, and Rails. Non-Java projects now use
+  the generic prompt. This is a deliberate scope cut so the Spring path can be
+  hardened end-to-end before broadening again. `PromptSelector` delegates to
+  `SpringPromptComposer` for the three generation kinds (summary, skills,
+  rules) when the detected framework is Spring; otherwise it falls back to
+  the generic per-kind template.
+
+- **De-vendored the rules prompt pipeline.** What was named after Cursor is
+  now named after the output format. Concretely:
+  - `PromptSelector.Kind.CURSOR_RULES` → `PromptSelector.Kind.RULES`.
+  - Directory `src/main/resources/prompts/cursor-rules/` → `prompts/rules/`.
+  - Base file `prompts/spring/base/cursor-rules.txt` → `prompts/spring/base/rules.txt`.
+  - Facet section header `=== CURSOR ===` → `=== RULES ===` in all 12 facet files.
+  - Generic and Spring rules prompts rewritten to drop the
+    "writing .cursorrules for a Cursor AI user" framing; they now produce
+    tool-agnostic rules consumable by any AI coding agent (Claude Code,
+    Cursor, Copilot, Aider, ...). Vendor-specific output decisions stay at
+    the file-emission layer (`ContextTemplateEngine`), not in the prompts.
+
 - **Visual & UI Refinement**
   - Redesigned TUI using "Cosmic Console" visual system.
   - Simplified Welcome screen: Reworked tagline and moved help to `/help`.
