@@ -8,6 +8,7 @@ import com.acltabontabon.launchpad.tui.command.CommandPalette;
 import com.acltabontabon.launchpad.tui.components.Brand;
 import com.acltabontabon.launchpad.tui.components.Card;
 import com.acltabontabon.launchpad.tui.components.KeyHint;
+import com.acltabontabon.launchpad.tui.components.RocketAnimation;
 import com.acltabontabon.launchpad.tui.components.Spinner;
 import com.acltabontabon.launchpad.tui.components.StatusDot;
 import com.acltabontabon.launchpad.tui.theme.Icons;
@@ -75,9 +76,37 @@ public class WelcomeView implements View {
         if (paletteOpen) {
             renderPalette(frame, rows.get(3), state);
         } else {
-            renderSystemCheck(frame, rows.get(3), state);
+            if (allReady(state)) {
+                var rocketArea = rows.get(3);
+                frame.renderWidget(
+                    RocketAnimation.render(tick, rocketArea.height()),
+                    rocketArea
+                );
+            } else {
+                renderSystemCheck(frame, rows.get(3), state);
+            }
             renderCta(frame, rows.get(4), state);
         }
+    }
+
+    // Show the rocket only when both subsystems are non-blocking. The footer
+    // already exposes the same two dots, so dropping the system-check card on
+    // a clean boot removes redundant chrome - we only surface it when there
+    // is an actionable problem the user can read inline.
+    private static boolean allReady(AppState state) {
+        return ollamaReady(state) && standardsReady(state);
+    }
+
+    private static boolean ollamaReady(AppState state) {
+        return state.ollamaStatus.get().state() == OllamaStatus.State.READY;
+    }
+
+    private static boolean standardsReady(AppState state) {
+        // SYNCED / NOT_CONFIGURED / STALE_CACHE all leave the app fully usable;
+        // only an active CHECKING phase or an ERROR justifies hiding the rocket.
+        var s = state.remoteStandardsStatus.get().state();
+        return s != RemoteStandardsStatus.State.CHECKING
+            && s != RemoteStandardsStatus.State.ERROR;
     }
 
     private void renderSystemCheck(Frame frame, Rect area, AppState state) {
