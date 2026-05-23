@@ -1,6 +1,6 @@
 # Launchpad
 
-A friendly terminal companion that gets your project ready for AI coding assistants.
+![Launchpad Demo](docs/resources/launchpad.gif)
 
 > 📘 **Looking for step-by-step instructions?** [USAGE.md](USAGE.md) walks you from install through hooking Launchpad up to your AI tool as an MCP server, addressing projects by name, and troubleshooting the common gotchas.
 >
