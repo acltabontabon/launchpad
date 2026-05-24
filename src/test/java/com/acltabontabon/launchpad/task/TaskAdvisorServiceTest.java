@@ -644,8 +644,8 @@ class TaskAdvisorServiceTest {
 
         @Test
         void frameworkHandlesDots() {
-            var next = new StackProfile("TypeScript", "npm", "Next.js", List.of());
-            assertThat(TaskAdvisorService.normaliseFramework(next)).isEqualTo("nextjs");
+            var spring = new StackProfile("Java", "Maven", "Spring.Boot", List.of());
+            assertThat(TaskAdvisorService.normaliseFramework(spring)).isEqualTo("springboot");
         }
 
         @Test

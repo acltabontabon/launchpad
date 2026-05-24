@@ -3,7 +3,7 @@ package com.acltabontabon.launchpad.eval;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.acltabontabon.launchpad.ai.OutputValidator;
-import com.acltabontabon.launchpad.scanner.ProjectScanner;
+import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 

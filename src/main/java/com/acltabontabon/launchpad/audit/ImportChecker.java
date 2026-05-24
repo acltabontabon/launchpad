@@ -15,17 +15,16 @@ import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
- * Flags forbidden imports (Java {@code import ...;} and Python {@code from ... import}
- * / {@code import ...}). Each rule's {@code check.imports} list contains FQN prefixes,
- * with trailing {@code .**} meaning "any sub-package". Optional {@code check.inPackages}
- * restricts which source paths are inspected (also globs against the relative path).
+ * Flags forbidden imports in Java sources ({@code import ...;}). Each rule's
+ * {@code check.imports} list contains FQN prefixes, with trailing {@code .**}
+ * meaning "any sub-package". Optional {@code check.inPackages} restricts which
+ * source paths are inspected (also globs against the relative path).
  */
 @Component
 public class ImportChecker implements RuleChecker {
 
     private static final long MAX_FILE_BYTES = 1_000_000L;
     private static final Pattern JAVA_IMPORT = Pattern.compile("^\\s*import\\s+(?:static\\s+)?([\\w.$*]+)\\s*;", Pattern.MULTILINE);
-    private static final Pattern PY_IMPORT = Pattern.compile("^\\s*(?:from\\s+([\\w.]+)\\s+import|import\\s+([\\w.]+))", Pattern.MULTILINE);
 
     @Override
     public String kind() {
@@ -40,6 +39,7 @@ public class ImportChecker implements RuleChecker {
         }
         var findings = new ArrayList<Finding>();
         for (var relativePath : ctx.sourceFiles()) {
+            if (!relativePath.endsWith(".java")) continue;
             if (!matchesInPackages(relativePath, check)) {
                 continue;
             }
@@ -55,10 +55,9 @@ public class ImportChecker implements RuleChecker {
 
     private List<Finding> scanFile(Rule rule, String relativePath, String content) {
         var out = new ArrayList<Finding>();
-        var pattern = relativePath.endsWith(".py") ? PY_IMPORT : JAVA_IMPORT;
-        Matcher matcher = pattern.matcher(content);
+        Matcher matcher = JAVA_IMPORT.matcher(content);
         while (matcher.find()) {
-            var imported = matcher.group(1) != null ? matcher.group(1) : matcher.groupCount() >= 2 ? matcher.group(2) : null;
+            var imported = matcher.group(1);
             if (imported == null) continue;
             for (var forbidden : rule.check().imports()) {
                 if (matchesFqn(imported, forbidden)) {

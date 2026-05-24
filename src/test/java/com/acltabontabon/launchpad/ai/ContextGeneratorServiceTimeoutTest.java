@@ -33,7 +33,8 @@ class ContextGeneratorServiceTimeoutTest {
         var hangingModel = new HangingChatModel();
         var service = new ContextGeneratorService(
             ChatClient.builder(hangingModel),
-            new PromptSelector(new FacetPromptComposer()),
+            new PromptSelector(new FacetPromptComposer(),
+                java.util.List.of(new com.acltabontabon.launchpad.springboot.synthesizer.SpringPromptStrategy())),
             properties);
 
         long start = System.currentTimeMillis();
@@ -51,7 +52,7 @@ class ContextGeneratorServiceTimeoutTest {
     private static ProjectContext genericContext() {
         return new ProjectContext(
             "demo", "/tmp/demo",
-            new StackProfile("Java", "Maven", null, List.of()),
+            new StackProfile("Java", "Maven", "Spring Boot", List.of()),
             List.of("Main.java"), List.of(), Map.of(),
             List.of(new Dependency("x", "1", "runtime")),
             Map.of(), List.<PackageSummary>of(), null);

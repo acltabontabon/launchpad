@@ -2,8 +2,9 @@ package com.acltabontabon.launchpad.eval;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.acltabontabon.launchpad.scanner.doc.DocumentationIndex;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
-import com.acltabontabon.launchpad.scanner.ProjectScanner;
+import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -11,8 +12,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Scanner-side assertions that do not require Ollama. Always runs as part of
- * `./mvnw test`. If any fixture's expected facts drift from reality, this
- * fails loudly and the eval harness has done its job.
+ * {@code ./mvnw test}. If any fixture's expected facts drift from reality,
+ * this fails loudly and the eval harness has done its job.
  */
 class ScannerEvalTest {
 
@@ -62,9 +63,9 @@ class ScannerEvalTest {
                 assertThat(sp.facets())
                     .as("starter-library facet MUST NOT appear for the app fixture")
                     .doesNotContain("starter-library");
-                assertThat(ctx.stack().databricksProfile())
-                    .as("Spring app MUST NOT be misclassified as Databricks")
-                    .isNull();
+                assertThat(ctx.documentation().format())
+                    .as("inline mkdocs.yml under spring-boot fixture must be detected")
+                    .isEqualTo(DocumentationIndex.Format.MKDOCS);
             }
             case "spring-boot-starter" -> {
                 var sp = ctx.stack().springProfile();
@@ -75,39 +76,10 @@ class ScannerEvalTest {
                 assertThat(sp.facets())
                     .as("starter-library facet must appear first")
                     .startsWith("starter-library");
-                assertThat(ctx.stack().databricksProfile())
-                    .as("Spring starter library MUST NOT be misclassified as Databricks")
-                    .isNull();
             }
-            case "databricks-recon" -> {
-                assertThat(ctx.stack().framework())
-                    .as("databricks-recon fixture must be detected as Databricks")
-                    .isEqualTo("Databricks");
-                var dp = ctx.stack().databricksProfile();
-                assertThat(dp).as("DatabricksProfile populated for recon fixture").isNotNull();
-                assertThat(dp.terraform()).as("terraform signal").isTrue();
-                assertThat(dp.dlt()).as("dlt signal").isTrue();
-                assertThat(dp.python()).as("python signal").isTrue();
-                assertThat(dp.sql()).as("sql signal").isTrue();
-                assertThat(dp.facets())
-                    .as("databricks facet ordering")
-                    .containsExactly("terraform-deployment", "dlt-pipeline",
-                        "python-source", "sql-source");
-                assertThat(ctx.stack().springProfile())
-                    .as("Databricks project MUST NOT carry a SpringProfile")
-                    .isNull();
-            }
-            default -> {
-                assertThat(ctx.stack().springProfile())
-                    .as("non-Spring fixtures must not carry a SpringProfile")
-                    .isNull();
-                assertThat(ctx.stack().databricksProfile())
-                    .as("non-Databricks fixtures must not carry a DatabricksProfile")
-                    .isNull();
-                assertThat(ctx.stack().framework())
-                    .as("non-Databricks fixtures MUST NOT be misclassified as Databricks")
-                    .isNotEqualTo("Databricks");
-            }
+            default -> assertThat(ctx.stack().springProfile())
+                .as("Spring fixtures must all carry a SpringProfile")
+                .isNotNull();
         }
 
         var depNames = ctx.dependencies().stream().map(d -> d.name()).toList();
@@ -128,21 +100,11 @@ class ScannerEvalTest {
             }
         }
 
-        // Existing fixtures do not ship an mkdocs.yml or antora.yml, so the docs
-        // detector MUST NOT misclassify them. PLAIN (README-only) and NONE are both fine.
-        var docFormat = ctx.documentation().format();
-        assertThat(docFormat)
-            .as("documentation format for %s must not be MKDOCS or ANTORA", fixture.name())
-            .isNotIn(
-                com.acltabontabon.launchpad.scanner.DocumentationIndex.Format.MKDOCS,
-                com.acltabontabon.launchpad.scanner.DocumentationIndex.Format.ANTORA);
-
-        // toPromptString stays within budget and doesn't dump raw source list.
+        // toPromptString stays within budget and does not dump every source path.
         var prompt = ctx.toPromptString();
         assertThat(prompt.length()).isLessThanOrEqualTo(8_500);
         assertThat(prompt).contains("Stack:");
         assertThat(prompt).contains("## Source Structure");
-        // Sanity: the prompt must not contain every source file path - that was the old failure.
         assertThat(prompt.lines().filter(l -> l.startsWith("- ")).count())
             .as("prompt bullets capped (no flat file dump) for %s", fixture.name())
             .isLessThan(80);

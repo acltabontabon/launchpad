@@ -2,7 +2,7 @@ package com.acltabontabon.launchpad.template;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.acltabontabon.launchpad.scanner.MavenProfile;
+import com.acltabontabon.launchpad.springboot.maven.MavenProfile;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 

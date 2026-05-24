@@ -1,56 +1,52 @@
 package com.acltabontabon.launchpad.scanner;
 
+import com.acltabontabon.launchpad.springboot.runtime.SpringProfile;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Structured view of a project's tech stack. Replaces the legacy single-string
- * "Java / Maven" form so prompts and rules can branch on framework, not just
- * build tool.
- * <p>
- * {@code springProfile} is populated only when {@link #framework()} is a Spring
- * variant; {@code databricksProfile} only when it is a Databricks project.
- * Both carry sub-stack signals (web/persistence/ai/... and
- * terraform/dlt/python/sql respectively) used by the prompt composer to pull
- * the right facet files.
+ * Structured view of a project's tech stack.
+ *
+ * <p>Today {@link ProjectSupportDetector} only admits Spring Boot Java +
+ * Maven projects, so by the time a {@code StackProfile} reaches downstream
+ * phases the {@code language} / {@code buildTool} / {@code framework} fields
+ * are effectively constants (Java / Maven / Spring Boot). They are kept as
+ * fields because display, JSON persistence (via {@link com.fasterxml.jackson.annotation.JsonIgnoreProperties}),
+ * and template rendering still read them; a follow-up pass may collapse them
+ * into a Spring-specific profile model once those readers are tightened.
+ *
+ * <p>{@code springProfile} carries Spring sub-stack signals (web,
+ * persistence, AI, ...) used by the prompt composer to pull the right facet
+ * files.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record StackProfile(
-    String language,        // "Java", "TypeScript", "Python", "Rust", "Go", "Ruby", ...
-    String buildTool,       // "Maven", "Gradle", "npm", "pip", "cargo", ...
-    String framework,       // "Spring Boot", "Databricks", "Next.js", ... or null
+    String language,
+    String buildTool,
+    String framework,
     List<String> runtimeHints,
-    SpringProfile springProfile,
-    DatabricksProfile databricksProfile
+    SpringProfile springProfile
 ) {
 
     public StackProfile(String language, String buildTool, String framework, List<String> runtimeHints) {
-        this(language, buildTool, framework, runtimeHints, null, null);
+        this(language, buildTool, framework, runtimeHints, null);
     }
 
     public static StackProfile unknown() {
-        return new StackProfile("Unknown", null, null, List.of(), null, null);
+        return new StackProfile("Unknown", null, null, List.of(), null);
     }
 
     public StackProfile withSpringProfile(SpringProfile sp) {
-        return new StackProfile(language, buildTool, framework, runtimeHints, sp, databricksProfile);
-    }
-
-    public StackProfile withDatabricksProfile(DatabricksProfile dp) {
-        return new StackProfile(language, buildTool, framework, runtimeHints, springProfile, dp);
+        return new StackProfile(language, buildTool, framework, runtimeHints, sp);
     }
 
     public StackProfile withFramework(String newFramework) {
-        return new StackProfile(language, buildTool, newFramework, runtimeHints, springProfile, databricksProfile);
+        return new StackProfile(language, buildTool, newFramework, runtimeHints, springProfile);
     }
 
     public boolean isSpring() {
         return framework != null && framework.toLowerCase().contains("spring");
-    }
-
-    public boolean isDatabricks() {
-        return framework != null && framework.toLowerCase().contains("databricks");
     }
 
     /** Single-line human label, e.g. "Spring Boot / Java / Maven". */

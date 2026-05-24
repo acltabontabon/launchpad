@@ -3,10 +3,11 @@ package com.acltabontabon.launchpad.mcp;
 import com.acltabontabon.launchpad.audit.AuditService;
 import com.acltabontabon.launchpad.config.ProjectRegistry;
 import com.acltabontabon.launchpad.config.RegisteredProject;
-import com.acltabontabon.launchpad.scanner.DocumentationIndex;
-import com.acltabontabon.launchpad.scanner.DocumentationPage;
+import com.acltabontabon.launchpad.scanner.doc.DocumentationIndex;
+import com.acltabontabon.launchpad.scanner.doc.DocumentationPage;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
-import com.acltabontabon.launchpad.scanner.ProjectScanner;
+import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
+import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
 import com.acltabontabon.launchpad.scanner.ScanStore;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import com.acltabontabon.launchpad.standards.Checklist;
@@ -70,10 +71,7 @@ public class LaunchpadMcpTools {
     // into build outputs / VCS dirs either, both for performance and to avoid
     // surfacing files no caller asked about.
     private static final Set<String> SKIP_DIRS = Set.of(
-        ".git", "node_modules", "target", "build", ".idea", ".vscode",
-        "__pycache__", ".gradle", "dist", "out", ".next", ".nuxt", "vendor",
-        ".venv", "venv", ".tox", ".pytest_cache", ".mypy_cache", ".cache",
-        ".terraform"
+        ".git", "target", "build", ".idea", ".vscode", ".gradle", "out"
     );
 
     // Hard cap on list_files result size. Big enough for "show me every Java
@@ -91,6 +89,7 @@ public class LaunchpadMcpTools {
     private final AuditService auditService;
     private final StandardsLoader standardsLoader;
     private final ProjectRegistry projectRegistry;
+    private final ProjectSupportDetector projectSupportDetector;
     private final long maxFileSizeBytes;
 
     public LaunchpadMcpTools(ProjectScanner scanner,
@@ -98,12 +97,14 @@ public class LaunchpadMcpTools {
                              AuditService auditService,
                              StandardsLoader standardsLoader,
                              ProjectRegistry projectRegistry,
+                             ProjectSupportDetector projectSupportDetector,
                              @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb) {
         this.scanner = scanner;
         this.scanStore = scanStore;
         this.auditService = auditService;
         this.standardsLoader = standardsLoader;
         this.projectRegistry = projectRegistry;
+        this.projectSupportDetector = projectSupportDetector;
         this.maxFileSizeBytes = maxFileSizeKb * 1024L;
     }
 
@@ -151,6 +152,8 @@ public class LaunchpadMcpTools {
         var resolved = resolveProject(project);
         if (resolved instanceof Resolution.Error err) return err.payload();
         var projectRoot = ((Resolution.Path) resolved).value();
+        var unsupported = requireSupported(projectRoot);
+        if (unsupported != null) return unsupported;
         ProjectContext ctx;
         if (scanStore.isFresh(projectRoot, SCAN_FRESH_WINDOW)) {
             ctx = scanStore.load(projectRoot).orElseGet(() -> scanAndPersist(projectRoot));
@@ -399,6 +402,8 @@ public class LaunchpadMcpTools {
         var resolved = resolveProject(project);
         if (resolved instanceof Resolution.Error err) return err.payload();
         var projectRoot = ((Resolution.Path) resolved).value();
+        var unsupported = requireSupported(projectRoot);
+        if (unsupported != null) return unsupported;
         var ctx = scanStore.load(projectRoot).orElseGet(() -> scanAndPersist(projectRoot));
         var result = auditService.run(ctx, projectRoot);
         var findings = result.findings().stream()
@@ -479,6 +484,8 @@ public class LaunchpadMcpTools {
         var resolved = resolveProject(project);
         if (resolved instanceof Resolution.Error err) return err.payload();
         var projectRoot = ((Resolution.Path) resolved).value();
+        var unsupported = requireSupported(projectRoot);
+        if (unsupported != null) return unsupported;
         var ctx = loadOrScan(projectRoot);
         return documentationToMap(ctx, projectRoot);
     }
@@ -511,7 +518,10 @@ public class LaunchpadMcpTools {
         if (project != null && !project.isBlank()) {
             var resolved = resolveProject(project);
             if (resolved instanceof Resolution.Error err) return err.payload();
-            roots.add(((Resolution.Path) resolved).value());
+            var projectRoot = ((Resolution.Path) resolved).value();
+            var unsupported = requireSupported(projectRoot);
+            if (unsupported != null) return unsupported;
+            roots.add(projectRoot);
         } else {
             for (var entry : projectRegistry.all()) {
                 var p = projectRegistry.resolveToPath(entry.name());
@@ -588,6 +598,8 @@ public class LaunchpadMcpTools {
         var resolved = resolveProject(project);
         if (resolved instanceof Resolution.Error err) return err.payload();
         var projectRoot = ((Resolution.Path) resolved).value();
+        var unsupported = requireSupported(projectRoot);
+        if (unsupported != null) return unsupported;
 
         if (path == null || path.isBlank()) {
             return errorPayload("missing_path", "Pass a project-relative doc-page path as `path`.");
@@ -857,6 +869,18 @@ public class LaunchpadMcpTools {
                 "text", nullToEmpty(i.text()),
                 "required", i.required())).toList());
         return m;
+    }
+
+    /**
+     * Run the support gate before any tool method triggers a scan. Returns the
+     * canonical unsupported-project error payload when the project does not
+     * meet the Spring Boot Java + Maven contract; returns {@code null} when the
+     * project is supported and the caller may proceed.
+     */
+    private Map<String, Object> requireSupported(Path projectRoot) {
+        var result = projectSupportDetector.detect(projectRoot);
+        if (result.isSupported()) return null;
+        return errorPayload("unsupported_project", result.reason());
     }
 
     private ProjectContext scanAndPersist(Path projectRoot) {

@@ -85,6 +85,11 @@ public class AppState {
     // again on ENTER. True if <projectPath>/.launchpad/standards/ exists right now.
     public volatile boolean launchpadAware = detectLaunchpadAware(projectPath);
 
+    // Set by ProjectSelectView when the support gate rejects the entered project
+    // (e.g. not a Spring Boot Maven project). Rendered inline under the path input
+    // and cleared on the next keystroke that mutates projectPath.
+    public volatile String projectGateError = null;
+
     /**
      * Cheap filesystem probe: does the given path host a `.launchpad/standards/` directory?
      * Sub-microsecond after OS dentry cache warmup; safe to call from the TUI key handler on

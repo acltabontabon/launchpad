@@ -1,5 +1,8 @@
 package com.acltabontabon.launchpad.scanner;
 
+import com.acltabontabon.launchpad.scanner.doc.DocumentationIndex;
+import com.acltabontabon.launchpad.springboot.maven.MavenProfile;
+import com.acltabontabon.launchpad.springboot.runtime.Endpoint;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import java.util.Map;
