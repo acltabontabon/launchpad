@@ -135,13 +135,13 @@ public class LaunchpadMcpResources {
         uri = "launchpad://docs/{name}",
         name = "docs",
         title = "Project Documentation Index",
-        description = "The documentation pages detected for a registered project: format "
-            + "(MKDOCS / ANTORA / PLAIN / NONE), site name, docs directory, and the page list. "
-            + "Each page entry carries its project-relative path, extracted title, and renderer "
-            + "format (MARKDOWN / ASCIIDOC / RST). The `name` segment is the short project name "
-            + "from launchpad://projects. Returns an empty placeholder when the project is "
-            + "unknown or has never been scanned. Mirrors the list_documentation tool for clients "
-            + "that browse the resource tree.",
+        description = "The Markdown and AsciiDoc pages detected for a registered project as a "
+            + "flat ordered list. Each page entry carries its project-relative path, extracted "
+            + "title, renderer format (MARKDOWN / ASCIIDOC), and a coarse purpose tag (OVERVIEW "
+            + "/ SETUP / ARCHITECTURE / API / OPERATIONS / CONTRIBUTION / CHANGELOG / UNKNOWN). "
+            + "The `name` segment is the short project name from launchpad://projects. Returns "
+            + "an empty placeholder when the project is unknown or has never been scanned. "
+            + "Mirrors the list_documentation tool for clients that browse the resource tree.",
         mimeType = "application/json"
     )
     public ReadResourceResult readDocs(ReadResourceRequest request, String name) {

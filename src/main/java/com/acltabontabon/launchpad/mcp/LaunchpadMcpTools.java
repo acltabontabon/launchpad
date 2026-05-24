@@ -5,6 +5,7 @@ import com.acltabontabon.launchpad.config.ProjectRegistry;
 import com.acltabontabon.launchpad.config.RegisteredProject;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationIndex;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationPage;
+import com.acltabontabon.launchpad.scanner.doc.Purpose;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
@@ -468,18 +469,23 @@ public class LaunchpadMcpTools {
 
     @McpTool(
         name = "list_documentation",
-        description = "List the documentation pages discovered for a registered project. Returns the "
-            + "detected format (MKDOCS / ANTORA / PLAIN / NONE), site name (when available), docs "
-            + "directory, and the ordered page list - each page carries its project-relative path, "
-            + "extracted title, and page format (MARKDOWN / ASCIIDOC / RST). Markdown and AsciiDoc "
-            + "are equally supported. Reads from the cached scan and falls back to running a fresh "
-            + "scan when stale. The `project` argument accepts either a short name from the registry "
-            + "(see list_projects) or an absolute path."
+        description = "List the Markdown and AsciiDoc pages discovered for a registered project. "
+            + "Returns a flat ordered page list - each page carries its project-relative path, "
+            + "extracted title, page format (MARKDOWN / ASCIIDOC), and a coarse purpose tag "
+            + "(OVERVIEW / SETUP / ARCHITECTURE / API / OPERATIONS / CONTRIBUTION / CHANGELOG / "
+            + "UNKNOWN). Reads from the cached scan and falls back to running a fresh scan when "
+            + "stale. The `project` argument accepts either a short name from the registry (see "
+            + "list_projects) or an absolute path. Pass `purpose` to narrow the result to one "
+            + "bucket - e.g. `purpose: \"setup\"` to retrieve the project's getting-started docs."
     )
     public Map<String, Object> listDocumentation(
         @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
             + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
-        String project
+        String project,
+        @McpArg(name = "purpose", description = "Optional purpose filter (case-insensitive). One of: "
+            + "overview, setup, architecture, api, operations, contribution, changelog, unknown.",
+            required = false)
+        String purpose
     ) {
         var resolved = resolveProject(project);
         if (resolved instanceof Resolution.Error err) return err.payload();
@@ -487,7 +493,13 @@ public class LaunchpadMcpTools {
         var unsupported = requireSupported(projectRoot);
         if (unsupported != null) return unsupported;
         var ctx = loadOrScan(projectRoot);
-        return documentationToMap(ctx, projectRoot);
+        Purpose filter = parsePurposeFilter(purpose);
+        if (purpose != null && !purpose.isBlank() && filter == null) {
+            return errorPayload("invalid_purpose",
+                "Unknown purpose `" + purpose + "`. Allowed: overview, setup, architecture, "
+                    + "api, operations, contribution, changelog, unknown.");
+        }
+        return documentationToMap(ctx, projectRoot, filter);
     }
 
     @McpTool(
@@ -553,6 +565,7 @@ public class LaunchpadMcpTools {
                     hit.put("path", page.path());
                     hit.put("title", nullToEmpty(page.title()));
                     hit.put("format", page.format().name());
+                    hit.put("purpose", page.purpose().name());
                     hit.put("line", m.line());
                     hit.put("excerpt", m.excerpt());
                     perProject.add(hit);
@@ -580,12 +593,13 @@ public class LaunchpadMcpTools {
 
     @McpTool(
         name = "get_documentation",
-        description = "Read a single documentation page (Markdown, AsciiDoc, or RST) from a registered "
-            + "project. The `path` must match a page surfaced by list_documentation - reads outside "
-            + "the detected docs set are rejected, even when the file exists, so the AI cannot use "
+        description = "Read a single Markdown or AsciiDoc page from a registered project. The "
+            + "`path` must match a page surfaced by list_documentation - reads outside the "
+            + "detected docs set are rejected, even when the file exists, so the AI cannot use "
             + "this tool as a generic file reader. Inherits the binary, size, and traversal guards "
-            + "from the file-read path. The `project` argument accepts either a short name or an "
-            + "absolute path."
+            + "from the file-read path. The returned payload carries the page's purpose tag so "
+            + "callers don't have to round-trip back to list_documentation. The `project` argument "
+            + "accepts either a short name or an absolute path."
     )
     public Map<String, Object> getDocumentation(
         @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
@@ -658,14 +672,15 @@ public class LaunchpadMcpTools {
                 "File contains NUL bytes in its first kilobyte - refusing to return as text.");
         }
         var text = new String(bytes, StandardCharsets.UTF_8);
-        return Map.of(
-            "project", projectRoot.toString(),
-            "path", page.path(),
-            "title", nullToEmpty(page.title()),
-            "format", page.format().name(),
-            "sizeBytes", size,
-            "content", text
-        );
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("project", projectRoot.toString());
+        payload.put("path", page.path());
+        payload.put("title", nullToEmpty(page.title()));
+        payload.put("format", page.format().name());
+        payload.put("purpose", page.purpose().name());
+        payload.put("sizeBytes", size);
+        payload.put("content", text);
+        return payload;
     }
 
     /**
@@ -682,30 +697,52 @@ public class LaunchpadMcpTools {
     /**
      * Map a {@link DocumentationIndex} into the JSON-friendly shape returned by
      * {@code list_documentation} and the docs MCP resource. Pulled out so the
-     * tool and the resource render the same payload.
+     * tool and the resource render the same payload. When {@code purposeFilter}
+     * is non-null, the page list is restricted to entries with that purpose
+     * (the unfiltered total is still reported as {@code pageCount}).
      */
-    static Map<String, Object> documentationToMap(ProjectContext ctx, Path projectRoot) {
+    static Map<String, Object> documentationToMap(ProjectContext ctx, Path projectRoot,
+                                                  Purpose purposeFilter) {
         var docs = ctx.documentation();
+        List<DocumentationPage> all = (docs == null || docs.pages() == null) ? List.of() : docs.pages();
+        List<DocumentationPage> shown = purposeFilter == null
+            ? all
+            : all.stream().filter(p -> p.purpose() == purposeFilter).toList();
+
         var out = new LinkedHashMap<String, Object>();
         out.put("project", ctx.name());
         out.put("rootPath", projectRoot.toString());
-        out.put("format", docs == null ? "NONE" : docs.format().name());
-        out.put("siteName", docs == null ? "" : nullToEmpty(docs.siteName()));
-        out.put("docsDir", docs == null ? "" : nullToEmpty(docs.docsDir()));
-        List<Map<String, Object>> pages = (docs == null || docs.pages() == null)
-            ? List.of()
-            : docs.pages().stream()
-                .map(p -> {
-                    var m = new LinkedHashMap<String, Object>();
-                    m.put("path", p.path());
-                    m.put("title", nullToEmpty(p.title()));
-                    m.put("format", p.format().name());
-                    return (Map<String, Object>) m;
-                })
-                .toList();
-        out.put("pageCount", pages.size());
-        out.put("pages", pages);
+        out.put("pageCount", all.size());
+        if (purposeFilter != null) {
+            out.put("purposeFilter", purposeFilter.name());
+            out.put("filteredCount", shown.size());
+        }
+        out.put("pages", shown.stream()
+            .map(p -> {
+                var m = new LinkedHashMap<String, Object>();
+                m.put("path", p.path());
+                m.put("title", nullToEmpty(p.title()));
+                m.put("format", p.format().name());
+                m.put("purpose", p.purpose().name());
+                return (Map<String, Object>) m;
+            })
+            .toList());
         return out;
+    }
+
+    /** Overload for callers (MCP resource) that never filter. */
+    static Map<String, Object> documentationToMap(ProjectContext ctx, Path projectRoot) {
+        return documentationToMap(ctx, projectRoot, null);
+    }
+
+    /** Tolerant case-insensitive parse of the optional `purpose` MCP argument. */
+    private static Purpose parsePurposeFilter(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return Purpose.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /**

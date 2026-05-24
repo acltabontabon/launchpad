@@ -10,10 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scope narrowed to Spring Boot Java + Maven.** Unsupported projects are rejected at the entry point (TUI ProjectSelect and MCP `scan_project`) by a single shared `ProjectSupportDetector` before any scanner phase runs.
 - **Deterministic-first detection.** Project support is decided from a structured Maven model parse (parent, dependencies, plugins) via the new shared `MavenModelParser`; fuzzy text matches over raw pom.xml are gone.
 - **Downstream phases trust the gate.** Scanner, prompt selector, and audit code no longer carry defensive non-Spring branching.
+- **Documentation discovery scoped to Markdown + AsciiDoc.** Only `.md`, `.markdown`, `.adoc`, and `.asciidoc` files are surfaced; `.rst` and other formats are out of scope for the early version. The doc index is now a flat ordered page list - the MkDocs / Antora / Plain mode machinery is gone.
+- **Every doc page carries a purpose tag.** Pages are classified deterministically by filename and path (`overview`, `setup`, `architecture`, `api`, `operations`, `contribution`, `changelog`, `unknown`). An opt-in local-AI fallback (`launchpad.scan.doc-ai-classify`, default `false`) can promote `unknown` pages by asking the local model; the default scan path stays fully offline.
+- **MCP doc tools updated.** `list_documentation`, `find_documentation`, and `get_documentation` now expose the new shape - pages include a `purpose` field and `list_documentation` accepts an optional `purpose` filter so clients can ask "show me the setup docs" without scanning every page. The legacy `format` / `siteName` / `docsDir` keys are gone.
+- **Scanner skip list extended.** Build / generated / vendor / cache directories (`node_modules`, `.venv`, `vendor`, `_site`, `generated-sources`, `.next`, `.nuxt`, `.cache`, `dist`, `bin`, `.mvn`, ...) are excluded from the file walk so generated `README.md`s never leak into the doc index.
 ### Removed
 - Detection and prompt support for Databricks, Kotlin, Gradle, Node, Python, Rust, Go, Ruby.
 - Generic fallback prompt templates (`prompts/{summary,skills,rules}/generic.txt`) and the entire `prompts/databricks/` tree - a missing Spring template now fails loudly rather than degrading to low-signal output.
 - Standalone documentation fixtures (`mkdocs-sample`, `asciidoc-sample`); doc-detection coverage now lives inline in the `spring-boot` Spring fixture.
+- `MkdocsConfigParser` and `AntoraConfigParser` (and the corresponding fixture `mkdocs.yml`); site-generator config files are no longer inspected by the doc detector.
 
 ## [0.3.0] - 2026-05-24
 ### Added

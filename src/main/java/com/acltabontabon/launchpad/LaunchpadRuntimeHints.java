@@ -107,6 +107,7 @@ public class LaunchpadRuntimeHints implements RuntimeHintsRegistrar {
             // the docs section of scan.json round-trips as null under native image.
             "com.acltabontabon.launchpad.scanner.doc.DocumentationIndex",
             "com.acltabontabon.launchpad.scanner.doc.DocumentationPage",
+            "com.acltabontabon.launchpad.scanner.doc.Purpose",
             "com.acltabontabon.launchpad.springboot.runtime.Endpoint",
             "com.acltabontabon.launchpad.springboot.maven.MavenProfile"
         };

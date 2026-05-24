@@ -7,7 +7,9 @@ import com.acltabontabon.launchpad.scanner.ProjectScriptsProvider;
 import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
 import com.acltabontabon.launchpad.scanner.StackProfile;
 import com.acltabontabon.launchpad.scanner.StructureSummarizer;
+import com.acltabontabon.launchpad.scanner.doc.AiPurposeClassifier;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationDetector;
+import com.acltabontabon.launchpad.scanner.doc.PurposeClassifier;
 import com.acltabontabon.launchpad.scanner.doc.ReadmeIntroExtractor;
 import com.acltabontabon.launchpad.scanner.doc.ReadmeSectionsExtractor;
 import com.acltabontabon.launchpad.springboot.detectors.SpringProfileDetector;
@@ -42,8 +44,26 @@ import org.springframework.stereotype.Service;
 @Service
 public class ProjectScanner {
 
+    /**
+     * Directories the file walk never descends into. Covers VCS metadata,
+     * IDE state, language/runtime caches, generator/build output, and
+     * vendored dependency trees. Anything generated here (including the
+     * occasional README.md inside {@code target/site/}) MUST stay invisible
+     * to the doc-discovery path so the index is only the project's own
+     * authored content.
+     */
     private static final Set<String> SKIP_DIRS = Set.of(
-        ".git", "target", "build", ".idea", ".vscode", ".gradle", "out"
+        // VCS + IDE
+        ".git", ".idea", ".vscode",
+        // Maven / Gradle build output + wrappers
+        "target", "build", "out", "bin", ".gradle", ".mvn",
+        // Generated source trees
+        "generated", "generated-sources",
+        // Static-site generator output (kept distinct from source `docs/`)
+        "site", "_site",
+        // Cross-language caches we may encounter in mixed repos
+        "node_modules", ".next", ".nuxt", "dist",
+        "vendor", ".venv", "venv", ".cache"
     );
 
     private static final Set<String> BUILD_FILE_NAMES = Set.of(
@@ -64,12 +84,15 @@ public class ProjectScanner {
     private static final int SNIPPET_LONG_LINES = 200;
     private static final int SNIPPET_SHORT_LINES = 60;
 
+    /**
+     * Early-version doc scope: Markdown and AsciiDoc only. The two
+     * canonical extensions are paired with their longer-form aliases so
+     * real-world repos using {@code .markdown} or {@code .asciidoc} still
+     * surface. Other formats (.rst, .txt, .html, .pdf) are intentionally
+     * out of scope.
+     */
     private static final Set<String> DOC_EXTENSIONS = Set.of(
-        ".md", ".markdown", ".adoc", ".asciidoc", ".rst"
-    );
-
-    private static final Set<String> DOC_DIR_NAMES = Set.of(
-        "docs", "documentation", "doc", "site"
+        ".md", ".markdown", ".adoc", ".asciidoc"
     );
 
     private static final Set<String> TEST_PATTERNS = Set.of("test", "tests");
@@ -80,19 +103,21 @@ public class ProjectScanner {
     private final DependencyExtractor dependencyExtractor = new DependencyExtractor();
     private final StructureSummarizer structureSummarizer = new StructureSummarizer();
     private final SpringProfileDetector springProfileDetector = new SpringProfileDetector();
-    private final DocumentationDetector documentationDetector = new DocumentationDetector();
+    private final DocumentationDetector documentationDetector;
 
     public ProjectScanner(
         @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb,
-        @Value("${launchpad.scan.include-test-names:true}") boolean includeTestNames
+        @Value("${launchpad.scan.include-test-names:true}") boolean includeTestNames,
+        AiPurposeClassifier aiPurposeClassifier
     ) {
         this.maxFileSizeKb = maxFileSizeKb;
         this.includeTestNames = includeTestNames;
+        this.documentationDetector = new DocumentationDetector(new PurposeClassifier(aiPurposeClassifier));
     }
 
-    /** Test-friendly factory with sensible defaults. */
+    /** Test-friendly factory with sensible defaults and heuristic-only doc classification. */
     public static ProjectScanner forTesting() {
-        return new ProjectScanner(512, true);
+        return new ProjectScanner(512, true, null);
     }
 
     public ProjectContext scan(String rootPath, Consumer<String> progressCallback) throws IOException {
@@ -116,9 +141,6 @@ public class ProjectScanner {
                 if (!dir.equals(root)) {
                     var rel = root.relativize(dir);
                     if (gitignore.isIgnored(rel, true)) return FileVisitResult.SKIP_SUBTREE;
-                    if (DOC_DIR_NAMES.contains(name.toLowerCase())) {
-                        signals.hasDocsFolder = true;
-                    }
                     progressCallback.accept("Scanning " + truncateLeft(rel.toString(), 70) + "/");
                 }
                 return FileVisitResult.CONTINUE;
@@ -164,13 +186,6 @@ public class ProjectScanner {
                     }
                 }
 
-                if ("mkdocs.yml".equals(fileName) && file.getParent().equals(root)) {
-                    signals.hasMkdocsConfig = true;
-                }
-                if ("antora.yml".equals(fileName)) {
-                    signals.hasAntoraConfig = true;
-                    signals.docFiles.add(relative);
-                }
                 if (hasDocExtension(fileName)) {
                     signals.docFiles.add(relative);
                 }

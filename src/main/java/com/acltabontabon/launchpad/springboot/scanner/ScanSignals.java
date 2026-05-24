@@ -23,13 +23,12 @@ final class ScanSignals {
     boolean hasAutoConfigAnnotation;
 
     // --- Documentation ---
-    /** {@code mkdocs.yml} present at the project root. */
-    boolean hasMkdocsConfig;
-    /** {@code antora.yml} present anywhere in the tree. */
-    boolean hasAntoraConfig;
-    /** A {@code docs/}, {@code documentation/}, {@code doc/}, or {@code site/} directory exists. */
-    boolean hasDocsFolder;
-    /** Relative paths of every doc file (Markdown, AsciiDoc, RST) observed during the walk. */
+    /**
+     * Relative paths of every Markdown / AsciiDoc file observed during the walk.
+     * The detector classifies each by purpose and emits a flat index; site-
+     * generator config files (mkdocs.yml, antora.yml) are no longer tracked
+     * here.
+     */
     final List<String> docFiles = new ArrayList<>();
 
     SpringProfileDetector.Signals springSignals() {
@@ -38,7 +37,6 @@ final class ScanSignals {
     }
 
     DocumentationSignals documentationSignals() {
-        return new DocumentationSignals(
-            hasMkdocsConfig, hasAntoraConfig, hasDocsFolder, List.copyOf(docFiles));
+        return new DocumentationSignals(List.copyOf(docFiles));
     }
 }

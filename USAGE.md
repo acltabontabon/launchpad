@@ -167,7 +167,7 @@ This is the payoff. Once your projects are enrolled (see step 2) and your AI too
 >
 > -> the agent calls `get_audit_findings(project="Launchpad")` and you get a punch list grouped by severity.
 
-> "Which of my projects use Spring Boot?"
+> "Which of my projects use Java?"
 >
 > -> the agent calls `list_projects`, filters by `stack`, replies in prose.
 

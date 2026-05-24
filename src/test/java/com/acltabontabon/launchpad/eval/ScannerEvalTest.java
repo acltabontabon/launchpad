@@ -2,7 +2,8 @@ package com.acltabontabon.launchpad.eval;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.acltabontabon.launchpad.scanner.doc.DocumentationIndex;
+import com.acltabontabon.launchpad.scanner.doc.DocumentationPage;
+import com.acltabontabon.launchpad.scanner.doc.Purpose;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import java.util.stream.Stream;
@@ -63,9 +64,24 @@ class ScannerEvalTest {
                 assertThat(sp.facets())
                     .as("starter-library facet MUST NOT appear for the app fixture")
                     .doesNotContain("starter-library");
-                assertThat(ctx.documentation().format())
-                    .as("inline mkdocs.yml under spring-boot fixture must be detected")
-                    .isEqualTo(DocumentationIndex.Format.MKDOCS);
+                // Flat doc index with purpose-tagged Markdown/AsciiDoc pages.
+                var pagesByPath = ctx.documentation().pages().stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                        DocumentationPage::path, p -> p));
+                assertThat(pagesByPath.keySet())
+                    .as("spring-boot fixture must surface its top-level + docs/* markdown")
+                    .contains(
+                        "CHANGELOG.md",
+                        "CONTRIBUTING.md",
+                        "docs/index.md",
+                        "docs/guide/setup.md",
+                        "docs/architecture/overview.md");
+                assertThat(pagesByPath.get("CHANGELOG.md").purpose()).isEqualTo(Purpose.CHANGELOG);
+                assertThat(pagesByPath.get("CONTRIBUTING.md").purpose()).isEqualTo(Purpose.CONTRIBUTION);
+                assertThat(pagesByPath.get("docs/index.md").purpose()).isEqualTo(Purpose.OVERVIEW);
+                assertThat(pagesByPath.get("docs/guide/setup.md").purpose()).isEqualTo(Purpose.SETUP);
+                assertThat(pagesByPath.get("docs/architecture/overview.md").purpose())
+                    .isEqualTo(Purpose.ARCHITECTURE);
             }
             case "spring-boot-starter" -> {
                 var sp = ctx.stack().springProfile();

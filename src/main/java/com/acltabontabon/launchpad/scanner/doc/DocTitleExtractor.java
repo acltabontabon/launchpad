@@ -8,8 +8,7 @@ import java.util.List;
  * <p>
  * The caller passes the first chunk of the file's content; this class picks
  * the right heading rule for the page format and falls back to a humanised
- * file stem when no heading is found. Matches what MkDocs and Antora do at
- * render time.
+ * file stem when no heading is found.
  */
 final class DocTitleExtractor {
 
@@ -26,7 +25,6 @@ final class DocTitleExtractor {
         String title = switch (format) {
             case MARKDOWN -> markdownH1(head);
             case ASCIIDOC -> asciidocTitle(head);
-            case RST -> rstTitle(head);
         };
         if (title != null && !title.isBlank()) return title;
         return humaniseStem(fileName);
@@ -56,34 +54,6 @@ final class DocTitleExtractor {
             }
         }
         return null;
-    }
-
-    /**
-     * RST: the first non-blank text line followed by a line of underline
-     * characters ({@code = - ~ ^ "}) at least as long as the text.
-     */
-    private static String rstTitle(String head) {
-        List<String> lines = splitLines(head);
-        for (int i = 0; i < lines.size() - 1; i++) {
-            String text = lines.get(i);
-            String underline = lines.get(i + 1);
-            if (text.isBlank()) continue;
-            if (isRstUnderline(underline) && underline.trim().length() >= text.trim().length()) {
-                return text.trim();
-            }
-        }
-        return null;
-    }
-
-    private static boolean isRstUnderline(String line) {
-        String t = line.trim();
-        if (t.isEmpty()) return false;
-        char c = t.charAt(0);
-        if ("=-~^\"#*+".indexOf(c) < 0) return false;
-        for (int i = 0; i < t.length(); i++) {
-            if (t.charAt(i) != c) return false;
-        }
-        return true;
     }
 
     /** Strip optional trailing {@code #}s allowed in ATX-style Markdown headings. */

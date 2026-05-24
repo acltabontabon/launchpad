@@ -9,13 +9,12 @@ import java.util.List;
  * {@code ScanSignals}) and passed to the detector across the package
  * boundary, so the detector never needs to depend on a framework-specific
  * accumulator type.
+ * <p>
+ * Shrunk to a single field after the doc pipeline was scoped down to
+ * Markdown + AsciiDoc: MkDocs/Antora config presence and the doc-folder flag
+ * are no longer consumed.
  */
-public record DocumentationSignals(
-    boolean hasMkdocsConfig,
-    boolean hasAntoraConfig,
-    boolean hasDocsFolder,
-    List<String> docFiles
-) {
+public record DocumentationSignals(List<String> docFiles) {
 
     public DocumentationSignals {
         if (docFiles == null) docFiles = List.of();

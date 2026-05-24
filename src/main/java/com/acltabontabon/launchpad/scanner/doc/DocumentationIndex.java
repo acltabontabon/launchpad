@@ -4,33 +4,33 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 /**
- * Catalogue of documentation discovered in a project. Populated by
+ * Flat catalogue of documentation discovered in a project. Populated by
  * {@link DocumentationDetector} after the file-tree walk.
  * <p>
- * Markdown and AsciiDoc are first-class peers - {@link Format#MKDOCS} drives
- * a typical {@code mkdocs.yml + docs/*.md} layout, {@link Format#ANTORA} drives
- * an {@code antora.yml + *.adoc} layout, and {@link Format#PLAIN} catches loose
- * doc files (`.md`, `.adoc`, `.rst`) anywhere under common doc directories or
- * the project root. {@link Format#NONE} means no docs were detected.
+ * The early version of Launchpad is opinionated about what counts as
+ * documentation: Markdown ({@code .md}, {@code .markdown}) and AsciiDoc
+ * ({@code .adoc}, {@code .asciidoc}) only. Site-generator config files
+ * (mkdocs.yml, antora.yml) are no longer inspected - clients that need that
+ * level of detail can read the raw files via the file-read MCP tool.
  * <p>
- * {@code pages} is ordered. For MkDocs we honour the {@code nav} declaration
- * when present; for everything else the order is the file-walk order.
+ * {@code pages} is ordered by file-walk order. Older {@code .launchpad/scan.json}
+ * caches with the legacy mode fields ({@code format}, {@code siteName},
+ * {@code docsDir}) deserialize cleanly because {@link JsonIgnoreProperties}
+ * drops unknown keys; the {@code pages} list survives and everything else is
+ * implicitly empty.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record DocumentationIndex(
-    Format format,
-    String siteName,
-    String docsDir,
-    List<DocumentationPage> pages
-) {
+public record DocumentationIndex(List<DocumentationPage> pages) {
 
-    public enum Format { MKDOCS, ANTORA, PLAIN, NONE }
+    public DocumentationIndex {
+        pages = pages == null ? List.of() : List.copyOf(pages);
+    }
 
-    public static DocumentationIndex none() {
-        return new DocumentationIndex(Format.NONE, null, null, List.of());
+    public static DocumentationIndex empty() {
+        return new DocumentationIndex(List.of());
     }
 
     public boolean isEmpty() {
-        return format == Format.NONE || pages == null || pages.isEmpty();
+        return pages.isEmpty();
     }
 }

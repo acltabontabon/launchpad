@@ -30,7 +30,7 @@ public record ProjectContext(
     Map<String, String> fileSnippets,    // key build / config file → first N lines
     List<PackageSummary> packageSummaries,
     String existingContextSummary,       // first ~800 chars of existing CLAUDE.md / .cursorrules, or null
-    DocumentationIndex documentation,    // discovered docs (MkDocs / Antora / plain / none)
+    DocumentationIndex documentation,    // discovered Markdown + AsciiDoc pages, each tagged with a Purpose
     List<Endpoint> endpoints,            // HTTP routes detected from controller sources
     String readmeIntro,                  // first prose paragraph of README.md after the title, or ""
     String pomDescription,               // pom.xml <description> text, or ""
@@ -109,14 +109,14 @@ public record ProjectContext(
         String existingContextSummary
     ) {
         this(name, rootPath, stack, sourceFiles, testClassNames, entryPoints, dependencies,
-            fileSnippets, packageSummaries, existingContextSummary, DocumentationIndex.none(),
+            fileSnippets, packageSummaries, existingContextSummary, DocumentationIndex.empty(),
             List.of(), "", "", List.of(),
             Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
             List.of(), Map.of());
     }
 
     public ProjectContext {
-        if (documentation == null) documentation = DocumentationIndex.none();
+        if (documentation == null) documentation = DocumentationIndex.empty();
         if (endpoints == null) endpoints = List.of();
         if (readmeIntro == null) readmeIntro = "";
         if (pomDescription == null) pomDescription = "";
@@ -187,11 +187,22 @@ public record ProjectContext(
 
         if (documentation != null && !documentation.isEmpty()) {
             sb.append("## Documentation\n");
-            sb.append("Format: ").append(documentation.format()).append("\n");
-            if (documentation.siteName() != null && !documentation.siteName().isBlank()) {
-                sb.append("Site: ").append(documentation.siteName()).append("\n");
+            sb.append("Pages: ").append(documentation.pages().size()).append("\n");
+            var byPurpose = new java.util.LinkedHashMap<com.acltabontabon.launchpad.scanner.doc.Purpose, Integer>();
+            for (var p : documentation.pages()) {
+                byPurpose.merge(p.purpose(), 1, Integer::sum);
             }
-            sb.append("Pages: ").append(documentation.pages().size()).append("\n\n");
+            if (!byPurpose.isEmpty()) {
+                sb.append("By purpose: ");
+                boolean first = true;
+                for (var e : byPurpose.entrySet()) {
+                    if (!first) sb.append(", ");
+                    sb.append(e.getKey().name().toLowerCase()).append("=").append(e.getValue());
+                    first = false;
+                }
+                sb.append("\n");
+            }
+            sb.append("\n");
         }
 
         if (existingContextSummary != null && !existingContextSummary.isBlank()

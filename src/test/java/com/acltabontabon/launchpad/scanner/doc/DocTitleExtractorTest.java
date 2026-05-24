@@ -43,20 +43,6 @@ class DocTitleExtractorTest {
     }
 
     @Test
-    void extractsRstUnderlinedHeading() {
-        var content = "Configuration Guide\n===================\n\nText here.\n";
-        assertThat(DocTitleExtractor.extract("config.rst", PageFormat.RST, content))
-            .isEqualTo("Configuration Guide");
-    }
-
-    @Test
-    void rstUnderlineMustBeAtLeastAsLongAsTitle() {
-        var content = "Long Title\n===\n";
-        assertThat(DocTitleExtractor.extract("long-title.rst", PageFormat.RST, content))
-            .isEqualTo("Long Title");
-    }
-
-    @Test
     void fallsBackToHumanisedStemWhenNoHeadingPresent() {
         assertThat(DocTitleExtractor.extract("getting-started.md", PageFormat.MARKDOWN, "no heading here"))
             .isEqualTo("Getting Started");

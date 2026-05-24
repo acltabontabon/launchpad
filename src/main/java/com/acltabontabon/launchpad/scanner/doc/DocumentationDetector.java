@@ -1,147 +1,67 @@
 package com.acltabontabon.launchpad.scanner.doc;
 
-import com.acltabontabon.launchpad.scanner.doc.DocumentationIndex.Format;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationPage.PageFormat;
-import com.acltabontabon.launchpad.scanner.doc.MkdocsConfigParser.NavEntry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
 
 /**
- * Decides which {@link DocumentationIndex} a project ends up with. Branches:
- * <ol>
- *   <li>{@code mkdocs.yml} present -> MkDocs mode, page list ordered by
- *       declared nav (falls back to file-walk order).</li>
- *   <li>{@code antora.yml} present alongside {@code .adoc} files -> Antora
- *       mode, all {@code .adoc} files listed in walk order.</li>
- *   <li>Otherwise, if any doc files exist -> plain mode, all files listed.</li>
- *   <li>Otherwise -> {@link Format#NONE}.</li>
- * </ol>
+ * Builds a {@link DocumentationIndex} from the scanner's collected doc-file
+ * paths. The pipeline is intentionally flat: every Markdown or AsciiDoc file
+ * the scanner observed becomes a {@link DocumentationPage} with a heading-
+ * extracted title and a {@link Purpose} from {@link PurposeClassifier}.
  * <p>
- * Title extraction reads each file lazily through {@link DocTitleExtractor}.
+ * No site-generator awareness. MkDocs and Antora config files are not parsed,
+ * nor is nav ordering honoured - the early-version scope is "expose every
+ * .md/.adoc the project actually ships and let MCP clients filter by purpose."
  */
 public final class DocumentationDetector {
 
+    private final PurposeClassifier purposeClassifier;
+
+    public DocumentationDetector() {
+        this(PurposeClassifier.deterministicOnly());
+    }
+
+    public DocumentationDetector(PurposeClassifier purposeClassifier) {
+        this.purposeClassifier = purposeClassifier == null
+            ? PurposeClassifier.deterministicOnly()
+            : purposeClassifier;
+    }
+
     public DocumentationIndex detect(Path projectRoot, DocumentationSignals signals) {
-        if (signals.hasMkdocsConfig()) {
-            return detectMkdocs(projectRoot, signals);
+        if (signals == null || signals.docFiles().isEmpty()) {
+            return DocumentationIndex.empty();
         }
-        boolean anyAdoc = signals.docFiles().stream().anyMatch(DocumentationDetector::isAsciiDoc);
-        if (signals.hasAntoraConfig() && anyAdoc) {
-            return detectAntora(projectRoot, signals);
-        }
-        if (!signals.docFiles().isEmpty()) {
-            return detectPlain(projectRoot, signals);
-        }
-        return DocumentationIndex.none();
-    }
-
-    private DocumentationIndex detectMkdocs(Path projectRoot, DocumentationSignals signals) {
-        var mkdocsYml = projectRoot.resolve("mkdocs.yml");
-        var cfg = MkdocsConfigParser.load(mkdocsYml).orElse(null);
-        String docsDir = cfg == null ? MkdocsConfigParser.DEFAULT_DOCS_DIR : cfg.docsDir();
-        String siteName = cfg == null ? null : cfg.siteName();
         var pages = new ArrayList<DocumentationPage>();
-        var emitted = new LinkedHashSet<String>();
-
-        if (cfg != null && !cfg.nav().isEmpty()) {
-            for (NavEntry nav : cfg.nav()) {
-                var rel = joinRelative(docsDir, nav.pagePath());
-                var file = projectRoot.resolve(rel);
-                if (!Files.isRegularFile(file)) continue;
-                PageFormat fmt = formatOf(nav.pagePath());
-                if (fmt == null) continue;
-                String title = nav.title() != null && !nav.title().isBlank()
-                    ? nav.title()
-                    : titleFromFile(file, fmt);
-                pages.add(new DocumentationPage(rel, title, fmt));
-                emitted.add(rel);
-            }
-        }
-
-        // Pick up any doc file under docs_dir that wasn't named in nav (or any
-        // file at all when nav is absent). Matches MkDocs's own behaviour:
-        // unlisted pages still get rendered.
-        String docsDirPrefix = normalisePrefix(docsDir);
+        var seen = new LinkedHashSet<String>();
         for (String rel : signals.docFiles()) {
-            if (!rel.startsWith(docsDirPrefix)) continue;
-            if (emitted.contains(rel)) continue;
-            PageFormat fmt = formatOf(rel);
-            if (fmt == null) continue;
-            var file = projectRoot.resolve(rel);
-            pages.add(new DocumentationPage(rel, titleFromFile(file, fmt), fmt));
-            emitted.add(rel);
-        }
-
-        return new DocumentationIndex(Format.MKDOCS, siteName, docsDir, List.copyOf(pages));
-    }
-
-    private DocumentationIndex detectAntora(Path projectRoot, DocumentationSignals signals) {
-        var antoraYml = findFirst(projectRoot, signals.docFiles(), "antora.yml");
-        String siteName = null;
-        if (antoraYml != null) {
-            var cfg = AntoraConfigParser.load(antoraYml).orElse(null);
-            if (cfg != null) {
-                siteName = cfg.title() != null ? cfg.title() : cfg.name();
-            }
-        }
-        var pages = pagesFromWalk(projectRoot, signals.docFiles(), true);
-        return new DocumentationIndex(Format.ANTORA, siteName, null, pages);
-    }
-
-    private DocumentationIndex detectPlain(Path projectRoot, DocumentationSignals signals) {
-        var pages = pagesFromWalk(projectRoot, signals.docFiles(), false);
-        if (pages.isEmpty()) return DocumentationIndex.none();
-        return new DocumentationIndex(Format.PLAIN, null, null, pages);
-    }
-
-    private List<DocumentationPage> pagesFromWalk(Path projectRoot, List<String> docFiles, boolean adocOnly) {
-        var out = new ArrayList<DocumentationPage>();
-        Set<String> seen = new LinkedHashSet<>();
-        for (String rel : docFiles) {
             if (seen.contains(rel)) continue;
             PageFormat fmt = formatOf(rel);
-            if (fmt == null) continue;
-            if (adocOnly && fmt != PageFormat.ASCIIDOC) continue;
-            out.add(new DocumentationPage(rel, titleFromFile(projectRoot.resolve(rel), fmt), fmt));
+            if (fmt == null) continue;          // ignore stray extensions the scanner may still surface
+            Path file = projectRoot.resolve(rel);
+            String title = titleFromFile(file, fmt);
+            Purpose purpose = purposeClassifier.classify(rel, () -> readPrefix(file));
+            pages.add(new DocumentationPage(rel, title, fmt, purpose));
             seen.add(rel);
         }
-        return out;
-    }
-
-    /** Look up an antora.yml referenced anywhere in the doc-file list. */
-    private static Path findFirst(Path projectRoot, List<String> docFiles, String name) {
-        for (String rel : docFiles) {
-            int slash = rel.lastIndexOf('/');
-            String base = slash >= 0 ? rel.substring(slash + 1) : rel;
-            if (base.equals(name)) return projectRoot.resolve(rel);
-        }
-        var atRoot = projectRoot.resolve(name);
-        return Files.isRegularFile(atRoot) ? atRoot : null;
+        return new DocumentationIndex(pages);
     }
 
     static PageFormat formatOf(String path) {
         String lower = path.toLowerCase();
         if (lower.endsWith(".md") || lower.endsWith(".markdown")) return PageFormat.MARKDOWN;
         if (lower.endsWith(".adoc") || lower.endsWith(".asciidoc")) return PageFormat.ASCIIDOC;
-        if (lower.endsWith(".rst")) return PageFormat.RST;
         return null;
     }
 
-    static boolean isAsciiDoc(String path) {
-        return formatOf(path) == PageFormat.ASCIIDOC;
-    }
-
     private static String titleFromFile(Path file, PageFormat fmt) {
-        String content = readPrefix(file);
-        return DocTitleExtractor.extract(file.getFileName().toString(), fmt, content);
+        return DocTitleExtractor.extract(file.getFileName().toString(), fmt, readPrefix(file));
     }
 
-    /** Read only the first chunk of the file - enough to find a heading. */
+    /** Read only the first chunk of the file - enough to find a heading or feed the AI classifier. */
     private static String readPrefix(Path file) {
         try {
             byte[] bytes = Files.readAllBytes(file);
@@ -150,17 +70,5 @@ public final class DocumentationDetector {
         } catch (IOException | RuntimeException e) {
             return "";
         }
-    }
-
-    /** Join {@code docs_dir} and a nav-relative page path into a project-relative path. */
-    private static String joinRelative(String docsDir, String pagePath) {
-        if (pagePath == null) return "";
-        String d = normalisePrefix(docsDir);
-        return d + pagePath;
-    }
-
-    private static String normalisePrefix(String docsDir) {
-        if (docsDir == null || docsDir.isBlank()) return "";
-        return docsDir.endsWith("/") ? docsDir : docsDir + "/";
     }
 }
