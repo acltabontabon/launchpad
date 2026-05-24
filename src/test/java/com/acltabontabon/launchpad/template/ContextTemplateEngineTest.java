@@ -66,7 +66,7 @@ class ContextTemplateEngineTest {
 
         // Round-4 shape: title + tagline.
         assertThat(primary).startsWith("<!-- launchpad:managed:start -->\n# CLAUDE.md");
-        assertThat(primary).contains("Launchpad prepares. Paid agents execute.");
+        assertThat(primary).doesNotContain("Launchpad prepares. Paid agents execute.");
 
         // Every required heading is emitted by the template engine, in order.
         // Round 9 removed `## How to work in this repo` (it just paraphrased

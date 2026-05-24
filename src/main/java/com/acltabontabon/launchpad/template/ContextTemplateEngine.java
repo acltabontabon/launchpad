@@ -221,7 +221,6 @@ public class ContextTemplateEngine {
     private String buildClaudePrimary(ProjectContext ctx, java.util.Set<String> companionPaths) {
         var sb = new StringBuilder();
         sb.append("# CLAUDE.md\n\n");
-        sb.append("Launchpad prepares. Paid agents execute.\n\n");
 
         sb.append("## What this project is\n\n").append(introBody(ctx)).append("\n\n");
 

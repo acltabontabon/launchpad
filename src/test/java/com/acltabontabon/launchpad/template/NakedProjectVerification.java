@@ -53,7 +53,7 @@ class NakedProjectVerification {
 
         // Survival contract: title + tagline + boundaries always render.
         assertThat(primary).contains("# CLAUDE.md");
-        assertThat(primary).contains("Launchpad prepares. Paid agents execute.");
+        assertThat(primary).doesNotContain("Launchpad prepares. Paid agents execute.");
         assertThat(primary).contains("## What this project is");
         assertThat(primary).contains("## Boundaries for AI agents");
 

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+
+## [0.3.0] - 2026-05-24
 ### Added
 - **Multi-backend AI support:** Integration for LM Studio, llama.cpp, vLLM, and OpenAI-compatible endpoints with auto-detection.
 - **MCP ecosystem expansion:** New tools for documentation discovery, cross-project references, and registry management.
@@ -14,19 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rich context generation:** "Evidence-based" synthesis that uses real repository content to ground AI descriptions.
 - **Improved `/new-task` interview:** Hardened task discovery with one-shot examples, better streaming, and strict validation.
 - **Automated Audit System:** Standards engine with regex, import, and semantic LLM-based checks.
-
 ### Changed
 - **Deterministic context files:** Redesigned generation pipeline using a stable skeleton with scoped local-AI synthesis.
 - **Refined UI/UX:** New "Cosmic Console" TUI theme, improved headers, and optimized review screens.
 - **Provider-neutral configuration:** Renamed settings and prompted logic to be tool-agnostic.
 - **Consolidated context:** Reduced duplication by moving project-specific notes and standards to companion files.
-
 ### Fixed
 - **Performance & Stability:** Fixed TUI freezes with explicit AI timeouts and added concurrent safety for scan state.
 - **I/O Resilience:** Improved handling of unreadable files and corrupted markers during merge operations.
 - **Native Image compatibility:** Full support for MCP and TUI modes under GraalVM native image.
 - **Documentation:** Simplified `USAGE.md` and added `BENEFITS.md` for token-cost analysis.
-
 ### Removed
 - **Redundant sections:** Dropped obsolete synthesis helpers and overlapping developer-workflow blocks.
 - **Mega-prompt pipeline:** Retired the single-pass generation in favor of chunked, validated synthesis jobs.
