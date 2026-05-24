@@ -8,16 +8,11 @@ It currently focuses on Spring Boot + Maven repositories and helps reduce ambigu
 
 Launchpad is designed to complement AI assistants - not replace them.
 
-[**Get Started (USAGE.md)**](USAGE.md) | [**View Benefits**](BENEFITS.md) | [**Changelog**](CHANGELOG.md)
-
 ---
 
 ## 🚀 How it works
 
-1. **Launch** the app in your terminal.
-2. **Point** it at your project folder.
-3. **Select** your AI assistant (Claude or Cursor).
-4. **Review & Save** the generated context files (`CLAUDE.md`, `.cursorrules`, `.ai/*`, etc).
+![Launchpad Overview](docs/resources/launchpad-overview.drawio.png)
 
 ---
 
