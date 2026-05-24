@@ -138,12 +138,18 @@ If your file already has an `mcpServers` block with other servers, add `"launchp
 2. Reopen it.
 3. Start a new conversation and type: **"What MCP tools do you have access to?"**
 
-You should see four tools listed under `launchpad`:
+You should see these tools listed under `launchpad`:
 
 - `list_projects`
 - `scan_project`
 - `get_standards`
 - `get_audit_findings`
+- `compare_standards`
+- `list_documentation`
+- `find_documentation`
+- `get_documentation`
+
+Launchpad deliberately does not expose generic file reads or directory listings - those belong to the official `mcp-server-filesystem`. Add it as a sibling server in your MCP config if your AI tool needs general filesystem access.
 
 If the client doesn't list them, see [Troubleshooting](#7-troubleshooting).
 
