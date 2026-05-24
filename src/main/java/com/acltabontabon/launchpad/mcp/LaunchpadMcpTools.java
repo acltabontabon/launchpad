@@ -17,23 +17,16 @@ import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileVisitResult;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.PathMatcher;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
 import org.springframework.ai.mcp.annotation.McpArg;
@@ -67,18 +60,6 @@ import org.springframework.stereotype.Component;
 public class LaunchpadMcpTools {
 
     private static final Duration SCAN_FRESH_WINDOW = Duration.ofHours(24);
-
-    // Mirrors ProjectScanner.SKIP_DIRS - file-tree walks here must not descend
-    // into build outputs / VCS dirs either, both for performance and to avoid
-    // surfacing files no caller asked about.
-    private static final Set<String> SKIP_DIRS = Set.of(
-        ".git", "target", "build", ".idea", ".vscode", ".gradle", "out"
-    );
-
-    // Hard cap on list_files result size. Big enough for "show me every Java
-    // file" on a realistic project; small enough that a wildcard glob on the
-    // home directory won't blow up the MCP response.
-    private static final int LIST_FILES_LIMIT = 500;
 
     // Per-page and per-project caps on find_documentation results. Keep MCP
     // responses bounded even when a query happens to hit every paragraph.
@@ -229,160 +210,6 @@ public class LaunchpadMcpTools {
             "rules", rules,
             "skills", skills,
             "checklists", checklists
-        );
-    }
-
-    @McpTool(
-        name = "get_file",
-        description = "Read a single file from a registered project's source tree. The `path` is "
-            + "resolved against the project root with traversal protection - any attempt to escape "
-            + "the project (e.g. ../../etc/passwd) is rejected. Refuses files larger than "
-            + "launchpad.scan.max-file-size-kb (default 512 KB) and files that look binary. "
-            + "Returns the content as UTF-8 text along with size and line count. The `project` "
-            + "argument accepts either a short name from list_projects or an absolute path."
-    )
-    public Map<String, Object> getFile(
-        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
-            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
-        String project,
-        @McpArg(name = "path", description = "Project-relative file path, e.g. src/Main.java",
-            required = true)
-        String path
-    ) {
-        var resolved = resolveProject(project);
-        if (resolved instanceof Resolution.Error err) return err.payload();
-        var projectRoot = ((Resolution.Path) resolved).value();
-
-        if (path == null || path.isBlank()) {
-            return errorPayload("missing_path", "Pass a project-relative file path as `path`.");
-        }
-        Path target;
-        try {
-            target = projectRoot.resolve(path).normalize();
-        } catch (RuntimeException e) {
-            return errorPayload("invalid_path", "Path could not be resolved: " + e.getMessage());
-        }
-        if (!target.startsWith(projectRoot)) {
-            return errorPayload("path_escapes_project",
-                "The resolved path is outside the project root - refusing to read.");
-        }
-        if (!Files.isRegularFile(target)) {
-            return errorPayload("not_a_file", "No regular file at " + path + " under the project root.");
-        }
-
-        long size;
-        try {
-            size = Files.size(target);
-        } catch (IOException e) {
-            return errorPayload("stat_failed", "Could not stat " + path + ": " + e.getMessage());
-        }
-        if (size > maxFileSizeBytes) {
-            return errorPayload("file_too_large",
-                "File is " + size + " bytes; limit is " + maxFileSizeBytes
-                    + " (set by launchpad.scan.max-file-size-kb).");
-        }
-
-        byte[] bytes;
-        try {
-            bytes = Files.readAllBytes(target);
-        } catch (IOException e) {
-            return errorPayload("read_failed", "Could not read " + path + ": " + e.getMessage());
-        }
-        if (looksBinary(bytes)) {
-            return errorPayload("file_appears_binary",
-                "File contains NUL bytes in its first kilobyte - refusing to return as text.");
-        }
-        var text = new String(bytes, StandardCharsets.UTF_8);
-        int lines = 1;
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') lines++;
-        }
-        return Map.of(
-            "project", projectRoot.toString(),
-            "path", projectRoot.relativize(target).toString(),
-            "sizeBytes", size,
-            "lineCount", lines,
-            "content", text
-        );
-    }
-
-    @McpTool(
-        name = "list_files",
-        description = "List files in a registered project matching a glob. Glob syntax follows "
-            + "Java NIO PathMatcher: `**` matches any depth, `*` matches one path segment, "
-            + "e.g. `**/*.java` or `src/main/**/*Repository.java`. Walks the project tree but "
-            + "skips well-known build outputs and VCS dirs (target, build, node_modules, .git, "
-            + "etc.). Results are project-relative paths, sorted, capped at " + LIST_FILES_LIMIT
-            + " entries. The `project` argument accepts either a short name from list_projects "
-            + "or an absolute path."
-    )
-    public Map<String, Object> listFiles(
-        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
-            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
-        String project,
-        @McpArg(name = "glob", description = "Glob pattern (Java NIO PathMatcher), e.g. **/*.java",
-            required = true)
-        String glob
-    ) {
-        var resolved = resolveProject(project);
-        if (resolved instanceof Resolution.Error err) return err.payload();
-        var projectRoot = ((Resolution.Path) resolved).value();
-
-        if (glob == null || glob.isBlank()) {
-            return errorPayload("missing_glob",
-                "Pass a glob pattern as `glob`, e.g. **/*.java or src/main/**/*.kt.");
-        }
-
-        PathMatcher matcher;
-        try {
-            matcher = FileSystems.getDefault().getPathMatcher("glob:" + glob);
-        } catch (IllegalArgumentException e) {
-            return errorPayload("invalid_glob", "Pattern is not a valid glob: " + e.getMessage());
-        }
-
-        var matches = new ArrayList<String>();
-        boolean[] truncated = { false };
-        try {
-            Files.walkFileTree(projectRoot, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    var name = dir.getFileName() == null ? "" : dir.getFileName().toString();
-                    if (!dir.equals(projectRoot) && SKIP_DIRS.contains(name)) {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    var rel = projectRoot.relativize(file);
-                    if (matcher.matches(rel)) {
-                        if (matches.size() >= LIST_FILES_LIMIT) {
-                            truncated[0] = true;
-                            return FileVisitResult.TERMINATE;
-                        }
-                        matches.add(rel.toString());
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (IOException e) {
-            return errorPayload("walk_failed", "Could not walk project tree: " + e.getMessage());
-        }
-
-        Collections.sort(matches);
-        return Map.of(
-            "project", projectRoot.toString(),
-            "glob", glob,
-            "matchCount", matches.size(),
-            "truncated", truncated[0],
-            "limit", LIST_FILES_LIMIT,
-            "files", matches
         );
     }
 
