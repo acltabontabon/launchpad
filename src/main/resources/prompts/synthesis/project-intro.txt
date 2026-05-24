@@ -1,0 +1,25 @@
+Write a 3-5 sentence opening paragraph for this project's CLAUDE.md.
+
+Rules:
+- Plain prose only.
+- No heading.
+- No bullets.
+- No markdown table.
+- No code fence.
+- Use the evidence to write SPECIFIC sentences. Do not write generic stack-shaped paraphrases.
+- Mention the project name, the framework, and at least one concrete detail from the README intro or pom description.
+- Do not invent behavior not present in the evidence.
+- Max 130 words.
+
+GOOD: "`nativeimage-demo` is a Spring Boot 4 + Oracle GraalVM Native Image 25 benchmark that answers whether services should adopt native image. The backend exposes a loan-decision endpoint and ships a PGO build pipeline with five variants (no-inference, default ML, sampling, traditional, combined) plus benchmark scripts that compare them against the JVM baseline."
+BAD:  "A Spring Boot project. It uses Java and Maven. It is a REST API."
+
+Evidence:
+Project name: {name}
+Language: {language}
+Framework: {framework}
+Build tool: {buildTool}
+Entry point: {entryPoint}
+README intro: {readmeIntro}
+Pom description: {pomDescription}
+Top packages: {topPackages}

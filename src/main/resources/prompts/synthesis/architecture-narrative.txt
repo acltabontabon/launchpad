@@ -1,0 +1,20 @@
+Write a 2-3 sentence paragraph describing the architectural shape of this project for an AI coding agent.
+
+Rules:
+- Plain prose only.
+- No heading.
+- No bullets.
+- No markdown table.
+- No code fence.
+- Name the layering or pattern (layered, flat, hexagonal, modular monolith, ...) AND say where the business logic lives.
+- Mention specific package names from the evidence (e.g. "`controller/`, `risk/`").
+- Use the evidence to spot non-obvious shape signals: no service layer, only one controller, polymorphic dispatch via an interface and multiple impls, ...
+- Do not invent package names.
+- Max 70 words.
+
+GOOD: "The app is intentionally flat - no hexagonal layers, no service classes. Business logic lives in `controller/` and the `risk/` package, where the `RiskModel` interface drives three impls and `FeatureScorer` powers polymorphic dispatch inside the scoring loop."
+BAD:  "The project follows good architectural principles."  (vague, generic)
+BAD:  Mentioning `service/` when it does not appear in the evidence.
+
+Architecture tree (leaf package -> classes):
+{tree}
