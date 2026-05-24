@@ -123,10 +123,9 @@ public class ScanProgressView implements View {
         lines.add(blank());
         lines.add(phaseRow(AppState.Phase.SCAN_FILES, "Scan project files", current, state));
         lines.add(phaseRow(AppState.Phase.AUDIT_STANDARDS, "Audit against standards", current, state));
-        // /new-task is scan-only on this screen; the LLM summary / target / assemble
+        // /new-task is scan-only on this screen; the LLM generation / assemble
         // phases never run, so listing them here is misleading.
         if (!state.taskFlow) {
-            lines.add(phaseRow(AppState.Phase.GENERATE_SUMMARY, "Generate project summary", current, state));
             lines.add(phaseRow(AppState.Phase.GENERATE_TARGET, "Generate " + target + " content", current, state));
             lines.add(phaseRow(AppState.Phase.ASSEMBLE, "Assemble output files", current, state));
         }
@@ -198,7 +197,7 @@ public class ScanProgressView implements View {
     }
 
     private boolean isAiPhase(AppState.Phase phase) {
-        return phase == AppState.Phase.GENERATE_SUMMARY || phase == AppState.Phase.GENERATE_TARGET;
+        return phase == AppState.Phase.GENERATE_TARGET;
     }
 
     private static Line blank() {

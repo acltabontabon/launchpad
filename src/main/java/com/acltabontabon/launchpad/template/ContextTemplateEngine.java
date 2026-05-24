@@ -62,7 +62,6 @@ public class ContextTemplateEngine {
     public List<GeneratedFile> buildFiles(
         ProjectContext ctx,
         ContextTarget target,
-        String projectSummary,
         String targetSpecificContent
     ) {
         var projectRoot = Path.of(ctx.rootPath());
@@ -73,9 +72,9 @@ public class ContextTemplateEngine {
         var adapter = standardsLoader.loadAdapter(projectRoot, adapterIdFor(target));
 
         return switch (target) {
-            case CLAUDE -> buildClaudeFiles(ctx, projectSummary, targetSpecificContent,
+            case CLAUDE -> buildClaudeFiles(ctx, targetSpecificContent,
                 rules, skills, checklists, prompts, adapter);
-            case CURSOR -> buildCursorFiles(ctx, projectSummary, targetSpecificContent,
+            case CURSOR -> buildCursorFiles(ctx, targetSpecificContent,
                 rules, skills, checklists, prompts, adapter);
         };
     }
@@ -90,7 +89,7 @@ public class ContextTemplateEngine {
     // === Claude ===
 
     private List<GeneratedFile> buildClaudeFiles(
-        ProjectContext ctx, String summary, String llmSkills,
+        ProjectContext ctx, String llmSkills,
         List<Rule> rules, List<Skill> skills, List<Checklist> checklists, List<Prompt> prompts,
         Optional<Adapter> adapter
     ) {
@@ -104,11 +103,6 @@ public class ContextTemplateEngine {
         var companionPaths = new java.util.LinkedHashSet<String>();
         for (var c : companions) companionPaths.add(c.relativePath());
 
-        // Round-4 redesign: CLAUDE.md is assembled deterministically from
-        // scanner facts. Synthesis fills in per-section body fragments when
-        // available; failed/disabled synthesis falls back to deterministic
-        // text. The `summary` arg (legacy mega-prompt output) is ignored on
-        // the Claude path.
         var primaryPath = adapter.flatMap(ContextTemplateEngine::firstOutput)
             .map(AdapterOutput::path).orElse("CLAUDE.md");
         files.add(new GeneratedFile(primaryPath,
@@ -164,43 +158,59 @@ public class ContextTemplateEngine {
     // === Cursor ===
 
     private List<GeneratedFile> buildCursorFiles(
-        ProjectContext ctx, String summary, String llmRules,
+        ProjectContext ctx, String llmRules,
         List<Rule> rules, List<Skill> skills, List<Checklist> checklists, List<Prompt> prompts,
         Optional<Adapter> adapter
     ) {
         var files = new ArrayList<GeneratedFile>();
 
-        var primaryOutput = adapter.flatMap(ContextTemplateEngine::firstOutput);
-        if (primaryOutput.isPresent()) {
-            var out = primaryOutput.get();
-            files.add(new GeneratedFile(out.path(),
-                MergeMarkers.wrap(buildCombinedContext(ctx, summary, llmRules, rules, skills, checklists, prompts, out, true)),
-                GeneratedFile.FileKind.CONTEXT));
-        } else {
-            files.add(new GeneratedFile(".cursorrules",
-                MergeMarkers.wrap(buildLegacyCursorRules(ctx, summary, llmRules)),
-                GeneratedFile.FileKind.CONTEXT));
-        }
+        // Collect companions first so the primary's Standards pointer block can
+        // limit itself to files we actually emit (same shape as Claude).
+        var companions = collectCursorCompanions(ctx, rules, skills, checklists, prompts, llmRules);
+        var companionPaths = new java.util.LinkedHashSet<String>();
+        for (var c : companions) companionPaths.add(c.relativePath());
 
-        files.add(new GeneratedFile(".cursor/rules/engineering.mdc", buildCursorEngineeringRules(rules),
+        var primaryOutput = adapter.flatMap(ContextTemplateEngine::firstOutput);
+        var primaryPath = primaryOutput.map(AdapterOutput::path).orElse(".cursorrules");
+        files.add(new GeneratedFile(primaryPath,
+            MergeMarkers.wrap(buildCursorPrimary(ctx, primaryOutput, companionPaths,
+                skills, checklists, prompts, llmRules)),
+            GeneratedFile.FileKind.CONTEXT));
+        files.addAll(companions);
+        return files;
+    }
+
+    /**
+     * Cursor's `.cursor/rules/*.mdc` siblings. Conditional entries appear only
+     * when their source data is non-empty so the primary file's `## Standards`
+     * pointer block can be gated on the real output set, mirroring the Claude
+     * companion collector.
+     */
+    private List<GeneratedFile> collectCursorCompanions(
+        ProjectContext ctx,
+        List<Rule> rules, List<Skill> skills, List<Checklist> checklists, List<Prompt> prompts,
+        String llmRules
+    ) {
+        var out = new ArrayList<GeneratedFile>();
+        out.add(new GeneratedFile(".cursor/rules/engineering.mdc", buildCursorEngineeringRules(rules),
             GeneratedFile.FileKind.RULES));
-        files.add(new GeneratedFile(".cursor/rules/skills.mdc", buildCursorSkills(skills),
+        out.add(new GeneratedFile(".cursor/rules/skills.mdc", buildCursorSkills(skills),
             GeneratedFile.FileKind.RULES));
-        files.add(new GeneratedFile(".cursor/rules/stack.mdc", buildCursorStackRules(ctx),
+        out.add(new GeneratedFile(".cursor/rules/stack.mdc", buildCursorStackRules(ctx),
             GeneratedFile.FileKind.CONTEXT));
         if (!checklists.isEmpty()) {
-            files.add(new GeneratedFile(".cursor/rules/checklists.mdc", buildCursorChecklists(checklists),
+            out.add(new GeneratedFile(".cursor/rules/checklists.mdc", buildCursorChecklists(checklists),
                 GeneratedFile.FileKind.RULES));
         }
         if (!prompts.isEmpty()) {
-            files.add(new GeneratedFile(".cursor/rules/prompts.mdc", buildCursorPrompts(prompts),
+            out.add(new GeneratedFile(".cursor/rules/prompts.mdc", buildCursorPrompts(prompts),
                 GeneratedFile.FileKind.RULES));
         }
         if (llmRules != null && !llmRules.isBlank()) {
-            files.add(new GeneratedFile(".cursor/rules/project-notes.mdc",
+            out.add(new GeneratedFile(".cursor/rules/project-notes.mdc",
                 buildCursorProjectNotes(ctx, llmRules), GeneratedFile.FileKind.CONTEXT));
         }
-        return files;
+        return out;
     }
 
     private static Optional<AdapterOutput> firstOutput(Adapter a) {
@@ -269,6 +279,115 @@ public class ContextTemplateEngine {
         sb.append("- Treat scanner output as evidence, not absolute truth.\n");
         sb.append("- Keep changes scoped to the requested task.\n");
 
+        return sb.toString();
+    }
+
+    // === Cursor primary file (round-4 deterministic skeleton + chunked synthesis) ===
+
+    /**
+     * Deterministic `.cursorrules` (or adapter-provided primary `.mdc`)
+     * skeleton. Same section sequence as `buildClaudePrimary` so both targets
+     * share one mental model; only the title preamble and Standards pointer
+     * paths differ. Java owns every heading; synthesis fills bounded body
+     * fragments with deterministic fallbacks per job.
+     */
+    private String buildCursorPrimary(
+        ProjectContext ctx,
+        Optional<AdapterOutput> primaryOutput,
+        java.util.Set<String> companionPaths,
+        List<Skill> skills, List<Checklist> checklists, List<Prompt> prompts,
+        String llmRules
+    ) {
+        var sb = new StringBuilder();
+
+        // Adapter-driven frontmatter (Cursor convention). When no adapter
+        // resolves, omit the block entirely - the legacy `.cursorrules` had
+        // no frontmatter either.
+        primaryOutput.ifPresent(out -> {
+            var fm = out.frontmatter();
+            if (fm != null && !fm.isEmpty()) {
+                sb.append("---\n");
+                fm.forEach((k, v) -> sb.append(k).append(": ").append(v).append("\n"));
+                sb.append("---\n\n");
+            }
+        });
+
+        sb.append("# ").append(ctx.name()).append("\n\n");
+
+        sb.append("## What this project is\n\n").append(introBody(ctx)).append("\n\n");
+
+        if (CommandsRenderer.hasCommands(ctx.stack())) {
+            sb.append(CommandsRenderer.render(ctx.stack()));
+        }
+
+        var classFacts = com.acltabontabon.launchpad.scanner.ProjectClassFacts.collect(
+            java.nio.file.Path.of(ctx.rootPath()), ctx.sourceFiles(), ctx.endpoints());
+        if (!classFacts.isEmpty()) {
+            sb.append("## Architecture\n\n");
+            var narrative = architectureNarrative(ctx, classFacts);
+            if (!narrative.isBlank()) sb.append(narrative).append("\n\n");
+            sb.append(ArchitectureTreeRenderer.render(classFacts)).append("\n");
+        } else if (!ctx.packageSummaries().isEmpty()) {
+            sb.append("## Project map\n\n");
+            sb.append(FileTreeRenderer.render(ctx.packageSummaries())).append("\n");
+        }
+
+        var allEndpoints = combinedEndpoints(ctx);
+        if (!allEndpoints.isEmpty()) {
+            sb.append("## Endpoints\n\n");
+            var notes = endpointNotes(ctx, allEndpoints);
+            sb.append(EndpointsTableRenderer.render(allEndpoints, notes)).append("\n");
+        }
+
+        if (!ctx.mavenProfiles().isEmpty()) {
+            sb.append("## Build profiles\n\n");
+            sb.append(BuildProfilesRenderer.render(ctx.mavenProfiles())).append("\n");
+            var profileBullets = buildProfilesBullets(ctx);
+            if (!profileBullets.isEmpty()) sb.append(profileBullets).append("\n");
+            sb.append("\n");
+        }
+
+        var standardsBlock = renderCursorStandardsBlock(companionPaths);
+        if (!standardsBlock.isEmpty()) sb.append(standardsBlock);
+
+        sb.append("## Boundaries for AI agents\n\n");
+        sb.append("- Do not rewrite generated context unless asked.\n");
+        sb.append("- Prefer existing commands from this file.\n");
+        sb.append("- Treat scanner output as evidence, not absolute truth.\n");
+        sb.append("- Keep changes scoped to the requested task.\n");
+
+        return sb.toString();
+    }
+
+    /**
+     * Cursor analogue of {@link #renderGeneratedContextBlock(java.util.Set)}.
+     * Renders a `## Standards` pointer list keyed on the `.cursor/rules/*.mdc`
+     * companion files actually emitted, so we never point at a file we did not
+     * write.
+     */
+    private static String renderCursorStandardsBlock(java.util.Set<String> companionPaths) {
+        var entries = new ArrayList<String>();
+        if (companionPaths.contains(".cursor/rules/engineering.mdc"))
+            entries.add("- **Engineering rules:** see `.cursor/rules/engineering.mdc`");
+        if (companionPaths.contains(".cursor/rules/skills.mdc"))
+            entries.add("- **Workflow skills:** see `.cursor/rules/skills.mdc`");
+        if (companionPaths.contains(".cursor/rules/stack.mdc"))
+            entries.add("- **Stack and dependencies:** see `.cursor/rules/stack.mdc`");
+        if (companionPaths.contains(".cursor/rules/checklists.mdc"))
+            entries.add("- **Checklists:** see `.cursor/rules/checklists.mdc`");
+        if (companionPaths.contains(".cursor/rules/prompts.mdc"))
+            entries.add("- **Reusable prompts:** see `.cursor/rules/prompts.mdc`");
+        if (companionPaths.contains(".cursor/rules/project-notes.mdc"))
+            entries.add("- **Project-specific notes:** see `.cursor/rules/project-notes.mdc`");
+
+        if (entries.isEmpty()) return "";
+
+        var sb = new StringBuilder();
+        sb.append("## Standards\n\n");
+        sb.append("Canonical sources for this project's engineering standards. The primary file ")
+          .append("references them so a single edit propagates everywhere.\n\n");
+        entries.forEach(e -> sb.append(e).append("\n"));
+        sb.append("\n");
         return sb.toString();
     }
 
@@ -697,147 +816,6 @@ public class ContextTemplateEngine {
         }
     }
 
-    // === Combined context file (adapter-driven) ===
-
-    private String buildCombinedContext(
-        ProjectContext ctx, String summary, String llmGenerated,
-        List<Rule> rules, List<Skill> skills, List<Checklist> checklists, List<Prompt> prompts,
-        AdapterOutput output, boolean withFrontmatter
-    ) {
-        var sb = new StringBuilder();
-
-        if (withFrontmatter) {
-            sb.append("---\n");
-            var fm = output.frontmatter() != null ? output.frontmatter() : Map.<String, String>of();
-            fm.forEach((k, v) -> sb.append(k).append(": ").append(v).append("\n"));
-            sb.append("---\n\n");
-        }
-
-        if (withFrontmatter) {
-            // Cursor primary file: keep the project-name title; frontmatter
-            // already carries the AI-tool identity.
-            sb.append("# ").append(ctx.name()).append("\n\n");
-        } else {
-            // Claude Code primary file: match the `/init` convention so an
-            // agent landing cold sees the same opening it would expect from
-            // a hand-written CLAUDE.md.
-            sb.append("# CLAUDE.md\n\n");
-            sb.append("This file provides guidance to Claude Code (claude.ai/code) ")
-              .append("when working with code in this repository.\n\n");
-        }
-
-        var summaryText = safe(summary, "_(no summary generated)_").strip();
-        var commandsBlock = CommandsRenderer.render(ctx.stack());
-
-        // Place Commands right after the first section of the summary so an
-        // agent gets actionable build/run lines before the deeper Architecture
-        // discussion - mirrors the shape `claude /init` produces.
-        int splitIdx = indexOfNextSectionHeading(summaryText);
-        if (splitIdx > 0) {
-            sb.append(summaryText, 0, splitIdx).append("\n\n");
-            sb.append(commandsBlock);
-            sb.append(summaryText.substring(splitIdx).strip()).append("\n\n");
-        } else {
-            sb.append(summaryText).append("\n\n");
-            sb.append(commandsBlock);
-        }
-
-        var includes = output.includes() != null ? output.includes() : List.<String>of();
-        appendStandardsPointers(sb, includes, skills, checklists, prompts,
-            llmGenerated != null && !llmGenerated.isBlank(), withFrontmatter);
-
-        // Workspace info (sibling Launchpad-managed projects) stays accessible
-        // through the MCP server (`list_projects`, `scan_project`, ...). It's
-        // not surfaced in the primary context file - that block was clutter
-        // for single-project users and noise for multi-project users.
-
-        return sb.toString();
-    }
-
-    /**
-     * Returns the offset of the second `## ` heading in the summary (the
-     * first one is the opening "## What this project is" section title), or
-     * -1 if the summary has no further sections. Used to split the summary so
-     * the deterministic `## Commands` block can be inserted between the
-     * project description and the architecture discussion.
-     */
-    private static int indexOfNextSectionHeading(String summary) {
-        if (summary == null || summary.isEmpty()) return -1;
-        int firstHeading = summary.indexOf("## ");
-        if (firstHeading < 0) return -1;
-        int nextHeading = summary.indexOf("\n## ", firstHeading + 3);
-        return nextHeading < 0 ? -1 : nextHeading + 1;
-    }
-
-    // === Legacy primary files (no adapter) ===
-
-    private String buildLegacyClaudeMd(ProjectContext ctx, String summary, String llmSkills) {
-        var workspace = renderWorkspaceSection(ctx);
-        return """
-            # %s
-
-            > Generated by Launchpad - local AI context generator
-
-            ## Project Overview
-
-            %s
-
-            ## Stack
-
-            %s
-
-            %s## Key Files
-
-            %s
-
-            ## Skills
-
-            Curated workflow skills for this project live as invocable Claude Code skills under
-            `.claude/skills/`. Type `/<skill-id>` to invoke one, or describe a matching task and
-            Claude will activate the relevant skill automatically.
-
-            ### Project-Specific Skills
-
-            Generated from this project's context by the local AI model.
-
-            %s
-
-            ## Engineering Rules
-
-            See `.ai/engineering-rules.md` for the full list of rules that apply to this project.
-            """.formatted(
-                ctx.name(),
-                summary,
-                ctx.stack().displayName(),
-                workspace,
-                formatFileList(ctx.sourceFiles(), 20),
-                llmSkills == null || llmSkills.isBlank() ? "_(none generated)_" : llmSkills
-            );
-    }
-
-    private String buildLegacyCursorRules(ProjectContext ctx, String summary, String generatedRules) {
-        var workspace = renderWorkspaceSection(ctx);
-        return """
-            # Cursor Rules - %s
-
-            ## Project Context
-
-            %s
-
-            ## Stack
-            %s
-
-            %s## Project-Specific Rules
-
-            %s
-
-            ## Engineering Rules
-
-            See `.cursor/rules/engineering.mdc` for the full engineering rule set,
-            and `.cursor/rules/skills.mdc` for curated workflow skills.
-            """.formatted(ctx.name(), summary, ctx.stack().displayName(), workspace, generatedRules);
-    }
-
     // === Skill files (Claude) ===
 
     private String buildClaudeSkillFile(Skill skill) {
@@ -885,62 +863,6 @@ public class ContextTemplateEngine {
             sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1));
         }
         return sb.toString();
-    }
-
-    // === Standards pointer section (adapter-driven primary file) ===
-
-    /**
-     * Renders the adapter's `includes` list as pointers to the canonical companion files
-     * under `.ai/` (Claude) or `.cursor/rules/` (Cursor) instead of inlining the bodies.
-     * Keeps the primary entry-point file lightweight and avoids drift between the two
-     * copies of every rule / skill / checklist / prompt.
-     */
-    private static void appendStandardsPointers(
-        StringBuilder sb, List<String> includes,
-        List<Skill> skills, List<Checklist> checklists, List<Prompt> prompts,
-        boolean hasProjectNotes, boolean cursor
-    ) {
-        if (includes.isEmpty() && !hasProjectNotes) return;
-
-        var entries = new ArrayList<String>();
-        if (includes.contains("rules")) {
-            entries.add(cursor
-                ? "- **Engineering rules:** see `.cursor/rules/engineering.mdc`"
-                : "- **Engineering rules:** see `.ai/engineering-rules.md`");
-        }
-        if (includes.contains("skills")) {
-            if (cursor) {
-                entries.add("- **Workflow skills:** see `.cursor/rules/skills.mdc`");
-            } else {
-                var suffix = skills.isEmpty()
-                    ? ""
-                    : " (" + skills.size() + " available, definitions under `.claude/skills/`)";
-                entries.add("- **Workflow skills:** invoke via `/<skill-id>`" + suffix);
-            }
-        }
-        if (includes.contains("checklists") && !checklists.isEmpty()) {
-            entries.add(cursor
-                ? "- **Checklists:** see `.cursor/rules/checklists.mdc`"
-                : "- **Checklists:** see `.ai/checklists.md`");
-        }
-        if (includes.contains("prompts") && !prompts.isEmpty()) {
-            entries.add(cursor
-                ? "- **Reusable prompts:** see `.cursor/rules/prompts.mdc`"
-                : "- **Reusable prompts:** see `.ai/prompts.md`");
-        }
-        if (hasProjectNotes) {
-            entries.add(cursor
-                ? "- **Project-specific notes:** see `.cursor/rules/project-notes.mdc`"
-                : "- **Project-specific notes:** see `.ai/project-notes.md`");
-        }
-
-        if (entries.isEmpty()) return;
-
-        sb.append("## Standards\n\n");
-        sb.append("Canonical sources for this project's engineering standards. The primary file ")
-          .append("references them so a single edit propagates everywhere.\n\n");
-        entries.forEach(e -> sb.append(e).append("\n"));
-        sb.append("\n");
     }
 
     // === Secondary files ===
@@ -1176,19 +1098,6 @@ public class ContextTemplateEngine {
                         .map(com.acltabontabon.launchpad.scanner.Dependency::display)
                         .collect(java.util.stream.Collectors.joining(", "))
             );
-    }
-
-    private String formatFileList(List<String> files, int limit) {
-        var sb = new StringBuilder();
-        files.stream().limit(limit).forEach(f -> sb.append("- `").append(f).append("`\n"));
-        if (files.size() > limit) {
-            sb.append("- ... and ").append(files.size() - limit).append(" more\n");
-        }
-        return sb.toString();
-    }
-
-    private static String safe(String s, String fallback) {
-        return s == null || s.isBlank() ? fallback : s;
     }
 
     // ── Workspace section (cross-project reference) ──────────────────────────

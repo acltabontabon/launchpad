@@ -1,14 +1,3 @@
-=== SUMMARY ===
-
-This project is a Spring Boot auto-configuration library / starter, NOT a runnable application. It is consumed by downstream Spring Boot apps that depend on it as a jar.
-
-Reframe every later section with this perspective:
-
-- The "## Overview" should describe what capability this library exposes to consumer apps, not what the library "does" at runtime.
-- The "## Architecture" should identify the @AutoConfiguration classes, the @ConditionalOn* gating those classes use (ConditionalOnClass, ConditionalOnMissingBean, ConditionalOnProperty), and the @ConfigurationProperties surface the library exposes to consumers.
-- In "## Spring Specifics", call out: the AutoConfiguration.imports file (or legacy spring.factories) and the @AutoConfiguration class names registered through it. If additional-spring-configuration-metadata.json appears in source for IDE property hints, note it.
-- In "## Gotchas", call out: this library MUST NOT shadow user beans (always use @ConditionalOnMissingBean for user-overridable beans), MUST document every published property key, and ships no @SpringBootApplication of its own (any one in src/test is for testing only).
-
 === SKILLS ===
 
 Skill set should reflect the library perspective. Include:

@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Picks a prompt template for the requested kind. Composable kinds
- * (SUMMARY / SKILLS / RULES) delegate to whichever {@link FrameworkPromptStrategy}
+ * (SKILLS / RULES) delegate to whichever {@link FrameworkPromptStrategy}
  * applies to the project; non-composable kinds (task interview / finalize)
  * read their per-kind template directly.
  * <p>
@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
  * tie-breaking is ever needed.
  * <p>
  * Kinds are deliberately named after the output <em>format</em>
- * (SUMMARY / SKILLS / RULES) rather than the consuming vendor. A bulleted-rules
+ * (SKILLS / RULES) rather than the consuming vendor. A bulleted-rules
  * format can be emitted into Cursor's {@code .cursorrules}, an Aider
  * {@code CONVENTIONS.md}, or any other tool's equivalent without rewriting the
  * prompt - the vendor-specific decision lives at the output-adapter layer,
@@ -32,7 +32,6 @@ import org.springframework.stereotype.Component;
 public class PromptSelector {
 
     public enum Kind {
-        SUMMARY("summary"),
         SKILLS("skills"),
         RULES("rules"),
         TASK_INTERVIEW("task/interview"),
@@ -80,7 +79,7 @@ public class PromptSelector {
     }
 
     private static boolean isComposableKind(Kind kind) {
-        return kind == Kind.SUMMARY || kind == Kind.SKILLS || kind == Kind.RULES;
+        return kind == Kind.SKILLS || kind == Kind.RULES;
     }
 
     private static String readClasspath(String location) throws IOException {

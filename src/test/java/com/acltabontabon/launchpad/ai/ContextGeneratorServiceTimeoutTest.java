@@ -38,7 +38,7 @@ class ContextGeneratorServiceTimeoutTest {
             properties);
 
         long start = System.currentTimeMillis();
-        assertThatThrownBy(() -> service.generateProjectSummary(genericContext(), chunk -> {}))
+        assertThatThrownBy(() -> service.generateSkills(genericContext(), chunk -> {}))
             .hasRootCauseInstanceOf(TimeoutException.class);
         long elapsed = System.currentTimeMillis() - start;
 

@@ -14,23 +14,22 @@ class FacetPromptComposerTest {
 
     @Test
     void baseAloneIsReturnedWhenFacetsAreEmpty() {
-        String result = composer.compose(PromptSelector.Kind.SUMMARY, "spring", List.of());
+        String result = composer.compose(PromptSelector.Kind.SKILLS, "spring", List.of());
         assertThat(result).contains("PROJECT CONTEXT:");
-        assertThat(result).contains("## What this project is");
-        assertThat(result).doesNotContain("Spring MVC is on the classpath");
+        assertThat(result).doesNotContain("add-rest-endpoint");
     }
 
     @Test
     void baseAloneIsReturnedWhenFacetsAreNull() {
-        String result = composer.compose(PromptSelector.Kind.SUMMARY, "spring", null);
+        String result = composer.compose(PromptSelector.Kind.SKILLS, "spring", null);
         assertThat(result).contains("PROJECT CONTEXT:");
-        assertThat(result).doesNotContain("Spring MVC is on the classpath");
+        assertThat(result).doesNotContain("add-rest-endpoint");
     }
 
     @Test
     void facetIsInsertedBeforeProjectContextMarker() {
-        String result = composer.compose(PromptSelector.Kind.SUMMARY, "spring", List.of("web-mvc"));
-        int facetIdx = result.indexOf("Spring MVC is on the classpath");
+        String result = composer.compose(PromptSelector.Kind.SKILLS, "spring", List.of("web-mvc"));
+        int facetIdx = result.indexOf("add-rest-endpoint");
         int contextIdx = result.indexOf("PROJECT CONTEXT:");
         assertThat(facetIdx).isPositive();
         assertThat(facetIdx).isLessThan(contextIdx);
@@ -38,11 +37,11 @@ class FacetPromptComposerTest {
 
     @Test
     void facetsAppearInTheOrderTheyWerePassed() {
-        String result = composer.compose(PromptSelector.Kind.SUMMARY, "spring",
+        String result = composer.compose(PromptSelector.Kind.SKILLS, "spring",
             List.of("web-mvc", "persistence-jpa", "spring-ai"));
-        int mvcIdx = result.indexOf("Spring MVC is on the classpath");
-        int jpaIdx = result.indexOf("Spring Data JPA is on the classpath");
-        int aiIdx = result.indexOf("Spring AI is on the classpath");
+        int mvcIdx = result.indexOf("add-rest-endpoint");
+        int jpaIdx = result.indexOf("add-jpa-entity-and-repository");
+        int aiIdx = result.indexOf("add-spring-ai-call");
         assertThat(mvcIdx).isPositive();
         assertThat(jpaIdx).isGreaterThan(mvcIdx);
         assertThat(aiIdx).isGreaterThan(jpaIdx);
@@ -50,53 +49,33 @@ class FacetPromptComposerTest {
 
     @Test
     void readFacetSectionReturnsNullForMissingFacet() {
-        String result = composer.readFacetSection("spring", "does-not-exist", PromptSelector.Kind.SUMMARY);
+        String result = composer.readFacetSection("spring", "does-not-exist", PromptSelector.Kind.SKILLS);
         assertThat(result).isNull();
     }
 
     // --- Spring-tree contract preserved ---
 
     @Test
-    void webMvcSummaryAppearsViaSpringProfile() {
+    void webMvcSkillsAppearViaSpringProfile() {
         var profile = springProfile(true, false, false);
-        String result = composer.compose(PromptSelector.Kind.SUMMARY, "spring", profile.facets());
-        assertThat(result).contains("Spring MVC is on the classpath");
-    }
-
-    @Test
-    void skillsKindPullsTheSkillsSectionNotSummary() {
-        var facets = List.of("persistence-jpa");
-        String summary = composer.compose(PromptSelector.Kind.SUMMARY, "spring", facets);
-        String skills = composer.compose(PromptSelector.Kind.SKILLS, "spring", facets);
-        assertThat(summary).contains("Spring Data JPA is on the classpath");
-        assertThat(summary).doesNotContain("add-jpa-entity-and-repository");
-        assertThat(skills).contains("add-jpa-entity-and-repository");
-        assertThat(skills).doesNotContain("Spring Data JPA is on the classpath");
+        String result = composer.compose(PromptSelector.Kind.SKILLS, "spring", profile.facets());
+        assertThat(result).contains("add-rest-endpoint");
     }
 
     @Test
     void rulesKindPullsTheRulesSection() {
         String rules = composer.compose(PromptSelector.Kind.RULES, "spring", List.of("web-mvc"));
         assertThat(rules).contains("Thin controllers");
-        assertThat(rules).doesNotContain("Spring MVC is on the classpath");
+        assertThat(rules).doesNotContain("add-rest-endpoint");
     }
 
     @Test
-    void starterLibraryFacetReframesTheSummary() {
-        String summary = composer.compose(PromptSelector.Kind.SUMMARY, "spring",
-            List.of("starter-library"));
-        assertThat(summary).contains("auto-configuration library");
-        assertThat(summary).contains("NOT a runnable application");
-    }
-
-    @Test
-    void starterLibrarySectionAppearsBeforeOtherFacetSections() {
-        String summary = composer.compose(PromptSelector.Kind.SUMMARY, "spring",
-            List.of("starter-library", "persistence-jpa"));
-        int libIdx = summary.indexOf("auto-configuration library");
-        int jpaIdx = summary.indexOf("Spring Data JPA is on the classpath");
-        assertThat(libIdx).isPositive();
-        assertThat(jpaIdx).isGreaterThan(libIdx);
+    void skillsAndRulesPullDifferentSectionsFromTheSameFacet() {
+        var facets = List.of("persistence-jpa");
+        String skills = composer.compose(PromptSelector.Kind.SKILLS, "spring", facets);
+        String rules = composer.compose(PromptSelector.Kind.RULES, "spring", facets);
+        assertThat(skills).contains("add-jpa-entity-and-repository");
+        assertThat(rules).doesNotContain("add-jpa-entity-and-repository");
     }
 
     private static SpringProfile springProfile(boolean web, boolean jpa, boolean springAi) {

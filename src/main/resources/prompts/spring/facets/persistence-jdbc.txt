@@ -1,12 +1,3 @@
-=== SUMMARY ===
-
-Spring JDBC is on the classpath (no JPA). In the "## Spring Specifics" section, include:
-- Persistence: JDBC (JdbcTemplate / JdbcClient / Spring Data JDBC)
-- Whether the project uses Spring Data JDBC repositories or hand-written JdbcTemplate calls
-- Where SQL is defined (inline strings, .sql files, schema migrations)
-
-In "## Gotchas", call out: SQL injection risk if any query is built by string concatenation, and whether a migration tool (Flyway, Liquibase) manages schema.
-
 === SKILLS ===
 
 Include a skill named "add-jdbc-query" that:
