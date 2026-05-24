@@ -38,42 +38,6 @@ public record ProjectFixture(
                 List.of("spring-boot-autoconfigure", "spring-boot-configuration-processor"),
                 List.of("WidgetAutoConfiguration", "WidgetProperties", "WidgetService"),
                 List.of("autoconfiguration", "starter", "ConditionalOnClass")
-            ),
-            new ProjectFixture(
-                "nextjs",
-                "nextjs",
-                "TypeScript", "npm", "Next.js",
-                null,   // Next app-router has no single file entry point in the current heuristic
-                List.of("next", "react", "@prisma/client", "tailwindcss"),
-                List.of("HomePage", "ProductsPage", "ProductList"),
-                List.of("Next", "React", "TypeScript")
-            ),
-            new ProjectFixture(
-                "fastapi",
-                "fastapi",
-                "Python", "pip", "FastAPI",
-                "main.py",
-                List.of("fastapi", "uvicorn", "sqlalchemy", "pydantic"),
-                List.of("Item", "list_items"),
-                List.of("FastAPI", "router")
-            ),
-            new ProjectFixture(
-                "rust-cli",
-                "rust-cli",
-                "Rust", "cargo", null,
-                "main.rs",
-                List.of("clap", "regex", "serde_json"),
-                List.of("Matcher", "compile", "run"),
-                List.of("CLI", "Rust")
-            ),
-            new ProjectFixture(
-                "databricks-recon",
-                "databricks-recon",
-                "Python", "Poetry", "Databricks",
-                null,   // pipeline has no app-shaped entry point
-                List.of("databricks-sdk", "pyspark", "databricks/databricks"),
-                List.of(),  // no Java symbols to summarise from
-                List.of("Databricks", "DLT", "Terraform")
             )
         );
     }

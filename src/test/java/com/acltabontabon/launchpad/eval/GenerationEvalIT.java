@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.acltabontabon.launchpad.ai.ContextGeneratorService;
 import com.acltabontabon.launchpad.ai.ProviderHealthChecker;
-import com.acltabontabon.launchpad.scanner.ProjectScanner;
+import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;

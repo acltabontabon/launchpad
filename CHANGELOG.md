@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
+### Changed
+- **Scope narrowed to Spring Boot Java + Maven.** Unsupported projects are rejected at the entry point (TUI ProjectSelect and MCP `scan_project`) by a single shared `ProjectSupportDetector` before any scanner phase runs.
+- **Deterministic-first detection.** Project support is decided from a structured Maven model parse (parent, dependencies, plugins) via the new shared `MavenModelParser`; fuzzy text matches over raw pom.xml are gone.
+- **Downstream phases trust the gate.** Scanner, prompt selector, and audit code no longer carry defensive non-Spring branching.
+### Removed
+- Detection and prompt support for Databricks, Kotlin, Gradle, Node, Python, Rust, Go, Ruby.
+- Generic fallback prompt templates (`prompts/{summary,skills,rules}/generic.txt`) and the entire `prompts/databricks/` tree - a missing Spring template now fails loudly rather than degrading to low-signal output.
+- Standalone documentation fixtures (`mkdocs-sample`, `asciidoc-sample`); doc-detection coverage now lives inline in the `spring-boot` Spring fixture.
 
 ## [0.3.0] - 2026-05-24
 ### Added

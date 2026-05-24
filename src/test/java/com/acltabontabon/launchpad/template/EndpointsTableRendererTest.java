@@ -2,7 +2,7 @@ package com.acltabontabon.launchpad.template;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.acltabontabon.launchpad.scanner.Endpoint;
+import com.acltabontabon.launchpad.springboot.runtime.Endpoint;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;

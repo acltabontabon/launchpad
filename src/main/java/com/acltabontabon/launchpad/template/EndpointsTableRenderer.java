@@ -1,6 +1,6 @@
 package com.acltabontabon.launchpad.template;
 
-import com.acltabontabon.launchpad.scanner.Endpoint;
+import com.acltabontabon.launchpad.springboot.runtime.Endpoint;
 import java.util.List;
 import java.util.Map;
 

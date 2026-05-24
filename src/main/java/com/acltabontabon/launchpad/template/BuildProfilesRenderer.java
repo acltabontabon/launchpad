@@ -1,6 +1,6 @@
 package com.acltabontabon.launchpad.template;
 
-import com.acltabontabon.launchpad.scanner.MavenProfile;
+import com.acltabontabon.launchpad.springboot.maven.MavenProfile;
 import java.util.List;
 
 /**

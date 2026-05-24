@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.tui.view;
 
+import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
 import com.acltabontabon.launchpad.tui.AppState;
 import com.acltabontabon.launchpad.tui.PathAutocomplete;
 import com.acltabontabon.launchpad.tui.components.Card;
@@ -32,6 +33,12 @@ import java.util.List;
 
 @Component
 public class ProjectSelectView implements View {
+
+    private final ProjectSupportDetector projectSupportDetector;
+
+    public ProjectSelectView(ProjectSupportDetector projectSupportDetector) {
+        this.projectSupportDetector = projectSupportDetector;
+    }
 
     @Override
     public void render(Frame frame, Rect area, AppState state) {
@@ -92,7 +99,9 @@ public class ProjectSelectView implements View {
     private void renderValidation(Frame frame, Rect area, AppState state) {
         var validationArea = centeredColumn(area, 80);
         Line line;
-        if (state.projectPath.isEmpty()) {
+        if (state.projectGateError != null && !state.projectGateError.isEmpty()) {
+            line = StatusDot.of(StatusDot.State.ERROR, state.projectGateError);
+        } else if (state.projectPath.isEmpty()) {
             line = StatusDot.of(StatusDot.State.IDLE, "Enter a project directory path");
         } else {
             var p = Path.of(state.projectPath);
@@ -173,6 +182,12 @@ public class ProjectSelectView implements View {
 
         if (key.isKey(KeyCode.ENTER)) {
             if (isValidProjectPath(state.projectPath)) {
+                var support = projectSupportDetector.detect(Path.of(state.projectPath));
+                if (!support.isSupported()) {
+                    state.projectGateError = support.reason();
+                    return true;
+                }
+                state.projectGateError = null;
                 state.launchpadAware = Files.isDirectory(
                     Path.of(state.projectPath, ".launchpad", "standards"));
                 state.currentScreen = state.taskFlow
@@ -244,6 +259,7 @@ public class ProjectSelectView implements View {
         state.pathMatches = PathAutocomplete.matches(state.projectPath);
         state.pathMatchesCursor = 0;
         state.launchpadAware = AppState.detectLaunchpadAware(state.projectPath);
+        state.projectGateError = null;
     }
 
     private boolean isValidProjectPath(String path) {

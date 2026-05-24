@@ -8,15 +8,24 @@
 
 ## What is Launchpad?
 
-Launchpad is a small desktop tool that runs in your terminal. Point it at any project on your computer, pick the AI assistant you use (Claude or Cursor), and it produces the context files those assistants need to understand your codebase.
+Launchpad is a small desktop tool that runs in your terminal. Point it at a **Spring Boot Java + Maven** project on your computer, pick the AI assistant you use (Claude or Cursor), and it produces the context files those assistants need to understand your codebase.
 
 It runs entirely on your own machine. Your code never leaves your laptop.
+
+> **Scope today: Spring Boot Java + Maven projects.** Launchpad is intentionally narrow while we build deep, deterministic Spring-aware extraction (controller graphs, bean wiring, configuration property inventory, actuator surface analysis, and more). Other stacks (Gradle, Kotlin, Python, Node, Terraform, Databricks, ...) are on the roadmap but not supported today; pointing the tool at one is rejected at the project selection screen with a clear message.
 
 ## Why does it exist?
 
 AI coding assistants work best when they know what your project actually is - what it does, how it's organized, what libraries it leans on, and what conventions the team follows. Writing those guide files by hand is tedious, and most people skip it. So the assistant guesses, and the suggestions feel generic.
 
 Launchpad does that setup for you. In a couple of minutes you get tailored, project-specific instructions that your assistant can read on every prompt.
+
+### Deterministic-first, local-first
+
+Launchpad is built on two principles:
+
+- **Deterministic-first.** Project structure - the Maven model, Spring sub-stack signals, source layout, configuration files - is read by ordinary parsers, not by prompts. The local AI is a bounded synthesis layer that summarises and enriches what the deterministic pipeline already produced; it is never the primary path for discovery, classification, or parsing.
+- **Local-first.** All deterministic extraction runs on your machine. The local AI does the cheap, repeatable cognitive work before any paid cloud agent sees the project, so the output is high-signal context for the agent rather than a generic dump.
 
 ## What it produces
 
@@ -39,85 +48,22 @@ Because the standards are vendor-neutral, switching from Claude to Cursor (or to
 ## How you'll use it
 
 1. Start the app from your terminal.
-2. Pick the project folder you want to set up.
+2. Pick the Spring Boot Maven project folder you want to set up. If the folder is not a supported project, Launchpad refuses with a clear message before any scan runs.
 3. Pick the assistant you use.
 4. Wait while Launchpad reads through the project and drafts the files.
 5. Review what it wrote, then save.
 
 That's the whole loop. No accounts, no cloud, no API keys.
 
-## What you need
-
-- A computer running macOS, Linux, or Windows.
-- A local-AI runtime. Launchpad ships with first-class support for **Ollama** and any **OpenAI-compatible** server (LM Studio, llama.cpp's `server`, vLLM, hosted gateways). Pick whichever you already run; nothing is sent off your machine. See [docs/providers.md](docs/providers.md) for per-provider setup.
-- A loaded model. The default is `qwen2.5-coder:7b` on Ollama, but any model your runtime supports works - swap it in /settings.
-
 ## Supported local-AI providers
 
-| Provider           | Default base URL              | Notes |
-|--------------------|-------------------------------|-------|
-| Ollama             | `http://localhost:11434`      | `ollama serve`, then `ollama pull <model>`. |
+| Provider           | Default base URL              | Notes                                                                                                             |
+|--------------------|-------------------------------|-------------------------------------------------------------------------------------------------------------------|
+| Ollama             | `http://localhost:11434`      | `ollama serve`, then `ollama pull <model>`.                                                                       |
 | OpenAI-compatible  | depends on the server         | LM Studio (`http://localhost:1234/v1`), llama.cpp `server`, vLLM. Optional API key for gateways that require one. |
-| Auto-detect        | -                             | Probes `/api/tags` then `/v1/models` and picks whatever responds. |
+| Auto-detect        | -                             | Probes `/api/tags` then `/v1/models` and picks whatever responds.                                                 |
 
 Full setup steps per server are in [docs/providers.md](docs/providers.md).
-
-## Configuration
-
-Out of the box, `launchpad.ai.provider=auto` probes the configured base URL and resolves to the runtime that responds first. If you have a homelab box, a remote dev machine, or a different port, point Launchpad at it in any of three ways:
-
-1. **In the TUI (recommended)** - press `/` on the Welcome screen and run `/settings`. Toggle the provider with ←/→, edit the base URL / model / optional API key, hit Enter to save. Changes apply immediately, no restart, and persist to `~/.launchpad/config.properties`.
-2. **Edit the config file directly** - `~/.launchpad/config.properties` (created on first save). Keys are `launchpad.ai.provider`, `launchpad.ai.base-url`, `launchpad.ai.model`, and optional `launchpad.ai.api-key`. Note: Java's properties format escapes `:` in URLs, so the file shows `http\://host\:11434`; that round-trips correctly when read back. Existing files that only carry the legacy `spring.ai.ollama.*` keys still load on first run and are rewritten on the next save.
-3. **Environment variable or CLI argument** - useful for one-off overrides or running in CI:
-   ```bash
-   LAUNCHPAD_AI_BASE_URL=http://remote:11434 ./mvnw spring-boot:run
-   # or
-   ./mvnw spring-boot:run -Dspring-boot.run.arguments=--launchpad.ai.base-url=http://remote:11434
-   ```
-
-The `LAUNCHPAD_LLM_API_KEY` env var overrides any api-key in the config file so secrets can stay out of plaintext. The TUI config file takes precedence over the bundled defaults; env vars and CLI args feed the defaults, so they win only when no user file exists.
-
-## Use Launchpad as an MCP server
-
-Once you have generated context for a project, Launchpad can stay useful in your editor too. The `launchpad mcp` subcommand starts a Model Context Protocol server over stdio. Any MCP-aware client (Claude Code, Cursor, Cline, Continue, Zed, and others) can register it and call four tools that are unique to Launchpad:
-
-- `list_projects()` - lists every project the user has used Launchpad on (name, path, stack, last-scanned time). Call this first when the user says "my projects" or doesn't remember a path.
-- `scan_project(project)` - returns a structured summary (stack, framework, dependencies, packages, source files). Cached for 24 hours so repeat calls are instant. `project` accepts a short name from `list_projects` or an absolute path.
-- `get_standards(project)` - returns the rules, skills, and checklists that apply to the project, as structured data.
-- `get_audit_findings(project)` - runs the standards audit (or returns the cached SARIF) and lists every violation with file path, line, and rule.
-
-A SARIF resource at `launchpad://audit/<abs-project-path>` exposes the same findings in the OASIS-standard format that VS Code SARIF Viewer, IntelliJ Qodana, and GitHub code-scanning consume natively.
-
-Register Launchpad with your MCP client using the same shape every client accepts:
-
-```json
-{
-  "launchpad": {
-    "command": "java",
-    "args": ["-jar", "/abs/path/to/launchpad-0.1.0-SNAPSHOT.jar", "mcp"]
-  }
-}
-```
-
-### Address projects by name, not by path
-
-The registry at `~/.launchpad/projects.json` enrolls every project the TUI scans (no extra step - it happens automatically when you reach the Review screen of `/init` or `/new-task`). From any MCP client you can then say:
-
-> "Use launchpad to audit Pragmata."
-> "Which of my projects in launchpad use Spring Boot? Pull the standards for the newest one."
-
-The agent calls `list_projects` to learn the names, then passes the chosen name into the other tools as `project`. No absolute paths typed, no per-session state on the server (every call is self-contained, so concurrent sessions in Claude Code and Cursor cannot confuse each other). Browse and prune the registry from the TUI via `/projects` (`enter` re-opens a project, `d` removes an entry, `p` prunes paths that no longer exist).
-
-> **Privacy note:** The registry stays on your machine, but any value `list_projects` returns is visible to the AI tool that called it. If you would rather not have a particular repo path leak to a cloud model, remove it via `/projects → d` or edit `~/.launchpad/projects.json` directly.
-
-> **Note:** MCP mode is currently supported on the JVM jar. The GraalVM native binary builds successfully and runs the TUI just fine, but the Spring AI MCP server (2.0.0-M6) bootstrap doesn't yet reflect cleanly under AOT - the tool schema generator fails when the JSON schema for tool inputs is built at runtime. Use `java -jar` for `mcp`; the JVM startup is sub-second on a warm system.
-
-Launchpad deliberately does not expose file reads, file writes, or git operations - the official `mcp-server-filesystem` and `mcp-server-git` already cover those. Use Launchpad's MCP server for what is unique to Launchpad: project intelligence and standards enforcement, computed locally with no cloud tokens spent.
-
-## Who it's for
-
-- Developers who want their AI assistant to actually understand the project, not just the file on screen.
-- Teams who want a shared, consistent set of coding rules baked into every repo.
 
 ## Status
 

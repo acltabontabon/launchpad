@@ -6,7 +6,7 @@ import com.acltabontabon.launchpad.ai.ProviderHealthChecker;
 import com.acltabontabon.launchpad.audit.AuditService;
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.config.ProjectRegistry;
-import com.acltabontabon.launchpad.scanner.ProjectScanner;
+import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import com.acltabontabon.launchpad.scanner.ScanStore;
 import com.acltabontabon.launchpad.scanner.StackProfile;
 import com.acltabontabon.launchpad.standards.RemoteStandardsChecker;

@@ -5,7 +5,7 @@ import com.acltabontabon.launchpad.ai.FacetPromptComposer;
 import com.acltabontabon.launchpad.ai.PromptSelector;
 import com.acltabontabon.launchpad.config.LaunchpadAiProperties;
 import com.acltabontabon.launchpad.config.ProjectRegistry;
-import com.acltabontabon.launchpad.scanner.ProjectScanner;
+import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -64,7 +64,8 @@ class Round4Verification {
         var opts = OllamaChatOptions.builder().model(OLLAMA_MODEL).numCtx(8192).build();
         var chatModel = OllamaChatModel.builder().ollamaApi(api).defaultOptions(opts).build();
         var clientBuilder = ChatClient.builder(chatModel);
-        var promptSelector = new PromptSelector(new FacetPromptComposer());
+        var promptSelector = new PromptSelector(new FacetPromptComposer(),
+            java.util.List.of(new com.acltabontabon.launchpad.springboot.synthesizer.SpringPromptStrategy()));
         var generator = new ContextGeneratorService(clientBuilder, promptSelector, aiProps);
 
         // 3) Engine + assemble. StandardsLoader is mocked - we don't need rules to verify CLAUDE.md shape.

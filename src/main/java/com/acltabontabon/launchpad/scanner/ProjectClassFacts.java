@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.scanner;
 
+import com.acltabontabon.launchpad.springboot.runtime.Endpoint;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;

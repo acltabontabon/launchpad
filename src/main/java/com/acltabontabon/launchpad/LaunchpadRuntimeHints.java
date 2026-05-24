@@ -100,16 +100,15 @@ public class LaunchpadRuntimeHints implements RuntimeHintsRegistrar {
             // Read back by MCP tools and any tooling that resumes from cache.
             "com.acltabontabon.launchpad.scanner.ProjectContext",
             "com.acltabontabon.launchpad.scanner.StackProfile",
-            "com.acltabontabon.launchpad.scanner.SpringProfile",
-            "com.acltabontabon.launchpad.scanner.DatabricksProfile",
+            "com.acltabontabon.launchpad.springboot.runtime.SpringProfile",
             "com.acltabontabon.launchpad.scanner.Dependency",
             "com.acltabontabon.launchpad.scanner.PackageSummary",
             // Documentation index persisted as part of ProjectContext. Without these
             // the docs section of scan.json round-trips as null under native image.
-            "com.acltabontabon.launchpad.scanner.DocumentationIndex",
-            "com.acltabontabon.launchpad.scanner.DocumentationPage",
-            "com.acltabontabon.launchpad.scanner.Endpoint",
-            "com.acltabontabon.launchpad.scanner.MavenProfile"
+            "com.acltabontabon.launchpad.scanner.doc.DocumentationIndex",
+            "com.acltabontabon.launchpad.scanner.doc.DocumentationPage",
+            "com.acltabontabon.launchpad.springboot.runtime.Endpoint",
+            "com.acltabontabon.launchpad.springboot.maven.MavenProfile"
         };
         for (String fqn : jacksonRecordTypes) {
             hints.reflection().registerType(TypeReference.of(fqn),

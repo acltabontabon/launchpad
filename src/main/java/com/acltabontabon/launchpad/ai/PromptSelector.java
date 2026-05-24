@@ -9,10 +9,17 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 /**
- * Picks a prompt template for the requested kind + stack. Frameworks with a
- * <code>prompts/&lt;slug&gt;/base+facets/</code> tree on the classpath route
- * through {@link FacetPromptComposer}. Everything else falls back to the
- * per-kind generic template at {@code prompts/<kind>/generic.txt}.
+ * Picks a prompt template for the requested kind. Composable kinds
+ * (SUMMARY / SKILLS / RULES) delegate to whichever {@link FrameworkPromptStrategy}
+ * applies to the project; non-composable kinds (task interview / finalize)
+ * read their per-kind template directly.
+ * <p>
+ * Adding a new supported framework is a matter of registering a new
+ * {@link FrameworkPromptStrategy} bean and dropping a {@code prompts/<slug>/}
+ * tree on the classpath - this class does not change. The strategy list is
+ * injected as a Spring-managed bean list, so order is determined by
+ * {@link org.springframework.core.annotation.Order} on the strategies if any
+ * tie-breaking is ever needed.
  * <p>
  * Kinds are deliberately named after the output <em>format</em>
  * (SUMMARY / SKILLS / RULES) rather than the consuming vendor. A bulleted-rules
@@ -36,68 +43,44 @@ public class PromptSelector {
     }
 
     private final FacetPromptComposer composer;
+    private final List<FrameworkPromptStrategy> strategies;
 
-    public PromptSelector(FacetPromptComposer composer) {
+    public PromptSelector(FacetPromptComposer composer, List<FrameworkPromptStrategy> strategies) {
         this.composer = composer;
+        this.strategies = List.copyOf(strategies);
     }
 
     public String load(Kind kind, StackProfile stack) {
         if (isComposableKind(kind)) {
-            String slug = slugFor(stack);
-            List<String> facets = facetsFor(slug, stack);
-            if (facets != null) {
-                return composer.compose(kind, slug, facets);
-            }
+            var strategy = resolveStrategy(stack);
+            return composer.compose(kind, strategy.slug(), strategy.facetsFor(stack));
         }
-        String slug = slugFor(stack);
-        String primary = "prompts/" + kind.dir + "/" + slug + ".txt";
+        String primary = "prompts/" + kind.dir + "/generic.txt";
         try {
             return readClasspath(primary);
-        } catch (IOException primaryMiss) {
-            try {
-                return readClasspath("prompts/" + kind.dir + "/generic.txt");
-            } catch (IOException genericMiss) {
-                throw new UncheckedIOException(
-                    "Missing prompt template: tried " + primary + " and generic fallback",
-                    genericMiss);
-            }
+        } catch (IOException miss) {
+            throw new UncheckedIOException("Missing prompt template: " + primary, miss);
         }
     }
 
     /** Returns the chosen template slug for telemetry / logging. */
     public String chosenSlug(Kind kind, StackProfile stack) {
-        String slug = slugFor(stack);
-        if (isComposableKind(kind) && facetsFor(slug, stack) != null) {
-            return slug;
-        }
-        var primary = new ClassPathResource("prompts/" + kind.dir + "/" + slug + ".txt");
-        return primary.exists() ? slug : "generic";
+        if (isComposableKind(kind)) return resolveStrategy(stack).slug();
+        return "generic";
     }
 
-    /**
-     * Returns the facet id list for a composable framework, or null if the
-     * given slug has no composable tree (in which case the per-kind generic
-     * template is used).
-     */
-    private static List<String> facetsFor(String slug, StackProfile stack) {
-        if (stack == null) return null;
-        return switch (slug) {
-            case "spring" -> stack.springProfile() != null ? stack.springProfile().facets() : List.of();
-            case "databricks" -> stack.databricksProfile() != null ? stack.databricksProfile().facets() : List.of();
-            default -> null;
-        };
+    private FrameworkPromptStrategy resolveStrategy(StackProfile stack) {
+        for (var strategy : strategies) {
+            if (strategy.appliesTo(stack)) return strategy;
+        }
+        throw new IllegalStateException(
+            "No FrameworkPromptStrategy applies to stack "
+                + (stack == null ? "<null>" : stack.displayName())
+                + ". ProjectSupportDetector should have rejected this project before generation.");
     }
 
     private static boolean isComposableKind(Kind kind) {
         return kind == Kind.SUMMARY || kind == Kind.SKILLS || kind == Kind.RULES;
-    }
-
-    private static String slugFor(StackProfile stack) {
-        if (stack == null || stack.framework() == null) return "generic";
-        String f = stack.framework().toLowerCase();
-        if (f.contains("spring")) return "spring";
-        if (f.contains("databricks")) return "databricks";
-        return "generic";
     }
 
     private static String readClasspath(String location) throws IOException {
