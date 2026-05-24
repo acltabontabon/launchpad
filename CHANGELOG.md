@@ -6,69 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Fixed
-- **`AppState.savedFileIndices` is now a concurrent set.** The field was declared `volatile Set<Integer>` over a plain `HashSet`, which the TUI render loop reads via `.contains()` at ~12 fps while the save action mutates it from another thread; `volatile` only protects the reference, not the contents. Switched to `ConcurrentHashMap.newKeySet()` (now `final`, cleared in-place by `resetScanLatch()`) and simplified the call site in `ReviewView` to add directly instead of snapshot-copy-swap. Added a regression test that exercises concurrent `add` + `contains` across multiple writer threads. Fixes [#2](https://github.com/acltabontabon/Launchpad/issues/2).
-- **Remote-standards git fetch no longer false-times-out on chatty output.** `RemoteStandardsFetcher.runGit()` now drains the child process's combined stdout/stderr on a background daemon thread (capped at 64 KB) from process start, so a verbose `git clone` / `git pull` can no longer block on a full OS pipe buffer and trip the 30 s timeout. The timeout path produces a deterministic message (`git <verb> exceeded 30s`) that still includes any captured output, and the drainer is joined with a bounded wait after `destroy` so no read is attempted against a torn-down process. Existing cache reuse on failure is preserved.
-- **Adapter-driven primary context file no longer duplicates standards.** When an adapter listed `rules` / `skills` / `checklists` / `prompts` in its output `includes`, the engine previously inlined those bodies into the primary file (`CLAUDE.md` / `.cursor/rules/*.mdc`) *and* re-emitted them under `.ai/*.md` / `.cursor/rules/*.mdc` / `.claude/skills/<id>/SKILL.md` - bloating the entry-point file (~30 KB in the workspace) and inviting drift on the next edit. The adapter `includes` list is now rendered as pointers to the companion files (matching the legacy non-adapter path); the companion files remain the single source of truth. The LLM-generated project-specific notes section also moved out of the primary file into a new `.ai/project-notes.md` / `.cursor/rules/project-notes.mdc` companion, referenced from the primary file.
-- **MCP server now works under GraalVM native image.** Previously `launchpad mcp` ran only on the JVM jar because `@ConditionalOnProperty` gating `LaunchpadMcpTools`, `LaunchpadMcpResources`, and `LaunchpadRunner` was evaluated at Spring AOT build time (with no `launchpad.mode` set), pruning the MCP beans and shipping a binary that served an empty tool list. The conditions were removed; Spring AI's annotated-bean AOT processor now sees the MCP beans and registers every `@McpTool` parameter type for native reflection. The TUI runner early-returns in MCP mode so it does not try to grab the terminal. A single native binary now serves both modes.
-
 ### Added
-- **Documentation discovery and MCP exposure:** The project scan now detects MkDocs (`mkdocs.yml`), Antora (`antora.yml`), and loose Markdown / AsciiDoc / RST files under `docs/`, `documentation/`, `doc/`, and `site/`. Markdown and AsciiDoc are first-class peers - both are titled (H1 / `=` document title) and surfaced through three new MCP tools (`list_documentation`, `find_documentation`, `get_documentation`) and a new `launchpad://docs/{name}` resource. `find_documentation` without a `project` argument searches every registered project, so an AI working on one service can discover the docs of a sibling library referenced via `relatedTo`.
-- **Cross-project reference as a first-class citizen:** Generated context files now include a `## Workspace` section listing sibling Launchpad-managed projects so AI agents discover them without prompting. New MCP tools `get_file(project, path)` and `list_files(project, glob)` let agents read sibling source on demand with path-traversal protection. `compare_standards(projectA, projectB)` partitions rules / skills / checklists into common, divergent, a-only, and b-only buckets via content-hash diff. `list_projects` accepts a `workspace` filter.
-- **Per-project relationship metadata:** Optional `.launchpad/project.yml` file (schema: `tags`, `workspace`, `relatedTo`) overlaid into the registry on every read. Travels with the project, survives `~/.launchpad/` wipes, never mutates `projects.json`.
-- **MCP resources for tree-browsing clients:** `launchpad://projects` (registry listing) and `launchpad://scan/{name}` (per-project scan summary) alongside the existing `launchpad://audit/{path}`.
-- **CLI project management:** `launchpad register <path>` adds a single project to the registry; `launchpad register --scan <dir>` enrolls every subdirectory under `<dir>` that already has a `.launchpad/scan.json`; `launchpad unregister <name>` removes one entry. Idempotent and registry-mutating only.
-- **MCP default-project handshake:** `LAUNCHPAD_DEFAULT_PROJECT` env var (or `launchpad.mcp.default-project` system property) pins a default project so MCP tool calls work without specifying `project` every time.
-- **`/new-task` hardening:** System+user prompt split with one-shot examples; standards scope-filtered once at interview entry and cached across turns (no more full-pack reloads each round); real per-chunk streaming on the synthesise call with `launchpad.task.interview-timeout` / `launchpad.task.finalize-timeout` budgets; new `TaskOutputValidator` with a single retry on structural failure; per-task warnings surface to the result view; saved-file timestamps now ms-precision to avoid collisions; runaway round cap tightened from 15 to 8.
-- **Pluggable local-AI providers:** Support for LM Studio, llama.cpp, vLLM, and OpenAI-compatible endpoints (#13).
-- **Provider auto-detection:** `launchpad.ai.provider` set to `auto` probes Ollama then OpenAI; settings take effect without restart.
-- **Provider Health:** New `ProviderHealthChecker` supports both Ollama and OpenAI listing formats.
-- **Databricks framework path:** Support for Terraform-deployed data pipelines, DLT, Python, and SQL facets.
-- **Facet-based prompts:** `FacetPromptComposer` replaces framework-specific composers for better scaling.
-- **Composable Spring prompts:** Framework-agnostic system using base templates and per-facet additions.
-
-- **MCP Integration**
-  - AI tool flow in `/settings` for auto-config (Claude, Cursor).
-  - MCP server mode via `launchpad mcp` exposing tools and SARIF.
-  - Registry-aware tools with short-name support.
-  - `ProjectRegistry` for persistent project addressing and auto-enrollment.
-  - New `/projects` command for registry management.
-
-- **Automated Audit System**
-  - Integrated Audit phase with live progress and TUI summary.
-  - Standards engine with `PatternChecker`, `ImportChecker`, and `LlmChecker`.
-  - `check:` blocks in `Rule` schema for automated logic.
-  - `ScanStore` for persisting scans to `.launchpad/scan.json`.
-
-- **TUI & User Experience**
-  - Rocket lift-off animation on Welcome screen.
-  - Path-prefix matches and autocomplete in Project Select.
-  - `SAVED` chips in Review screen for session-written files.
-  - New `BENEFITS.md` (token-cost analysis) and `USAGE.md` (setup guide).
+- **Multi-backend AI support:** Integration for LM Studio, llama.cpp, vLLM, and OpenAI-compatible endpoints with auto-detection.
+- **MCP ecosystem expansion:** New tools for documentation discovery, cross-project references, and registry management.
+- **Enhanced scanning:** Automated detection of project documentation (MkDocs, Antora) and Databricks framework facets.
+- **Architectural insights:** New `## Architecture` section in context files providing a structural overview and narrative summary.
+- **Rich context generation:** "Evidence-based" synthesis that uses real repository content to ground AI descriptions.
+- **Improved `/new-task` interview:** Hardened task discovery with one-shot examples, better streaming, and strict validation.
+- **Automated Audit System:** Standards engine with regex, import, and semantic LLM-based checks.
 
 ### Changed
-- **Provider-neutral config:** Renamed keys to `launchpad.ai.*` (provider, base-url, model, api-key).
-- **Scoped Prompts:** Narrowed specialized prompts to Spring; others use generic templates.
-- **Rules Refactor:** Renamed "Cursor rules" to tool-agnostic "Rules" across prompts and files.
-- **Visual & UI Refinement**
-  - Redesigned TUI using "Cosmic Console" visual system.
-  - Simplified Welcome screen: Reworked tagline and moved help to `/help`.
-  - Improved Header: Breadcrumb shows active model.
-  - Optimized Review Screen: Consolidated warnings and moved save status.
-  - Enabled diff views for new files in Review.
-
-- **Core Logic & AI**
-  - Default model to `qwen2.5-coder:7b`.
-  - Improved grounding with mandatory file-list blocks and anti-invention rules.
-  - `OutputValidator` automatically strips hallucinated file references.
+- **Deterministic context files:** Redesigned generation pipeline using a stable skeleton with scoped local-AI synthesis.
+- **Refined UI/UX:** New "Cosmic Console" TUI theme, improved headers, and optimized review screens.
+- **Provider-neutral configuration:** Renamed settings and prompted logic to be tool-agnostic.
+- **Consolidated context:** Reduced duplication by moving project-specific notes and standards to companion files.
 
 ### Fixed
-- **AI Timeouts:** Added explicit connect/read timeouts to prevent TUI freezes (#1).
-- **I/O Safety:** Unreadable files now report `UNREADABLE` instead of silently skipping (#6).
-- **Merge Integrity:** Corrupted markers now report `CORRUPTED` to prevent content loss (#3).
-- **Native Image:** Fixed failures in Summary/Assemble phases (templates & reflection hints).
-- **TUI Stability:** Fixed Welcome screen freeze and palette alignment issues.
-- **Navigation:** Fixed `/new-task` labels and settings column alignment.
+- **Performance & Stability:** Fixed TUI freezes with explicit AI timeouts and added concurrent safety for scan state.
+- **I/O Resilience:** Improved handling of unreadable files and corrupted markers during merge operations.
+- **Native Image compatibility:** Full support for MCP and TUI modes under GraalVM native image.
+- **Documentation:** Simplified `USAGE.md` and added `BENEFITS.md` for token-cost analysis.
+
+### Removed
+- **Redundant sections:** Dropped obsolete synthesis helpers and overlapping developer-workflow blocks.
+- **Mega-prompt pipeline:** Retired the single-pass generation in favor of chunked, validated synthesis jobs.
 
 ## [0.2.0] - 2026-05-23
 ### Added

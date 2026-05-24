@@ -107,7 +107,9 @@ public class LaunchpadRuntimeHints implements RuntimeHintsRegistrar {
             // Documentation index persisted as part of ProjectContext. Without these
             // the docs section of scan.json round-trips as null under native image.
             "com.acltabontabon.launchpad.scanner.DocumentationIndex",
-            "com.acltabontabon.launchpad.scanner.DocumentationPage"
+            "com.acltabontabon.launchpad.scanner.DocumentationPage",
+            "com.acltabontabon.launchpad.scanner.Endpoint",
+            "com.acltabontabon.launchpad.scanner.MavenProfile"
         };
         for (String fqn : jacksonRecordTypes) {
             hints.reflection().registerType(TypeReference.of(fqn),
