@@ -59,7 +59,7 @@ class LlmProviderRouterTest {
 
     private static LlmProviderRouter newRouter(Snapshot snapshot) {
         var settings = new StubSettings(snapshot);
-        var properties = new LaunchpadAiProperties(Duration.ofMillis(500), Duration.ofMillis(500));
+        var properties = LaunchpadAiProperties.ofTimeouts(Duration.ofMillis(500), Duration.ofMillis(500));
         var healthChecker = new ProviderHealthChecker(settings);
         return new LlmProviderRouter(settings, properties, healthChecker);
     }

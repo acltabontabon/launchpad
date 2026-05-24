@@ -1,0 +1,96 @@
+package com.acltabontabon.launchpad.template;
+
+import com.acltabontabon.launchpad.ai.ContextGeneratorService;
+import com.acltabontabon.launchpad.ai.FacetPromptComposer;
+import com.acltabontabon.launchpad.ai.PromptSelector;
+import com.acltabontabon.launchpad.config.LaunchpadAiProperties;
+import com.acltabontabon.launchpad.config.ProjectRegistry;
+import com.acltabontabon.launchpad.scanner.ProjectScanner;
+import com.acltabontabon.launchpad.standards.StandardsLoader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.ollama.OllamaChatModel;
+import org.springframework.ai.ollama.api.OllamaApi;
+import org.springframework.ai.ollama.api.OllamaChatOptions;
+
+/**
+ * Round-4 end-to-end verification. Not part of the default test suite -
+ * class name doesn't match `*Test.java`. Run explicitly:
+ *
+ *   ./mvnw test -Dtest=Round4Verification
+ *
+ * Requires:
+ *   - `/Users/aclt/Workspace/nativeimage-demo` exists
+ *   - Ollama running at http://localhost:11434
+ *   - the configured model is pulled
+ *
+ * Prints the generated CLAUDE.md to stdout and writes it to
+ * `target/round4-claude.md` for inspection.
+ */
+class Round4Verification {
+
+    private static final String TARGET_PROJECT = "/Users/aclt/Workspace/nativeimage-demo";
+    private static final String OLLAMA_URL = "http://localhost:11434";
+    private static final String OLLAMA_MODEL = "qwen2.5-coder:7b-instruct";
+
+    @Test
+    void buildClaudeMdForNativeImageDemo() throws Exception {
+        var projectRoot = Path.of(TARGET_PROJECT);
+        if (!Files.isDirectory(projectRoot)) {
+            System.err.println("[skip] target project not found: " + TARGET_PROJECT);
+            return;
+        }
+
+        // 1) Scan
+        var scanner = ProjectScanner.forTesting();
+        var ctx = scanner.scan(TARGET_PROJECT, msg -> {});
+        System.out.println("[scan] stack=" + ctx.stack().displayName()
+            + " packages=" + ctx.packageSummaries().size()
+            + " endpoints=" + ctx.endpoints().size()
+            + " mavenProfiles=" + ctx.mavenProfiles().size()
+            + " readmeIntro.length=" + ctx.readmeIntro().length()
+            + " pomDescription=\"" + ctx.pomDescription() + "\"");
+
+        // 2) Wire Ollama + ContextGeneratorService
+        var aiProps = new LaunchpadAiProperties(
+            Duration.ofSeconds(10), Duration.ofMinutes(2),
+            new LaunchpadAiProperties.Ollama(8192),
+            new LaunchpadAiProperties.Synthesis(true, 2500, 800));
+        var api = OllamaApi.builder().baseUrl(OLLAMA_URL).build();
+        var opts = OllamaChatOptions.builder().model(OLLAMA_MODEL).numCtx(8192).build();
+        var chatModel = OllamaChatModel.builder().ollamaApi(api).defaultOptions(opts).build();
+        var clientBuilder = ChatClient.builder(chatModel);
+        var promptSelector = new PromptSelector(new FacetPromptComposer());
+        var generator = new ContextGeneratorService(clientBuilder, promptSelector, aiProps);
+
+        // 3) Engine + assemble. StandardsLoader is mocked - we don't need rules to verify CLAUDE.md shape.
+        var loader = Mockito.mock(StandardsLoader.class);
+        Mockito.when(loader.loadRules(Mockito.any())).thenReturn(java.util.List.of());
+        Mockito.when(loader.loadSkills(Mockito.any())).thenReturn(java.util.List.of());
+        Mockito.when(loader.loadChecklists(Mockito.any())).thenReturn(java.util.List.of());
+        Mockito.when(loader.loadPrompts(Mockito.any())).thenReturn(java.util.List.of());
+        Mockito.when(loader.loadAdapter(Mockito.any(), Mockito.any())).thenReturn(java.util.Optional.empty());
+        var registry = Mockito.mock(ProjectRegistry.class);
+        Mockito.when(registry.all()).thenReturn(java.util.List.of());
+        var engine = new ContextTemplateEngine(loader, registry, generator);
+
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "", "");
+        var primary = files.stream()
+            .filter(f -> f.relativePath().equals("CLAUDE.md"))
+            .findFirst()
+            .orElseThrow();
+
+        var outPath = Path.of("target/round4-claude.md");
+        Files.createDirectories(outPath.getParent());
+        Files.writeString(outPath, primary.content());
+
+        System.out.println("================ GENERATED CLAUDE.md ================");
+        System.out.println(primary.content());
+        System.out.println("================ END ================");
+        System.out.println("[wrote] " + outPath.toAbsolutePath());
+    }
+}
