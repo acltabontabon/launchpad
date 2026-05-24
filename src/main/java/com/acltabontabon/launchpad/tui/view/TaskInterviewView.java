@@ -196,6 +196,11 @@ public class TaskInterviewView implements View {
 
         if (state.taskThinking) {
             if (key.isKey(KeyCode.ESCAPE)) {
+                state.cancelRequested = true;
+                var fq = state.currentTaskQuestionFuture;
+                if (fq != null) fq.cancel(true);
+                var ff = state.currentTaskFinalizeFuture;
+                if (ff != null) ff.cancel(true);
                 state.resetTaskFlow();
                 state.currentScreen = AppState.Screen.WELCOME;
                 return true;
@@ -204,6 +209,11 @@ public class TaskInterviewView implements View {
         }
 
         if (key.isKey(KeyCode.ESCAPE)) {
+            state.cancelRequested = true;
+            var fq = state.currentTaskQuestionFuture;
+            if (fq != null) fq.cancel(true);
+            var ff = state.currentTaskFinalizeFuture;
+            if (ff != null) ff.cancel(true);
             state.resetTaskFlow();
             state.currentScreen = AppState.Screen.WELCOME;
             return true;

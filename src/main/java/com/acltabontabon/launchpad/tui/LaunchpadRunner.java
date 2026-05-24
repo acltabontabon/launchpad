@@ -39,12 +39,14 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PreDestroy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * The interactive TUI application runner.
@@ -83,6 +85,16 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final TaskAdvisorService taskAdvisor;
     private final StandardsLoader standardsLoader;
     private final LaunchpadSettings settings;
+
+    // Single pool for all background scan / task futures. Using a cached pool
+    // (unbounded, but tasks are short-lived and serialised in practice) so each
+    // submit returns a real Future we can cancel on ESC.
+    private final ExecutorService backgroundExecutor = Executors.newCachedThreadPool();
+
+    @PreDestroy
+    void shutdownExecutor() {
+        backgroundExecutor.shutdownNow();
+    }
 
     // Millisecond precision so two tasks created within the same second still
     // produce distinct filenames - per-second resolution caused later writes to
@@ -175,6 +187,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         // opened the palette by typing '/', q is a filter character (e.g. /quit).
         // TASK_INPUT / TASK_INTERVIEW accept text (description, answers); TASK_RESULT
         // uses q as "back to welcome" instead of quit so the user can start another task.
+        // During an active scan, the first q shows a confirmation banner; a second q quits.
         if (event instanceof KeyEvent key
                 && key.isChar('q')
                 && state.currentScreen != AppState.Screen.PROJECT_SELECT
@@ -184,6 +197,14 @@ public class LaunchpadRunner implements ApplicationRunner {
                 && state.currentScreen != AppState.Screen.TASK_RESULT
                 && !(state.currentScreen == AppState.Screen.WELCOME
                      && state.commandInput.startsWith("/"))) {
+            if (state.currentScreen == AppState.Screen.SCANNING && !state.scanComplete) {
+                if (state.quitConfirmPending) {
+                    runner.quit();
+                } else {
+                    state.quitConfirmPending = true;
+                }
+                return true;
+            }
             runner.quit();
             return true;
         }
@@ -223,7 +244,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         state.healthCheckRequested = false;
         state.ollamaStatus.set(LlmProviderStatus.checking());
 
-        CompletableFuture.runAsync(() -> state.ollamaStatus.set(healthChecker.check()));
+        backgroundExecutor.submit(() -> state.ollamaStatus.set(healthChecker.check()));
     }
 
     private void triggerRemoteStandardsCheckIfNeeded() {
@@ -231,7 +252,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         state.remoteStandardsCheckRequested = false;
         state.remoteStandardsStatus.set(RemoteStandardsStatus.checking());
 
-        CompletableFuture.runAsync(() ->
+        backgroundExecutor.submit(() ->
             state.remoteStandardsStatus.set(remoteStandardsChecker.check()));
     }
 
@@ -247,21 +268,26 @@ public class LaunchpadRunner implements ApplicationRunner {
         if (state.currentScreen != AppState.Screen.SCANNING || state.scanStarted) return;
         state.scanStarted = true;
 
-        CompletableFuture.runAsync(() -> {
+        var future = backgroundExecutor.submit(() -> {
             try {
                 // Phase 1 - file scan  (eases 5 -> 25 as scanner emits progress)
                 beginPhase(AppState.Phase.SCAN_FILES, 5, "Scanning project files...");
+                if (checkCancelled()) return;
                 var ctx = scanner.scan(state.projectPath, msg -> {
+                    if (state.cancelRequested) throw new CancelledException();
                     state.scanMessage.set(msg);
                     int n = state.streamedChunks.incrementAndGet();
                     int p = 5 + (int) (20 * (1 - Math.exp(-n / 30.0)));
                     state.scanProgress.set(Math.min(25, p));
                 });
 
+                if (checkCancelled()) return;
                 var projectRootForAudit = Path.of(state.projectPath).toAbsolutePath();
                 scanStore.save(projectRootForAudit, ctx);
                 registerProjectQuietly(projectRootForAudit, ctx.stack());
                 runAuditPhase(ctx, projectRootForAudit);
+
+                if (checkCancelled()) return;
 
                 if (state.taskFlow) {
                     // /new-task: scan-only. Stash the context and jump straight to the
@@ -282,8 +308,14 @@ public class LaunchpadRunner implements ApplicationRunner {
                 // Cursor rules) that lands in the project-notes companion.
                 beginPhase(AppState.Phase.GENERATE_TARGET, 30,
                     "Generating " + state.selectedTarget.displayName + " content...");
+                if (checkCancelled()) return;
                 var targetContent = generatorService.generateTargetSpecificContent(ctx, state.selectedTarget,
-                    chunk -> onAiChunk(chunk, 30, 85));
+                    chunk -> {
+                        if (state.cancelRequested) throw new CancelledException();
+                        onAiChunk(chunk, 30, 85);
+                    });
+
+                if (checkCancelled()) return;
 
                 // Surface only the user-actionable validation signals (empty/short
                 // output, hallucination strips). Internal retry detail is dropped -
@@ -295,6 +327,7 @@ public class LaunchpadRunner implements ApplicationRunner {
 
                 // Phase 4 - assemble files
                 beginPhase(AppState.Phase.ASSEMBLE, 90, "Assembling output files...");
+                if (checkCancelled()) return;
                 var files = templateEngine.buildFiles(ctx, state.selectedTarget, targetContent.content());
                 state.generatedFiles = files;
                 var projectRoot = java.nio.file.Path.of(state.projectPath).toAbsolutePath();
@@ -306,12 +339,23 @@ public class LaunchpadRunner implements ApplicationRunner {
                 beginPhase(AppState.Phase.DONE, 100, "Done! " + files.size() + " files generated.");
                 state.scanComplete = true;
 
+            } catch (CancelledException | java.util.concurrent.CancellationException ignored) {
+                // User-requested cancel - navigate back to Welcome cleanly.
+                state.resetScanFlow();
+                state.currentScreen = AppState.Screen.WELCOME;
             } catch (Exception e) {
+                // Unwrap CancelledException from IOException (Files.walkFileTree wraps it).
+                if (isCancelCause(e)) {
+                    state.resetScanFlow();
+                    state.currentScreen = AppState.Screen.WELCOME;
+                    return;
+                }
                 state.scanError = true;
                 state.scanMessage.set(buildLlmErrorMessage("generation", e));
                 state.scanComplete = true;
             }
         });
+        state.currentScanFuture = future;
     }
 
     // ── /new-task background dispatch ──────────────────────────────────────────
@@ -339,10 +383,11 @@ public class LaunchpadRunner implements ApplicationRunner {
         state.taskOpStartedAtMs = System.currentTimeMillis();
         state.taskStatus.set("asking the local model for the next clarifying question...");
 
-        CompletableFuture.runAsync(() -> {
+        var taskQFuture = backgroundExecutor.submit(() -> {
             try {
                 var projectRoot = Path.of(state.projectPath).toAbsolutePath();
                 ensureStandardsCached(projectRoot);
+                if (state.cancelRequested) return;
                 var rules = state.taskRelevantRules;
                 var skills = state.taskRelevantSkills;
                 var checklists = state.taskRelevantChecklists;
@@ -367,6 +412,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                     skills,
                     checklists
                 );
+                if (state.cancelRequested) return;
                 if (response.equals(TaskAdvisorService.DONE_TOKEN)
                         || response.contains(TaskAdvisorService.DONE_TOKEN)) {
                     state.taskReadyToFinalize = true;
@@ -376,6 +422,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                 }
                 state.taskStatus.set("");
             } catch (Exception e) {
+                if (state.cancelRequested) return;
                 state.taskError = true;
                 state.taskStatus.set(buildLlmErrorMessage("interview", e));
             } finally {
@@ -383,6 +430,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                 state.taskOpStartedAtMs = 0L;
             }
         });
+        state.currentTaskQuestionFuture = taskQFuture;
     }
 
     /**
@@ -426,10 +474,11 @@ public class LaunchpadRunner implements ApplicationRunner {
         state.taskOpStartedAtMs = System.currentTimeMillis();
         state.taskStatus.set("synthesising the prompt from the local model...");
 
-        CompletableFuture.runAsync(() -> {
+        var taskFFuture = backgroundExecutor.submit(() -> {
             try {
                 var projectRoot = Path.of(state.projectPath).toAbsolutePath();
                 ensureStandardsCached(projectRoot);
+                if (state.cancelRequested) return;
                 var result = taskAdvisor.synthesise(
                     state.taskProjectContext,
                     state.taskDescription,
@@ -437,8 +486,12 @@ public class LaunchpadRunner implements ApplicationRunner {
                     state.taskRelevantRules,
                     state.taskRelevantSkills,
                     state.taskRelevantChecklists,
-                    chunk -> state.taskFinalPrompt = chunk.isEmpty() ? "" : chunk
+                    chunk -> {
+                        if (state.cancelRequested) throw new CancelledException();
+                        state.taskFinalPrompt = chunk.isEmpty() ? "" : chunk;
+                    }
                 );
+                if (state.cancelRequested) return;
                 state.taskFinalPrompt = result.markdown();
                 state.taskWarnings = new java.util.ArrayList<>(result.warnings());
 
@@ -460,7 +513,10 @@ public class LaunchpadRunner implements ApplicationRunner {
                 } catch (Exception writeFail) {
                     state.taskStatus.set("displayed but could not save: " + writeFail.getMessage());
                 }
+            } catch (CancelledException | java.util.concurrent.CancellationException ignored) {
+                // User-requested cancel - the view already navigated to Welcome.
             } catch (Exception e) {
+                if (state.cancelRequested) return;
                 state.taskError = true;
                 state.taskStatus.set(buildLlmErrorMessage("synthesise", e));
                 // Clear any partial stream so the user sees the error instead of a half-prompt.
@@ -470,6 +526,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                 state.taskOpStartedAtMs = 0L;
             }
         });
+        state.currentTaskFinalizeFuture = taskFFuture;
     }
 
     /**
@@ -594,6 +651,29 @@ public class LaunchpadRunner implements ApplicationRunner {
             // The message surfaces in the next phase's status briefly.
             state.scanMessage.set("Audit skipped: " + e.getMessage());
         }
+    }
+
+    /**
+     * Checks the cancel flag. When set, resets scan state and routes back to Welcome.
+     * Returns true if the caller should stop processing immediately.
+     */
+    private boolean checkCancelled() {
+        if (!state.cancelRequested) return false;
+        state.resetScanFlow();
+        state.currentScreen = AppState.Screen.WELCOME;
+        return true;
+    }
+
+    /**
+     * Returns true when any cause in the exception chain is a {@link CancelledException}.
+     * Used to detect cancellation wrapped by {@code Files.walkFileTree}'s IOException.
+     */
+    private static boolean isCancelCause(Throwable e) {
+        for (var t = e; t != null; t = t.getCause()) {
+            if (t instanceof CancelledException) return true;
+            if (t == t.getCause()) return false;
+        }
+        return false;
     }
 
     private void beginPhase(AppState.Phase phase, int baseProgress, String message) {

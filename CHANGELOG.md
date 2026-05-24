@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- **ESC now cancels in-flight scan and task-interview phases and returns to Welcome.** Pressing ESC during the scanning screen interrupts the background thread (file walk and Ollama streaming), clears progress state, and navigates back to Welcome without requiring Ctrl+C. During the task-interview screen, ESC cancels any in-flight question or synthesis call. Pressing `q` mid-scan shows a confirmation banner ("press q again to quit / ESC to cancel") before quitting the process.
 ### Changed
 - **Cursor target now uses the deterministic skeleton + bounded synthesis path.** The primary `.cursorrules` (or adapter-driven `.mdc`) is assembled section-by-section from scanner facts and per-section LLM jobs with deterministic fallbacks, matching the path already used for the other supported tool target. Both targets now share one mental model.
 - **Scope narrowed to Spring Boot Java + Maven.** Unsupported projects are rejected at the entry point (TUI ProjectSelect and MCP `scan_project`) by a single shared `ProjectSupportDetector` before any scanner phase runs.

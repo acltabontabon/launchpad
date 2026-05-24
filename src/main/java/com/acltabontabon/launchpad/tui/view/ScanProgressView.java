@@ -50,6 +50,22 @@ public class ScanProgressView implements View {
         Stepper.render(frame, rows.get(1), state, tick / 3);
         renderProgressCard(frame, rows.get(3), state);
         renderPhasesCard(frame, rows.get(5), state);
+
+        if (state.quitConfirmPending) {
+            renderQuitConfirm(frame, area);
+        }
+    }
+
+    private void renderQuitConfirm(Frame frame, Rect area) {
+        var msg = "  Press q again to quit  |  ESC to cancel  ";
+        int bannerWidth = Math.min(msg.length() + 2, area.width());
+        int bannerX = area.x() + (area.width() - bannerWidth) / 2;
+        int bannerY = area.y() + area.height() / 2;
+        var bannerArea = new Rect(bannerX, bannerY, bannerWidth, 1);
+        var banner = Paragraph.builder()
+            .text(Text.from(Line.from(Span.styled(msg, Styles.error()))))
+            .build();
+        frame.renderWidget(banner, bannerArea);
     }
 
     private void renderProgressCard(Frame frame, Rect area, AppState state) {
@@ -209,16 +225,43 @@ public class ScanProgressView implements View {
         if (state.scanComplete && !state.scanError) {
             return List.of(
                 new KeyHint("enter", "review generated files"),
-                new KeyHint("esc", "cancel")
+                new KeyHint("esc", "back")
             );
         }
-        return List.of(new KeyHint("esc", "cancel"));
+        if (!state.scanComplete) {
+            return List.of(
+                new KeyHint("esc", "cancel"),
+                new KeyHint("q", "quit")
+            );
+        }
+        return List.of(new KeyHint("esc", "back"));
     }
 
     @Override
     public boolean handleEvent(Event event, TuiRunner runner, AppState state) {
-        if (event instanceof KeyEvent key && state.scanComplete && !state.scanError
-                && key.isKey(KeyCode.ENTER)) {
+        if (!(event instanceof KeyEvent key)) return false;
+
+        if (key.isKey(KeyCode.ESCAPE)) {
+            if (state.quitConfirmPending) {
+                // ESC dismisses the quit-confirm banner
+                state.quitConfirmPending = false;
+                return true;
+            }
+            if (state.scanComplete) {
+                // Scan finished (success or error) - ESC returns to Welcome
+                state.resetScanFlow();
+                state.currentScreen = AppState.Screen.WELCOME;
+                return true;
+            }
+            // Scan in flight - request cancel and interrupt the future
+            state.cancelRequested = true;
+            var f = state.currentScanFuture;
+            if (f != null) f.cancel(true);
+            state.scanMessage.set("Cancelling...");
+            return true;
+        }
+
+        if (state.scanComplete && !state.scanError && key.isKey(KeyCode.ENTER)) {
             state.currentScreen = AppState.Screen.REVIEW;
             return true;
         }
