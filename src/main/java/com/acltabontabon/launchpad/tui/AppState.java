@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -220,6 +221,22 @@ public class AppState {
     // as a banner so a malformed model output is visible to the user, not silent.
     public volatile List<String> taskWarnings = new ArrayList<>();
 
+    // Cancellation token. Set by ESC in scan/task views; checked at phase
+    // boundaries and in progress/chunk callbacks so the background thread
+    // exits cleanly without a full stack-trace error.
+    public volatile boolean cancelRequested = false;
+
+    // Handles to in-flight background futures. Views call f.cancel(true) on ESC
+    // so blocking I/O (Ollama HTTP) is interrupted promptly. Null when idle.
+    public volatile Future<?> currentScanFuture = null;
+    public volatile Future<?> currentTaskQuestionFuture = null;
+    public volatile Future<?> currentTaskFinalizeFuture = null;
+
+    // When true, ScanProgressView renders a "press q again to quit / ESC to cancel"
+    // confirmation banner. Set by the global q handler mid-scan; cleared by ESC or
+    // a second q.
+    public volatile boolean quitConfirmPending = false;
+
     // Scan-trigger latch consulted by LaunchpadRunner.triggerScanIfNeeded(). The
     // runner sets it true when a scan starts so subsequent ticks don't fire a
     // second one; flows that need a fresh scan (e.g. starting /init or /new-task
@@ -249,6 +266,23 @@ public class AppState {
         auditSarifPath = null;
     }
 
+    /**
+     * Clears cancellation state and the scan future after a cancel-to-Welcome
+     * transition. Resets the scan latch so the next pass through Scanning fires
+     * a fresh run.
+     */
+    public void resetScanFlow() {
+        cancelRequested = false;
+        quitConfirmPending = false;
+        currentScanFuture = null;
+        resetScanLatch();
+        generatedFiles = new ArrayList<>();
+        filePlans = new ArrayList<>();
+        generationWarnings = new ArrayList<>();
+        reviewShowDiff = false;
+        reviewFileIndex = 0;
+    }
+
     /** Clear all per-scan review state so leaving Review back to Welcome lets a
      *  follow-up scan start clean. Resets the scan latch too so the next pass
      *  through Scanning fires a fresh generation. */
@@ -262,6 +296,9 @@ public class AppState {
     }
 
     public void resetTaskFlow() {
+        cancelRequested = false;
+        currentTaskQuestionFuture = null;
+        currentTaskFinalizeFuture = null;
         taskFlow = false;
         taskProjectContext = null;
         taskDescription = "";
