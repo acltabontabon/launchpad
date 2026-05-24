@@ -64,3 +64,48 @@ jobs:
           gh release upload "${{ github.event.release.tag_name }}" \
             "launchpad-${{ matrix.platform-tag }}${{ matrix.binary-suffix }}" \
             --clobber
+
+  bump-version:
+    name: Bump pom.xml to next SNAPSHOT
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Compute next SNAPSHOT version
+        id: next
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          NEXT="${MAJOR}.$((MINOR + 1)).0-SNAPSHOT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Released: $VERSION  ->  Next: $NEXT"
+
+      - name: Bump pom.xml
+        run: ./mvnw versions:set -DnewVersion="${{ steps.next.outputs.next }}" -DgenerateBackupPoms=false -B
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet pom.xml; then
+            echo "pom.xml unchanged; nothing to commit."
+            exit 0
+          fi
+          git add pom.xml
+          git commit -m "Bump pom.xml to ${{ steps.next.outputs.next }} after ${{ github.event.release.tag_name }}"
+          git push origin main
