@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.acltabontabon.launchpad.config.ProjectRegistry;
+import com.acltabontabon.launchpad.scanner.PackageSummary;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.scanner.StackProfile;
 import com.acltabontabon.launchpad.standards.Adapter;
@@ -49,21 +50,48 @@ class ContextTemplateEngineTest {
         "plan", "Implementation Plan Request", "You are preparing an implementation plan.");
 
     @Test
-    void claudePrimaryFilePointsAtCompanionsInsteadOfInliningStandards() {
+    void claudePrimaryFileIsAssembledFromDeterministicSkeleton() {
         var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
             List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
             claudeAdapterIncluding("rules", "skills", "checklists", "prompts"));
 
+        // The Claude path ignores the legacy summary content entirely - the
+        // template engine assembles the file from scanner facts and
+        // synthesis fragments. Pass empty to confirm the path no longer
+        // depends on the mega-prompt's output.
         var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE,
-            "Summary text.", PROJECT_NOTES_BODY);
+            "", PROJECT_NOTES_BODY);
 
         var primary = contentAt(files, "CLAUDE.md");
-        assertThat(primary).contains("## Standards");
-        assertThat(primary).contains(".ai/engineering-rules.md");
-        assertThat(primary).contains(".ai/checklists.md");
-        assertThat(primary).contains(".ai/prompts.md");
-        assertThat(primary).contains(".ai/project-notes.md");
-        assertThat(primary).contains("/add-feature");
+
+        // Round-4 shape: title + tagline.
+        assertThat(primary).startsWith("<!-- launchpad:managed:start -->\n# CLAUDE.md");
+        assertThat(primary).doesNotContain("Launchpad prepares. Paid agents execute.");
+
+        // Every required heading is emitted by the template engine, in order.
+        // Round 9 removed `## How to work in this repo` (it just paraphrased
+        // the deterministic `## Commands` block below it).
+        int whatIdx = primary.indexOf("## What this project is");
+        int commandsIdx = primary.indexOf("## Commands");
+        int mapIdx = primary.indexOf("## Project map");
+        int genIdx = primary.indexOf("## Generated context");
+        int boundsIdx = primary.indexOf("## Boundaries for AI agents");
+        assertThat(whatIdx).isPositive();
+        assertThat(commandsIdx).isGreaterThan(whatIdx);
+        assertThat(mapIdx).isGreaterThan(commandsIdx);
+        assertThat(genIdx).isGreaterThan(mapIdx);
+        assertThat(boundsIdx).isGreaterThan(genIdx);
+        assertThat(primary).doesNotContain("## How to work in this repo");
+
+        // Commands block content comes from the deterministic renderer.
+        assertThat(primary).contains("./mvnw spring-boot:run");
+
+        // The previous mega-prompt sections never appear.
+        assertThat(primary).doesNotContain("## Project Overview");
+        assertThat(primary).doesNotContain("## Stack\n");
+        assertThat(primary).doesNotContain("## Workspace");
+        assertThat(primary).doesNotContain("## Standards\n");
+        assertThat(primary).doesNotContain("Cross-project MCP tools");
 
         // No standards body or project-notes body inlined in the primary file.
         assertThat(primary).doesNotContain(RULE_BODY_MARKER);
@@ -71,7 +99,7 @@ class ContextTemplateEngineTest {
         assertThat(primary).doesNotContain("## Project-Specific Notes");
         assertThat(primary).doesNotContain("Skill: add-rest-endpoint");
 
-        // Companion still carries the canonical content.
+        // Companion files still carry the canonical content.
         var rulesMd = contentAt(files, ".ai/engineering-rules.md");
         assertThat(rulesMd).contains(RULE_BODY_MARKER);
         var notesMd = contentAt(files, ".ai/project-notes.md");
@@ -79,6 +107,89 @@ class ContextTemplateEngineTest {
 
         // Per-skill file still emitted so /<skill-id> invocation works.
         assertThat(pathsOf(files)).contains(".claude/skills/add-feature/SKILL.md");
+    }
+
+    @Test
+    void claudePrimaryUsesReadmeIntroWhenPresent() {
+        var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
+            List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
+            claudeAdapterIncluding("rules", "skills", "checklists", "prompts"));
+
+        var ctx = contextWithReadmeIntro(
+            "A reproducible benchmark of Spring Boot 4 + Oracle GraalVM Native Image 25.");
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "", PROJECT_NOTES_BODY);
+        var primary = contentAt(files, "CLAUDE.md");
+
+        assertThat(primary).contains(
+            "A reproducible benchmark of Spring Boot 4 + Oracle GraalVM Native Image 25.");
+    }
+
+    @Test
+    void claudePrimaryOmitsGeneratedContextOnNakedProject() {
+        // No rules / no skills / no checklists / no prompts / no project notes
+        // => no companion files beyond `.ai/index.md` and `.ai/stack.md`.
+        // Those two ARE useful, so the section still renders pointing only at
+        // them. Run this assertion to lock in the "honest pointers" contract.
+        var engine = engineWith(List.of(), List.of(), List.of(), List.of(),
+            claudeAdapterIncluding("rules", "skills"));
+
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE, "", "");
+        var primary = contentAt(files, "CLAUDE.md");
+
+        // Section renders, but pointers are limited to what exists.
+        assertThat(primary).contains("## Generated context");
+        assertThat(primary).contains(".ai/index.md");
+        assertThat(primary).contains(".ai/stack.md");
+        // None of these companion files were emitted, so they must not appear
+        // as pointers in the primary file.
+        assertThat(primary).doesNotContain(".ai/engineering-rules.md");
+        assertThat(primary).doesNotContain(".ai/checklists.md");
+        assertThat(primary).doesNotContain(".ai/prompts.md");
+        assertThat(primary).doesNotContain(".ai/project-notes.md");
+        assertThat(primary).doesNotContain(".claude/skills/");
+    }
+
+    @Test
+    void claudePrimaryOmitsProjectMapWhenNoPackages() {
+        var engine = engineWith(List.of(), List.of(), List.of(), List.of(),
+            claudeAdapterIncluding("rules", "skills"));
+
+        var ctx = contextWithoutPackages();
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "", "");
+        var primary = contentAt(files, "CLAUDE.md");
+
+        assertThat(primary).doesNotContain("## Project map");
+    }
+
+    @Test
+    void claudePrimaryOmitsCommandsAndWorkflowWhenBuildToolUnknown() {
+        var engine = engineWith(List.of(), List.of(), List.of(), List.of(),
+            claudeAdapterIncluding("rules", "skills"));
+
+        var ctx = contextWithUnknownBuildTool();
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "", "");
+        var primary = contentAt(files, "CLAUDE.md");
+
+        assertThat(primary).doesNotContain("## Commands");
+        assertThat(primary).doesNotContain("## How to work in this repo");
+        // The naked file still survives - title + tagline + intro + boundaries.
+        assertThat(primary).contains("# CLAUDE.md");
+        assertThat(primary).contains("## Boundaries for AI agents");
+    }
+
+    @Test
+    void claudePrimaryFallsBackToDeterministicIntroWhenNoReadmeOrPom() {
+        var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
+            List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
+            claudeAdapterIncluding("rules", "skills", "checklists", "prompts"));
+
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE, "", PROJECT_NOTES_BODY);
+        var primary = contentAt(files, "CLAUDE.md");
+
+        // Without README intro, pom <description>, or a synthesizer, the
+        // deterministic fallback names the project + stack.
+        assertThat(primary).contains("`sample-project`");
+        assertThat(primary).contains("Spring Boot");
     }
 
     @Test
@@ -122,7 +233,7 @@ class ContextTemplateEngineTest {
         var registry = mock(ProjectRegistry.class);
         when(registry.all()).thenReturn(List.of());
 
-        return new ContextTemplateEngine(loader, registry);
+        return new ContextTemplateEngine(loader, registry, null);
     }
 
     private static Adapter claudeAdapterIncluding(String... includes) {
@@ -146,8 +257,45 @@ class ContextTemplateEngineTest {
             Map.of(),
             List.of(),
             Map.of(),
-            List.of(),
+            // Round-5 ## Project map is only emitted when packageSummaries
+            // is non-empty. Provide a representative entry so the happy-path
+            // assertions still exercise the section ordering.
+            List.of(new PackageSummary("src/main/java", 1, List.of("Foo"))),
             null);
+    }
+
+    private static ProjectContext contextWithoutPackages() {
+        var base = sampleContext();
+        return new ProjectContext(
+            base.name(), base.rootPath(), base.stack(),
+            base.sourceFiles(), base.testClassNames(),
+            base.entryPoints(), base.dependencies(),
+            base.fileSnippets(), List.of(),
+            base.existingContextSummary(), base.documentation(),
+            base.endpoints(), base.readmeIntro(), base.pomDescription(), base.mavenProfiles());
+    }
+
+    private static ProjectContext contextWithUnknownBuildTool() {
+        var base = sampleContext();
+        return new ProjectContext(
+            base.name(), base.rootPath(),
+            new StackProfile("Unknown", null, null, List.of()),
+            base.sourceFiles(), base.testClassNames(),
+            base.entryPoints(), base.dependencies(),
+            base.fileSnippets(), base.packageSummaries(),
+            base.existingContextSummary(), base.documentation(),
+            base.endpoints(), base.readmeIntro(), base.pomDescription(), base.mavenProfiles());
+    }
+
+    private static ProjectContext contextWithReadmeIntro(String intro) {
+        var base = sampleContext();
+        return new ProjectContext(
+            base.name(), base.rootPath(), base.stack(),
+            base.sourceFiles(), base.testClassNames(),
+            base.entryPoints(), base.dependencies(),
+            base.fileSnippets(), base.packageSummaries(),
+            base.existingContextSummary(), base.documentation(),
+            base.endpoints(), intro, base.pomDescription(), base.mavenProfiles());
     }
 
     private static String contentAt(List<GeneratedFile> files, String path) {

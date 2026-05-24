@@ -61,7 +61,7 @@ class GenerationEvalIT {
         assertThat(output.content())
             .as("summary length for %s", fixture.name())
             .hasSizeGreaterThan(200);
-        assertThat(output.content()).contains("## Overview");
+        assertThat(output.content()).contains("## What this project is");
         assertThat(output.content()).contains("## Architecture");
 
         for (var keyword : fixture.expectedSummaryKeywords()) {

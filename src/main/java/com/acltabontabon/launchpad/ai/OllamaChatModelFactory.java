@@ -14,9 +14,11 @@ import org.springframework.ai.ollama.api.OllamaChatOptions;
 final class OllamaChatModelFactory {
 
     private final HttpTimeouts http;
+    private final int numCtx;
 
     OllamaChatModelFactory(LaunchpadAiProperties properties) {
         this.http = new HttpTimeouts(properties);
+        this.numCtx = properties.ollama().numCtx();
     }
 
     OllamaChatModel build(Snapshot snap) {
@@ -25,7 +27,10 @@ final class OllamaChatModelFactory {
             .restClientBuilder(http.restClient())
             .webClientBuilder(http.webClient())
             .build();
-        var opts = OllamaChatOptions.builder().model(snap.model()).build();
+        var opts = OllamaChatOptions.builder()
+            .model(snap.model())
+            .numCtx(numCtx)
+            .build();
         return OllamaChatModel.builder()
             .ollamaApi(api)
             .defaultOptions(opts)

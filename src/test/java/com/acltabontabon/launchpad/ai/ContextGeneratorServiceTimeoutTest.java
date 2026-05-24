@@ -29,7 +29,7 @@ class ContextGeneratorServiceTimeoutTest {
 
     @Test
     void stalledStreamSurfacesTimeoutWithinBudget() {
-        var properties = new LaunchpadAiProperties(Duration.ofMillis(50), Duration.ofMillis(150));
+        var properties = LaunchpadAiProperties.ofTimeouts(Duration.ofMillis(50), Duration.ofMillis(150));
         var hangingModel = new HangingChatModel();
         var service = new ContextGeneratorService(
             ChatClient.builder(hangingModel),

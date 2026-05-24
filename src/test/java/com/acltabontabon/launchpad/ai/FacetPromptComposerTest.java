@@ -16,7 +16,7 @@ class FacetPromptComposerTest {
     void baseAloneIsReturnedWhenFacetsAreEmpty() {
         String result = composer.compose(PromptSelector.Kind.SUMMARY, "spring", List.of());
         assertThat(result).contains("PROJECT CONTEXT:");
-        assertThat(result).contains("## Overview");
+        assertThat(result).contains("## What this project is");
         assertThat(result).doesNotContain("Spring MVC is on the classpath");
     }
 

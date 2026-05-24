@@ -274,10 +274,19 @@ public class LaunchpadRunner implements ApplicationRunner {
                     return;
                 }
 
-                // Phase 2 - AI: project summary  (eases 30 -> 55 as tokens stream)
+                // Phase 2 - AI: project summary  (eases 30 -> 55 as tokens stream).
+                // CLAUDE.md now drives synthesis from inside the template engine
+                // (deterministic skeleton + per-section chunked synthesis), so we
+                // skip the legacy mega-prompt on that target. Cursor still uses
+                // the summary content until its primary-file path is redesigned.
                 beginPhase(AppState.Phase.GENERATE_SUMMARY, 30, "Generating project summary with local AI...");
-                var summary = generatorService.generateProjectSummary(ctx,
-                    chunk -> onAiChunk(chunk, 30, 55));
+                com.acltabontabon.launchpad.ai.GeneratedOutput summary;
+                if (state.selectedTarget == com.acltabontabon.launchpad.template.ContextTarget.CLAUDE) {
+                    summary = com.acltabontabon.launchpad.ai.GeneratedOutput.ok("", false);
+                } else {
+                    summary = generatorService.generateProjectSummary(ctx,
+                        chunk -> onAiChunk(chunk, 30, 55));
+                }
 
                 // Phase 3 - AI: target-specific content  (eases 60 -> 85)
                 beginPhase(AppState.Phase.GENERATE_TARGET, 60,

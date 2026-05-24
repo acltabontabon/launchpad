@@ -36,16 +36,24 @@ public class ProjectScanner {
         "pom.xml", "build.gradle", "build.gradle.kts", "package.json",
         "pyproject.toml", "requirements.txt", "Cargo.toml", "go.mod",
         "Gemfile", "tsconfig.json", "docker-compose.yml", "Dockerfile",
-        "databricks.yml"
+        "databricks.yml", "README.md",
+        // Spring app config - used by ActuatorDetector to read
+        // `management.endpoints.web.exposure.include` etc.
+        "application.properties", "application.yml", "application.yaml"
     );
 
-    // Files we show as excerpts in the prompt (subset of BUILD_FILE_NAMES;
-    // README adds free-form project description that helps the model).
-    private static final Set<String> SNIPPET_FILE_NAMES = Set.of(
-        "pom.xml", "package.json", "pyproject.toml", "Cargo.toml", "go.mod",
-        "Gemfile", "README.md", "docker-compose.yml", "Dockerfile",
-        "databricks.yml"
+    // Files we show as excerpts in the prompt. Split into two tiers: README
+    // and primary build files carry the bulk of "what is this project"
+    // signal, so they get ~200 lines; supporting infra files get 60.
+    private static final Set<String> SNIPPET_LONG_FILE_NAMES = Set.of(
+        "README.md", "pom.xml", "build.gradle", "build.gradle.kts",
+        "package.json", "pyproject.toml", "databricks.yml"
     );
+    private static final Set<String> SNIPPET_SHORT_FILE_NAMES = Set.of(
+        "Cargo.toml", "go.mod", "Gemfile", "docker-compose.yml", "Dockerfile"
+    );
+    private static final int SNIPPET_LONG_LINES = 200;
+    private static final int SNIPPET_SHORT_LINES = 60;
 
     // Documentation file extensions tracked into ScanSignals.docFiles. Kept
     // separate from isSourceFile() so doc files do not inflate source counts
@@ -156,8 +164,10 @@ public class ProjectScanner {
                     progressCallback.accept("Reading " + fileName + "...");
                     String full = readSafe(file);
                     fullBuildContent.put(relative, full);
-                    if (SNIPPET_FILE_NAMES.contains(fileName)) {
-                        snippets.put(relative, firstLines(full, 60));
+                    if (SNIPPET_LONG_FILE_NAMES.contains(fileName)) {
+                        snippets.put(relative, firstLines(full, SNIPPET_LONG_LINES));
+                    } else if (SNIPPET_SHORT_FILE_NAMES.contains(fileName)) {
+                        snippets.put(relative, firstLines(full, SNIPPET_SHORT_LINES));
                     }
                     if ("databricks.yml".equals(fileName)) {
                         signals.hasDatabricksYml = true;
@@ -238,12 +248,72 @@ public class ProjectScanner {
         var existingContext = readExistingContextSummary(root);
         var documentation = documentationDetector.detect(root, signals);
 
+        progressCallback.accept("Extracting HTTP routes...");
+        var endpointExtractor = new EndpointExtractor();
+        var endpoints = endpointExtractor.extract(root, sourceFiles);
+        var controllerSources = endpointExtractor.getControllerSources();
+
+        var readmeContent = fileContent(fullBuildContent, "README.md");
+        var readmeIntro = ReadmeIntroExtractor.extract(readmeContent);
+        var readmeSections = ReadmeSectionsExtractor.extract(readmeContent);
+
+        var pomContent = fileContent(fullBuildContent, "pom.xml");
+        var pomDescription = extractPomDescription(pomContent);
+        var profileExtract = MavenProfileExtractor.extractWithRaw(pomContent);
+
+        progressCallback.accept("Cataloging project scripts...");
+        var scriptsCatalog = ProjectScriptsProvider.catalog(root);
+
+        progressCallback.accept("Reading representative source per package...");
+        var packageRepresentatives = PackageRepresentativeSource.collect(root, packageSummaries, sourceFiles);
+
+        progressCallback.accept("Detecting Spring Actuator endpoints...");
+        var appConfigByPath = appConfigContents(fullBuildContent);
+        var actuator = ActuatorDetector.detect(dependencies, appConfigByPath, pomContent);
+
         return new ProjectContext(
             projectName, rootPath, stack,
             sourceFiles, testClassNames,
             entryPoints, dependencies, snippets, packageSummaries,
-            existingContext, documentation
+            existingContext, documentation,
+            endpoints, readmeIntro, pomDescription, profileExtract.profiles(),
+            controllerSources, profileExtract.rawBodies(), readmeSections,
+            scriptsCatalog, packageRepresentatives,
+            actuator.endpoints(), actuator.notes()
         );
+    }
+
+    private static Map<String, String> appConfigContents(Map<String, String> fullBuildContent) {
+        var out = new java.util.LinkedHashMap<String, String>();
+        for (var entry : fullBuildContent.entrySet()) {
+            var key = entry.getKey().toLowerCase();
+            if (key.endsWith("application.properties")
+                || key.endsWith("application.yml")
+                || key.endsWith("application.yaml")) {
+                out.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return out;
+    }
+
+    private static String fileContent(Map<String, String> fullBuildContent, String fileName) {
+        for (var entry : fullBuildContent.entrySet()) {
+            var key = entry.getKey();
+            // Match either the bare filename at root or a nested path ending with it.
+            var basename = key.substring(Math.max(
+                key.lastIndexOf('/') + 1, key.lastIndexOf('\\') + 1));
+            if (basename.equals(fileName)) return entry.getValue();
+        }
+        return "";
+    }
+
+    private static final java.util.regex.Pattern POM_DESCRIPTION = java.util.regex.Pattern.compile(
+        "<description>(.*?)</description>", java.util.regex.Pattern.DOTALL);
+
+    private static String extractPomDescription(String pomXml) {
+        if (pomXml == null || pomXml.isBlank()) return "";
+        var matcher = POM_DESCRIPTION.matcher(pomXml);
+        return matcher.find() ? matcher.group(1).strip() : "";
     }
 
     private static boolean hasDocExtension(String fileName) {

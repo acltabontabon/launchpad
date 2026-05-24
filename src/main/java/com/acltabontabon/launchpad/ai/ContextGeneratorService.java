@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ContextGeneratorService {
 
-    private static final List<String> SUMMARY_HEADINGS = List.of("## Overview", "## Architecture");
+    private static final List<String> SUMMARY_HEADINGS = List.of("## What this project is", "## Architecture");
     // Loose substring check: matches "## Skill: <name>" but also "## Skill <name>",
     // "## Skill\n", or any other variation where the model drops the colon. The
     // downstream ContextTemplateEngine handles further parsing.
@@ -45,13 +45,48 @@ public class ContextGeneratorService {
     private final ChatClient chatClient;
     private final PromptSelector promptSelector;
     private final OutputValidator validator = new OutputValidator();
+    private final SynthesisValidator synthesisValidator = new SynthesisValidator();
     private final Duration readTimeout;
+    private final LaunchpadAiProperties.Synthesis synthesis;
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ContextGeneratorService.class);
 
     public ContextGeneratorService(ChatClient.Builder builder, PromptSelector promptSelector,
         LaunchpadAiProperties aiProperties) {
         this.chatClient = builder.build();
         this.promptSelector = promptSelector;
         this.readTimeout = aiProperties.readTimeout();
+        this.synthesis = aiProperties.synthesis();
+    }
+
+    /**
+     * Runs one bounded synthesis job. Returns the deterministic fallback when
+     * synthesis is disabled, the prompt exceeds the input budget, the call
+     * fails, or the validator rejects the output. Never throws to the
+     * caller - the document the caller is assembling must remain renderable.
+     */
+    public String synthesize(SynthesisJob job) {
+        if (!synthesis.enabled()) {
+            log.debug("synthesis disabled, using fallback for {}", job.id());
+            return job.fallback().get();
+        }
+        if (job.promptTemplate().length() > job.maxInputChars()) {
+            log.debug("synthesis job {} prompt {} > max-input-chars {}, using fallback",
+                job.id(), job.promptTemplate().length(), job.maxInputChars());
+            return job.fallback().get();
+        }
+        String raw;
+        try {
+            raw = streamPlain(job.promptTemplate());
+        } catch (Exception e) {
+            log.debug("synthesis job {} failed: {}", job.id(), e.toString());
+            return job.fallback().get();
+        }
+        var reject = synthesisValidator.reject(raw, job.shape(), job.maxOutputChars(), job.allowedTokens());
+        if (reject != null) {
+            log.debug("synthesis job {} rejected: {}", job.id(), reject);
+            return job.fallback().get();
+        }
+        return raw.strip();
     }
 
     public GeneratedOutput generateProjectSummary(ProjectContext ctx, Consumer<String> onChunk) {
@@ -111,6 +146,23 @@ public class ContextGeneratorService {
         return userVisible.isEmpty()
             ? GeneratedOutput.ok(clean.content(), retried)
             : GeneratedOutput.withWarnings(clean.content(), userVisible, retried);
+    }
+
+    /**
+     * Streams a self-contained prompt (no grounding suffix, no `{context}`
+     * substitution). Used by {@link #synthesize(SynthesisJob)} where the
+     * prompt is already a complete, bounded user message.
+     */
+    private String streamPlain(String prompt) {
+        var sb = new StringBuilder();
+        chatClient.prompt()
+            .user(u -> u.text(prompt))
+            .stream()
+            .content()
+            .timeout(readTimeout)
+            .doOnNext(sb::append)
+            .blockLast();
+        return sb.toString();
     }
 
     private String streamPrompt(String template, ProjectContext ctx, Consumer<String> onChunk) {

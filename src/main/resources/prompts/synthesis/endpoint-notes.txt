@@ -1,0 +1,43 @@
+For each endpoint below, write ONE short note (max 120 chars) describing what it does.
+
+Output format: "METHOD /path => <note>", one per line.
+
+Rules:
+- One line PER ENDPOINT in the input. Do NOT invent endpoints.
+- The METHOD and /path on each line MUST be copied verbatim from the input.
+- Reference real types and classes from the controller source (e.g. `LoanApplication`).
+- For actuator endpoints, mention the project-specific behavior when evident
+  (e.g. `Returns build metadata from build-info.properties` if build-info is present),
+  else use the short generic description provided in the input.
+- Output empty (just "METHOD /path => ") when the endpoint is self-explanatory
+  (e.g. /actuator/health).
+- No headings. No bullets. No code fences. No commentary before or after the lines.
+
+GOOD:
+POST /loan-decision => Main workload - JSON `LoanApplication` body required
+GET /loan-decision => Benchmark shortcut - generates synthetic applicant server-side
+GET /hello => Sanity check
+GET /actuator/health =>
+GET /actuator/info => Returns build metadata from `build-info.properties`
+
+BAD:
+- POST /loan-decision: accepts a request   (wrong format - bullet shape)
+POST /loan-decision => Accepts a JSON body  (too generic, doesn't cite types)
+PATCH /unknown => some note                 (invented endpoint not in input)
+GET /hello => HelloController.hello         (bare handler reference - NOT a description)
+POST /loan-decision => LoanDecisionController.decide  (same problem - describe BEHAVIOR, not the handler)
+
+Each note must describe what the endpoint DOES, NOT name the handler method.
+The handler is already visible above (METHOD /path) - copying it adds nothing.
+
+Endpoints (one per line, "METHOD /path"):
+{endpoints}
+
+Controller sources (first ~120 lines each):
+{controllerSources}
+
+Project signals:
+- Spring Boot Actuator on classpath: {hasActuator}
+- `build-info` Maven goal configured: {hasBuildInfoGoal}
+- Suggested notes for actuator endpoints (use these unless evidence contradicts):
+{actuatorHints}

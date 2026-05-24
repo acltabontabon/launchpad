@@ -1,0 +1,22 @@
+Write ONE bullet PER LISTED PACKAGE for an AI coding agent.
+
+Rules:
+- Output ONLY bullets. Each bullet starts with "- " followed by plain prose.
+- Output EXACTLY as many bullets as there are packages in the evidence - no more, no fewer.
+- Each bullet's leading backticked token MUST be one of the packages in the evidence (verbatim).
+- Each bullet must reference at least one class/record name visible in the source snippet for THAT package.
+- DO NOT INVENT package names. If you see only `controller/` and `model/`, write only TWO bullets.
+- DO NOT pad with generic packages like `service/`, `domain/`, `util/`, `repository/`, `dto/`.
+- Do not wrap whole lines in backticks. Do not include another "- " inside the bullet body.
+- Max 130 words total.
+
+GOOD: "- `controller/` exposes `LoanDecisionController` (POST /loan-decision) and `HelloController`. Validation flows through the request body before dispatch."
+GOOD: "- `risk/` holds the `RiskModel` interface and three impls (`PrimeRiskModel`, `NearPrimeRiskModel`, `SubprimeRiskModel`) wired by `FeatureScorers` for polymorphic scoring."
+BAD:  "- `service/` orchestrates use cases."  (invented when no `service/` exists in evidence)
+BAD:  Writing 4 bullets when only 2 packages are listed in the evidence.
+
+Packages (one per line, "path -> sample symbols"):
+{packages}
+
+Representative source per package:
+{packageSources}
