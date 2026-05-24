@@ -1,12 +1,3 @@
-=== SUMMARY ===
-
-Spring WebFlux is on the classpath. In the "## Spring Specifics" section, include:
-- Web stack: spring-webflux (reactive, Netty)
-- Whether the project uses annotated controllers (@RestController + Mono/Flux returns) or functional routing (RouterFunction)
-- Whether reactive persistence (R2DBC, reactive Mongo) is paired with it
-
-In "## Gotchas", call out that blocking calls inside reactive pipelines (JDBC, file IO, Thread.sleep) will starve the event loop.
-
 === SKILLS ===
 
 Include a skill named "add-reactive-endpoint" that:

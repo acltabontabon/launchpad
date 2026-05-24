@@ -1,12 +1,3 @@
-=== SUMMARY ===
-
-spring-boot-starter-amqp (RabbitMQ) is on the classpath. In the "## Spring Specifics" section, include:
-- Messaging: RabbitMQ via Spring AMQP
-- Whether the project uses @RabbitListener consumers, RabbitTemplate producers, or both
-- Whether queue / exchange names are centralised in a typed config
-
-In "## Gotchas", call out: consumer error handling (RepublishMessageRecoverer, parking lot queue), and the difference between auto-ack and manual-ack delivery.
-
 === SKILLS ===
 
 Include a skill named "add-rabbit-consumer" that:

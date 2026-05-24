@@ -79,7 +79,7 @@ class Round4Verification {
         Mockito.when(registry.all()).thenReturn(java.util.List.of());
         var engine = new ContextTemplateEngine(loader, registry, generator);
 
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "", "");
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "");
         var primary = files.stream()
             .filter(f -> f.relativePath().equals("CLAUDE.md"))
             .findFirst()

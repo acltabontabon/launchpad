@@ -1,12 +1,3 @@
-=== SUMMARY ===
-
-GraalVM native-image tooling is configured (native-maven-plugin or native-gradle-plugin). In the "## Spring Specifics" section, include:
-- Native image: supported via GraalVM native-image
-- Whether the project uses Spring Boot's AOT processing (Spring Boot 3+)
-- Whether RuntimeHintsRegistrar implementations or @ImportRuntimeHints declarations appear in the source structure
-
-In "## Gotchas", call out: reflection / dynamic-proxy / resources / serialization paths need explicit hints; some libraries don't ship native hints and will fail only at run time inside the native binary; build times for native images are minutes-long.
-
 === SKILLS ===
 
 Include a skill named "add-runtime-hints" that:

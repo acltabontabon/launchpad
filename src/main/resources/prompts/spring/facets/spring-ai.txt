@@ -1,12 +1,3 @@
-=== SUMMARY ===
-
-Spring AI is on the classpath. In the "## Spring Specifics" section, include:
-- AI integration: Spring AI ChatClient
-- Which providers are wired (OpenAI, Anthropic, Ollama, Azure, Bedrock, ...) - infer from starters in the dependency list
-- Whether tool calling, function calling, or RAG (vector stores) appear to be in use
-
-In "## Gotchas", call out: model output must be validated before acting on it, provider switches go through configuration not code, and prompt strings should be built by a pure function so they're testable.
-
 === SKILLS ===
 
 Include a skill named "add-spring-ai-call" that:

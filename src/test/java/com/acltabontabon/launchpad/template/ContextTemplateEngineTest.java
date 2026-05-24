@@ -55,12 +55,10 @@ class ContextTemplateEngineTest {
             List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
             claudeAdapterIncluding("rules", "skills", "checklists", "prompts"));
 
-        // The Claude path ignores the legacy summary content entirely - the
-        // template engine assembles the file from scanner facts and
-        // synthesis fragments. Pass empty to confirm the path no longer
-        // depends on the mega-prompt's output.
+        // The Claude path assembles the file from scanner facts and synthesis
+        // fragments; only the per-target project-notes body is threaded through.
         var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE,
-            "", PROJECT_NOTES_BODY);
+            PROJECT_NOTES_BODY);
 
         var primary = contentAt(files, "CLAUDE.md");
 
@@ -117,7 +115,7 @@ class ContextTemplateEngineTest {
 
         var ctx = contextWithReadmeIntro(
             "A reproducible benchmark of Spring Boot 4 + Oracle GraalVM Native Image 25.");
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "", PROJECT_NOTES_BODY);
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, PROJECT_NOTES_BODY);
         var primary = contentAt(files, "CLAUDE.md");
 
         assertThat(primary).contains(
@@ -133,7 +131,7 @@ class ContextTemplateEngineTest {
         var engine = engineWith(List.of(), List.of(), List.of(), List.of(),
             claudeAdapterIncluding("rules", "skills"));
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE, "", "");
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE, "");
         var primary = contentAt(files, "CLAUDE.md");
 
         // Section renders, but pointers are limited to what exists.
@@ -155,7 +153,7 @@ class ContextTemplateEngineTest {
             claudeAdapterIncluding("rules", "skills"));
 
         var ctx = contextWithoutPackages();
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "", "");
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "");
         var primary = contentAt(files, "CLAUDE.md");
 
         assertThat(primary).doesNotContain("## Project map");
@@ -167,7 +165,7 @@ class ContextTemplateEngineTest {
             claudeAdapterIncluding("rules", "skills"));
 
         var ctx = contextWithUnknownBuildTool();
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "", "");
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "");
         var primary = contentAt(files, "CLAUDE.md");
 
         assertThat(primary).doesNotContain("## Commands");
@@ -183,7 +181,7 @@ class ContextTemplateEngineTest {
             List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
             claudeAdapterIncluding("rules", "skills", "checklists", "prompts"));
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE, "", PROJECT_NOTES_BODY);
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE, PROJECT_NOTES_BODY);
         var primary = contentAt(files, "CLAUDE.md");
 
         // Without README intro, pom <description>, or a synthesizer, the
@@ -199,7 +197,7 @@ class ContextTemplateEngineTest {
             cursorAdapterIncluding("rules", "skills", "checklists", "prompts"));
 
         var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR,
-            "Summary text.", PROJECT_NOTES_BODY);
+            PROJECT_NOTES_BODY);
 
         var primary = contentAt(files, ".cursor/rules/main.mdc");
         assertThat(primary).contains("## Standards");
@@ -217,6 +215,59 @@ class ContextTemplateEngineTest {
         assertThat(rulesMdc).contains(RULE_BODY_MARKER);
         var notesMdc = contentAt(files, ".cursor/rules/project-notes.mdc");
         assertThat(notesMdc).contains("Skill: add-rest-endpoint");
+    }
+
+    @Test
+    void cursorPrimaryFileUsesDeterministicSkeletonNotMegaPromptSummary() {
+        var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
+            List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
+            cursorAdapterIncluding("rules", "skills", "checklists", "prompts"));
+
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR,
+            PROJECT_NOTES_BODY);
+
+        var primary = contentAt(files, ".cursor/rules/main.mdc");
+
+        // Cursor primary now mirrors the Claude path: deterministic skeleton
+        // with section headings owned by Java. The legacy mega-prompt
+        // sections must not appear.
+        assertThat(primary).contains("description: Primary project rules");
+        assertThat(primary).contains("globs: **/*");
+        assertThat(primary).contains("# sample-project");
+        int whatIdx = primary.indexOf("## What this project is");
+        int commandsIdx = primary.indexOf("## Commands");
+        int boundsIdx = primary.indexOf("## Boundaries for AI agents");
+        assertThat(whatIdx).isPositive();
+        assertThat(commandsIdx).isGreaterThan(whatIdx);
+        assertThat(boundsIdx).isGreaterThan(commandsIdx);
+        assertThat(primary).contains("./mvnw spring-boot:run");
+
+        // Legacy mega-prompt sections must be absent.
+        assertThat(primary).doesNotContain("## Project Context");
+        assertThat(primary).doesNotContain("Cursor Rules - sample-project");
+    }
+
+    @Test
+    void cursorPrimaryFileFallsBackToCursorrulesWithoutAdapter() {
+        var loader = mock(StandardsLoader.class);
+        when(loader.loadRules(any())).thenReturn(List.of(SAMPLE_RULE));
+        when(loader.loadSkills(any())).thenReturn(List.of(SAMPLE_SKILL));
+        when(loader.loadChecklists(any())).thenReturn(List.of());
+        when(loader.loadPrompts(any())).thenReturn(List.of());
+        when(loader.loadAdapter(any(), any())).thenReturn(Optional.empty());
+        var registry = mock(ProjectRegistry.class);
+        when(registry.all()).thenReturn(List.of());
+        var engine = new ContextTemplateEngine(loader, registry, null);
+
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR, "");
+
+        // No adapter -> primary lands at the legacy `.cursorrules` path, but
+        // with the new deterministic shape (no frontmatter, same skeleton).
+        var primary = contentAt(files, ".cursorrules");
+        assertThat(primary).doesNotStartWith("---\n");
+        assertThat(primary).contains("# sample-project");
+        assertThat(primary).contains("## What this project is");
+        assertThat(primary).contains("## Boundaries for AI agents");
     }
 
     private static ContextTemplateEngine engineWith(

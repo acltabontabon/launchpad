@@ -19,8 +19,8 @@ import org.springframework.test.context.TestPropertySource;
  * Full-pipeline eval that hits a real local Ollama. Gated by the
  * "launchpad.eval" system property so it stays out of default test runs
  * (enabled via -Peval). For each fixture: runs the scanner, asks the LLM
- * for a summary, asserts the prompt-driven format markers are present and
- * substring keywords appear at least once.
+ * for the skills body, asserts the prompt-driven format markers are
+ * present and substring keywords appear at least once.
  */
 @SpringBootTest
 @TestPropertySource(properties = {
@@ -52,21 +52,20 @@ class GenerationEvalIT {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("fixtures")
-    void summaryContainsExpectedKeywords(ProjectFixture fixture) throws Exception {
+    void skillsContainExpectedKeywords(ProjectFixture fixture) throws Exception {
         var root = FixtureSupport.fixturePath(fixture.classpathDir());
         var ctx = ProjectScanner.forTesting().scan(root.toString(), msg -> { });
 
-        var output = generator.generateProjectSummary(ctx, chunk -> { });
+        var output = generator.generateSkills(ctx, chunk -> { });
 
         assertThat(output.content())
-            .as("summary length for %s", fixture.name())
-            .hasSizeGreaterThan(200);
-        assertThat(output.content()).contains("## What this project is");
-        assertThat(output.content()).contains("## Architecture");
+            .as("skills length for %s", fixture.name())
+            .hasSizeGreaterThan(100);
+        assertThat(output.content()).contains("## Skill");
 
         for (var keyword : fixture.expectedSummaryKeywords()) {
             assertThat(output.content().toLowerCase())
-                .as("expected keyword %s present in %s summary", keyword, fixture.name())
+                .as("expected keyword %s present in %s skills body", keyword, fixture.name())
                 .contains(keyword.toLowerCase());
         }
     }

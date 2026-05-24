@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class ContextGeneratorService {
 
-    private static final List<String> SUMMARY_HEADINGS = List.of("## What this project is", "## Architecture");
     // Loose substring check: matches "## Skill: <name>" but also "## Skill <name>",
     // "## Skill\n", or any other variation where the model drops the colon. The
     // downstream ContextTemplateEngine handles further parsing.
@@ -87,11 +86,6 @@ public class ContextGeneratorService {
             return job.fallback().get();
         }
         return raw.strip();
-    }
-
-    public GeneratedOutput generateProjectSummary(ProjectContext ctx, Consumer<String> onChunk) {
-        var template = promptSelector.load(PromptSelector.Kind.SUMMARY, ctx.stack());
-        return runWithValidation(template, ctx, SUMMARY_HEADINGS, onChunk);
     }
 
     public GeneratedOutput generateSkills(ProjectContext ctx, Consumer<String> onChunk) {

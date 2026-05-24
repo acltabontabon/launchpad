@@ -1,12 +1,3 @@
-=== SUMMARY ===
-
-Spring Cloud is on the classpath. In the "## Spring Specifics" section, include:
-- Cloud integration: Spring Cloud
-- Which Cloud starters are wired (Config, Gateway, OpenFeign, Stream, Sleuth/Micrometer Tracing, ...) - infer from dependencies
-- Whether the app expects a Config Server or service registry at runtime
-
-In "## Gotchas", call out: Cloud Config can change behaviour at runtime via refresh scope; missing/unreachable Config Server can cause startup failures.
-
 === SKILLS ===
 
 Include a skill named "add-cloud-config-property" that names:

@@ -1,11 +1,3 @@
-=== SUMMARY ===
-
-Spring MVC is on the classpath. In the "## Spring Specifics" section, include:
-- Web stack: spring-web (Servlet/MVC)
-- Whether @RestController or @Controller predominates
-- Whether @ControllerAdvice is used for exception handling
-- Whether RFC 7807 ProblemDetail is in use (Spring 6+)
-
 === SKILLS ===
 
 Include a skill named "add-rest-endpoint" that:

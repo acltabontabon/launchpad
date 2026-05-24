@@ -19,7 +19,6 @@ import org.springframework.stereotype.Component;
  * <pre>
  *   prompts/&lt;framework&gt;/
  *     base/
- *       summary.txt   (always included)
  *       skills.txt
  *       rules.txt
  *     facets/
@@ -28,9 +27,9 @@ import org.springframework.stereotype.Component;
  * <p>
  * Base templates end with a {@code PROJECT CONTEXT:} line; the composer
  * inserts enabled facet sections immediately before that line. Each facet file
- * carries three delimited sections (<code>=== SUMMARY ===</code>,
- * <code>=== SKILLS ===</code>, <code>=== RULES ===</code>); only the section
- * matching the requested kind is pulled.
+ * carries two delimited sections (<code>=== SKILLS ===</code>,
+ * <code>=== RULES ===</code>); only the section matching the requested kind
+ * is pulled.
  * <p>
  * Adding a new framework requires no Java change in this class: drop a new
  * {@code prompts/&lt;framework&gt;/base+facets/} tree, add a profile record
@@ -88,7 +87,6 @@ public class FacetPromptComposer {
 
     private static String kindFilename(PromptSelector.Kind kind) {
         return switch (kind) {
-            case SUMMARY -> "summary.txt";
             case SKILLS -> "skills.txt";
             case RULES -> "rules.txt";
             default -> throw new IllegalArgumentException("Composer does not handle kind: " + kind);
@@ -97,7 +95,6 @@ public class FacetPromptComposer {
 
     private static String kindMarker(PromptSelector.Kind kind) {
         return switch (kind) {
-            case SUMMARY -> "SUMMARY";
             case SKILLS -> "SKILLS";
             case RULES -> "RULES";
             default -> throw new IllegalArgumentException("Composer does not handle kind: " + kind);

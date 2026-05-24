@@ -1,12 +1,3 @@
-=== SUMMARY ===
-
-Spring Security is on the classpath. In the "## Spring Specifics" section, include:
-- Security: Spring Security
-- Auth model: form login, basic auth, OAuth2 resource server, OAuth2 client - infer from dependencies and config classes
-- Where the SecurityFilterChain @Bean is defined (the class name from the context)
-
-In "## Gotchas", call out: a missing SecurityFilterChain bean falls back to Spring Security's defaults (which lock everything down), and method-level @PreAuthorize requires @EnableMethodSecurity.
-
 === SKILLS ===
 
 Include a skill named "add-secured-endpoint" that:

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
+- **Cursor target now uses the deterministic skeleton + bounded synthesis path.** The primary `.cursorrules` (or adapter-driven `.mdc`) is assembled section-by-section from scanner facts and per-section LLM jobs with deterministic fallbacks, matching the path already used for the other supported tool target. Both targets now share one mental model.
 - **Scope narrowed to Spring Boot Java + Maven.** Unsupported projects are rejected at the entry point (TUI ProjectSelect and MCP `scan_project`) by a single shared `ProjectSupportDetector` before any scanner phase runs.
 - **Deterministic-first detection.** Project support is decided from a structured Maven model parse (parent, dependencies, plugins) via the new shared `MavenModelParser`; fuzzy text matches over raw pom.xml are gone.
 - **Downstream phases trust the gate.** Scanner, prompt selector, and audit code no longer carry defensive non-Spring branching.
@@ -15,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP doc tools updated.** `list_documentation`, `find_documentation`, and `get_documentation` now expose the new shape - pages include a `purpose` field and `list_documentation` accepts an optional `purpose` filter so clients can ask "show me the setup docs" without scanning every page. The legacy `format` / `siteName` / `docsDir` keys are gone.
 - **Scanner skip list extended.** Build / generated / vendor / cache directories (`node_modules`, `.venv`, `vendor`, `_site`, `generated-sources`, `.next`, `.nuxt`, `.cache`, `dist`, `bin`, `.mvn`, ...) are excluded from the file walk so generated `README.md`s never leak into the doc index.
 ### Removed
+- **Legacy mega-prompt summary pipeline.** Deleted `generateProjectSummary`, the `SUMMARY` prompt kind, `prompts/spring/base/summary.txt`, and the `=== SUMMARY ===` blocks across every Spring facet. The corresponding `GENERATE_SUMMARY` progress phase is gone from the TUI flow.
 - Detection and prompt support for Databricks, Kotlin, Gradle, Node, Python, Rust, Go, Ruby.
 - Generic fallback prompt templates (`prompts/{summary,skills,rules}/generic.txt`) and the entire `prompts/databricks/` tree - a missing Spring template now fails loudly rather than degrading to low-signal output.
 - Standalone documentation fixtures (`mkdocs-sample`, `asciidoc-sample`); doc-detection coverage now lives inline in the `spring-boot` Spring fixture.

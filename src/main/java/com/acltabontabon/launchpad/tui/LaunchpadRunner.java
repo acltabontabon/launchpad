@@ -274,38 +274,28 @@ public class LaunchpadRunner implements ApplicationRunner {
                     return;
                 }
 
-                // Phase 2 - AI: project summary  (eases 30 -> 55 as tokens stream).
-                // CLAUDE.md now drives synthesis from inside the template engine
-                // (deterministic skeleton + per-section chunked synthesis), so we
-                // skip the legacy mega-prompt on that target. Cursor still uses
-                // the summary content until its primary-file path is redesigned.
-                beginPhase(AppState.Phase.GENERATE_SUMMARY, 30, "Generating project summary with local AI...");
-                com.acltabontabon.launchpad.ai.GeneratedOutput summary;
-                if (state.selectedTarget == com.acltabontabon.launchpad.template.ContextTarget.CLAUDE) {
-                    summary = com.acltabontabon.launchpad.ai.GeneratedOutput.ok("", false);
-                } else {
-                    summary = generatorService.generateProjectSummary(ctx,
-                        chunk -> onAiChunk(chunk, 30, 55));
-                }
-
-                // Phase 3 - AI: target-specific content  (eases 60 -> 85)
-                beginPhase(AppState.Phase.GENERATE_TARGET, 60,
+                // Phase 2 - AI: target-specific content (eases 30 -> 85). Both
+                // targets now drive synthesis from inside the template engine
+                // (deterministic skeleton + per-section chunked synthesis); the
+                // single legacy mega-prompt for the primary file is gone. This
+                // call still generates the per-target body (Claude skills /
+                // Cursor rules) that lands in the project-notes companion.
+                beginPhase(AppState.Phase.GENERATE_TARGET, 30,
                     "Generating " + state.selectedTarget.displayName + " content...");
                 var targetContent = generatorService.generateTargetSpecificContent(ctx, state.selectedTarget,
-                    chunk -> onAiChunk(chunk, 60, 85));
+                    chunk -> onAiChunk(chunk, 30, 85));
 
                 // Surface only the user-actionable validation signals (empty/short
                 // output, hallucination strips). Internal retry detail is dropped -
                 // the retry already produced the winning output, and "we retried"
                 // isn't something the user can act on.
                 var warnings = new java.util.ArrayList<String>();
-                summary.warnings().forEach(w -> warnings.add("summary: " + w));
                 targetContent.warnings().forEach(w -> warnings.add(state.selectedTarget.displayName.toLowerCase() + ": " + w));
                 state.generationWarnings = warnings;
 
                 // Phase 4 - assemble files
                 beginPhase(AppState.Phase.ASSEMBLE, 90, "Assembling output files...");
-                var files = templateEngine.buildFiles(ctx, state.selectedTarget, summary.content(), targetContent.content());
+                var files = templateEngine.buildFiles(ctx, state.selectedTarget, targetContent.content());
                 state.generatedFiles = files;
                 var projectRoot = java.nio.file.Path.of(state.projectPath).toAbsolutePath();
                 var plans = new java.util.ArrayList<com.acltabontabon.launchpad.template.FilePlan>();
