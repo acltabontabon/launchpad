@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.acltabontabon.launchpad.config.ProjectRegistry;
 import com.acltabontabon.launchpad.scanner.PackageSummary;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.scanner.StackProfile;
@@ -17,6 +16,11 @@ import com.acltabontabon.launchpad.standards.Prompt;
 import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
+import com.acltabontabon.launchpad.template.AdapterResolver;
+import com.acltabontabon.launchpad.template.ClaudePrimaryFileBuilder;
+import com.acltabontabon.launchpad.template.CursorPrimaryFileBuilder;
+import com.acltabontabon.launchpad.template.companion.CompanionFileBuilder;
+import com.acltabontabon.launchpad.template.synthesis.SectionSynthesizer;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -255,9 +259,7 @@ class ContextTemplateEngineTest {
         when(loader.loadChecklists(any())).thenReturn(List.of());
         when(loader.loadPrompts(any())).thenReturn(List.of());
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.empty());
-        var registry = mock(ProjectRegistry.class);
-        when(registry.all()).thenReturn(List.of());
-        var engine = new ContextTemplateEngine(loader, registry, null);
+        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(null), new CompanionFileBuilder(), List.of(new ClaudePrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
 
         var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR, "");
 
@@ -281,10 +283,7 @@ class ContextTemplateEngineTest {
         when(loader.loadPrompts(any())).thenReturn(prompts);
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.of(adapter));
 
-        var registry = mock(ProjectRegistry.class);
-        when(registry.all()).thenReturn(List.of());
-
-        return new ContextTemplateEngine(loader, registry, null);
+        return new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(null), new CompanionFileBuilder(), List.of(new ClaudePrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
     }
 
     private static Adapter claudeAdapterIncluding(String... includes) {
