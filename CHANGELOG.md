@@ -6,24 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Fixed
-- **ESC now cancels in-flight scan and task-interview phases and returns to Welcome.** Pressing ESC during the scanning screen interrupts the background thread (file walk and Ollama streaming), clears progress state, and navigates back to Welcome without requiring Ctrl+C. During the task-interview screen, ESC cancels any in-flight question or synthesis call. Pressing `q` mid-scan shows a confirmation banner ("press q again to quit / ESC to cancel") before quitting the process.
+
+
+## [0.4.0] - 2026-05-25
 ### Changed
-- **Cursor target now uses the deterministic skeleton + bounded synthesis path.** The primary `.cursorrules` (or adapter-driven `.mdc`) is assembled section-by-section from scanner facts and per-section LLM jobs with deterministic fallbacks, matching the path already used for the other supported tool target. Both targets now share one mental model.
-- **Scope narrowed to Spring Boot Java + Maven.** Unsupported projects are rejected at the entry point (TUI ProjectSelect and MCP `scan_project`) by a single shared `ProjectSupportDetector` before any scanner phase runs.
-- **Deterministic-first detection.** Project support is decided from a structured Maven model parse (parent, dependencies, plugins) via the new shared `MavenModelParser`; fuzzy text matches over raw pom.xml are gone.
-- **Downstream phases trust the gate.** Scanner, prompt selector, and audit code no longer carry defensive non-Spring branching.
-- **Documentation discovery scoped to Markdown + AsciiDoc.** Only `.md`, `.markdown`, `.adoc`, and `.asciidoc` files are surfaced; `.rst` and other formats are out of scope for the early version. The doc index is now a flat ordered page list - the MkDocs / Antora / Plain mode machinery is gone.
-- **Every doc page carries a purpose tag.** Pages are classified deterministically by filename and path (`overview`, `setup`, `architecture`, `api`, `operations`, `contribution`, `changelog`, `unknown`). An opt-in local-AI fallback (`launchpad.scan.doc-ai-classify`, default `false`) can promote `unknown` pages by asking the local model; the default scan path stays fully offline.
-- **MCP doc tools updated.** `list_documentation`, `find_documentation`, and `get_documentation` now expose the new shape - pages include a `purpose` field and `list_documentation` accepts an optional `purpose` filter so clients can ask "show me the setup docs" without scanning every page. The legacy `format` / `siteName` / `docsDir` keys are gone.
-- **Scanner skip list extended.** Build / generated / vendor / cache directories (`node_modules`, `.venv`, `vendor`, `_site`, `generated-sources`, `.next`, `.nuxt`, `.cache`, `dist`, `bin`, `.mvn`, ...) are excluded from the file walk so generated `README.md`s never leak into the doc index.
+- **Modular context engine:** Refactored `ContextTemplateEngine` into focused collaborators for better maintainability and synthesis validation.
+- **Unified generation path:** Both Claude and Cursor targets now share a deterministic skeleton and bounded LLM synthesis logic.
+- **Strict project validation:** Narrowed scope to Spring Boot Java + Maven projects, rejected at entry point by a shared detector.
+- **Deterministic discovery:** Replaced fuzzy parsing with structured Maven model analysis and deterministic file classification.
+- **Streamlined documentation:** Scoped discovery to Markdown and AsciiDoc with purpose-based tagging (setup, architecture, etc.).
+- **Enhanced scanner efficiency:** Extended skip lists for build/vendor directories and optimized file walking.
+- **Improved MCP tools:** Documentation tools now support purpose-based filtering and structured metadata.
+### Fixed
+- **Improved TUI responsiveness:** `ESC` now cancels in-flight scans and interviews, and `q` requires confirmation before quitting during active operations.
 ### Removed
-- **MCP `get_file` and `list_files` tools.** Their scope (generic file reads, glob listings) belongs to the official `mcp-server-filesystem`. Launchpad's MCP surface is now scoped strictly to project intelligence: scan results, standards, audit findings, and the detected documentation index. MCP clients that previously relied on these tools should add `mcp-server-filesystem` alongside `launchpad` in their MCP config.
-- **Legacy mega-prompt summary pipeline.** Deleted `generateProjectSummary`, the `SUMMARY` prompt kind, `prompts/spring/base/summary.txt`, and the `=== SUMMARY ===` blocks across every Spring facet. The corresponding `GENERATE_SUMMARY` progress phase is gone from the TUI flow.
-- Detection and prompt support for Databricks, Kotlin, Gradle, Node, Python, Rust, Go, Ruby.
-- Generic fallback prompt templates (`prompts/{summary,skills,rules}/generic.txt`) and the entire `prompts/databricks/` tree - a missing Spring template now fails loudly rather than degrading to low-signal output.
-- Standalone documentation fixtures (`mkdocs-sample`, `asciidoc-sample`); doc-detection coverage now lives inline in the `spring-boot` Spring fixture.
-- `MkdocsConfigParser` and `AntoraConfigParser` (and the corresponding fixture `mkdocs.yml`); site-generator config files are no longer inspected by the doc detector.
+- **Generic MCP tools:** Removed `get_file` and `list_files` in favor of standard `mcp-server-filesystem`.
+- **Legacy pipelines:** Retired the single-pass mega-prompt summary and unsupported non-Spring framework detectors.
+- **Obsolete parsers:** Removed site-generator config parsers (MkDocs/Antora) in favor of direct file inspection.
 
 ## [0.3.0] - 2026-05-24
 ### Added
