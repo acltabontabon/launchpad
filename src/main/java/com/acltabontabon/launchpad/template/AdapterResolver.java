@@ -26,23 +26,31 @@ public class AdapterResolver {
     }
 
     public ResolvedAdapter resolve(Path projectRoot) {
-        var adapter = loadAdapterWithLegacyAlias(projectRoot);
+        var resolved = loadAdapterWithLegacyAlias(projectRoot);
+        var adapter = resolved.adapter;
         var primaryOutput = adapter.flatMap(AdapterResolver::firstOutput);
-        var primaryPath = primaryOutput.map(AdapterOutput::path).orElse(DEFAULT_PRIMARY_PATH);
+        var declaredPath = primaryOutput.map(AdapterOutput::path).orElse(DEFAULT_PRIMARY_PATH);
+        // Legacy 'claude' adapters declare path: CLAUDE.md. When that adapter
+        // is alias-loaded, ignore the declared path - the whole point of the
+        // alias is to migrate to the vendor-neutral AGENTS.md. The adapter's
+        // includes and frontmatter still apply.
+        var primaryPath = resolved.legacy ? DEFAULT_PRIMARY_PATH : declaredPath;
         var frontmatter = primaryOutput.map(AdapterOutput::frontmatter).orElse(Map.of());
         return new ResolvedAdapter(adapter, primaryOutput, primaryPath,
             frontmatter != null ? frontmatter : Map.of());
     }
 
-    private Optional<Adapter> loadAdapterWithLegacyAlias(Path projectRoot) {
+    private LoadResult loadAdapterWithLegacyAlias(Path projectRoot) {
         var found = standardsLoader.loadAdapter(projectRoot, CANONICAL_ID);
-        if (found.isPresent()) return found;
+        if (found.isPresent()) return new LoadResult(found, false);
 
         var legacyClaude = standardsLoader.loadAdapter(projectRoot, LEGACY_CLAUDE_ID);
         if (legacyClaude.isPresent()) {
-            log.warn("Legacy adapter id 'claude' detected. Treating as 'agents'. "
-                + "Please rename the adapter id to 'agents' in standards-pack.yml.");
-            return legacyClaude;
+            log.warn("Legacy adapter id 'claude' detected. Treating as 'agents' "
+                + "(primary file lands at AGENTS.md regardless of the adapter's declared path). "
+                + "Please rename the adapter id to 'agents' in standards-pack.yml and update "
+                + "its path to AGENTS.md to silence this warning.");
+            return new LoadResult(legacyClaude, true);
         }
 
         var legacyCursor = standardsLoader.loadAdapter(projectRoot, LEGACY_CURSOR_ID);
@@ -53,8 +61,11 @@ public class AdapterResolver {
                 + "to 'agents' if you want it to drive the primary file.");
         }
 
-        return Optional.empty();
+        return new LoadResult(Optional.empty(), false);
     }
+
+    /** Internal result tracking whether the adapter came from a legacy alias. */
+    private record LoadResult(Optional<Adapter> adapter, boolean legacy) {}
 
     private static Optional<AdapterOutput> firstOutput(Adapter a) {
         return a.outputs() == null || a.outputs().isEmpty()

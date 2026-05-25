@@ -31,17 +31,24 @@ class AdapterResolverLegacyAliasTest {
     }
 
     @Test
-    void legacyClaudeAdapterIsAcceptedWhenAgentsMissing() {
+    void legacyClaudeAdapterIsAcceptedButPathIsForcedToAgentsMd() {
+        // The whole point of the legacy alias is migration: even if the
+        // legacy adapter declares path: CLAUDE.md (or anything else), the
+        // primary file lands at AGENTS.md. Adapter content (includes,
+        // frontmatter) still flows through.
         var loader = mock(StandardsLoader.class);
         var legacy = new Adapter("claude", "claude", "Legacy adapter",
-            List.of(new AdapterOutput("CUSTOM-LEGACY.md", "markdown", List.of("rules"), Map.of())));
+            List.of(new AdapterOutput("CLAUDE.md", "markdown", List.of("rules"),
+                Map.of("description", "Project rules"))));
         when(loader.loadAdapter(any(), eq("agents"))).thenReturn(Optional.empty());
         when(loader.loadAdapter(any(), eq("claude"))).thenReturn(Optional.of(legacy));
 
         var resolved = new AdapterResolver(loader).resolve(Path.of("/tmp/x"));
 
-        assertThat(resolved.primaryPath()).isEqualTo("CUSTOM-LEGACY.md");
+        assertThat(resolved.primaryPath()).isEqualTo("AGENTS.md");
         assertThat(resolved.adapter()).isPresent();
+        // Frontmatter from the legacy adapter is still honored.
+        assertThat(resolved.frontmatter()).containsEntry("description", "Project rules");
     }
 
     @Test

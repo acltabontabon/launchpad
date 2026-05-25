@@ -56,7 +56,7 @@ class ContextTemplateEngineTest {
         var primary = contentAt(files, "AGENTS.md");
 
         // Round-4 shape: title + tagline.
-        assertThat(primary).startsWith("<!-- launchpad:managed:start -->\n# AGENTS.md");
+        assertThat(primary).startsWith("<!-- launchpad:managed:start -->\n# sample-project");
         assertThat(primary).doesNotContain("Launchpad prepares. Paid agents execute.");
 
         // Every required heading is emitted by the template engine, in order.
@@ -155,7 +155,7 @@ class ContextTemplateEngineTest {
         assertThat(primary).doesNotContain("## Commands");
         assertThat(primary).doesNotContain("## How to work in this repo");
         // The naked file still survives - title + tagline + intro + boundaries.
-        assertThat(primary).contains("# AGENTS.md");
+        assertThat(primary).contains("# sample-project");
         assertThat(primary).contains("## Boundaries for AI agents");
     }
 
@@ -190,7 +190,7 @@ class ContextTemplateEngineTest {
         var files = engine.buildFiles(sampleContext());
 
         var primary = contentAt(files, "AGENTS.md");
-        assertThat(primary).contains("# AGENTS.md");
+        assertThat(primary).contains("# sample-project");
         assertThat(primary).contains("## What this project is");
         assertThat(primary).contains("## Boundaries for AI agents");
     }

@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation alignment:** Architecture diagrams, USAGE walkthrough, MCP tool descriptions, and inline code comments now describe the single vendor-neutral output set and the new TUI flow.
 
 ### Fixed
+- **Legacy `claude` adapter path is overridden to AGENTS.md.** When a `standards-pack.yml` still ships a `claude` adapter declaring `path: CLAUDE.md`, the deprecation alias now forces the primary file to land at `AGENTS.md`, matching what "treating as agents" actually means. The adapter's `includes` and frontmatter still apply.
+- **Primary file H1 is now the project name.** Previously the body title was hardcoded to "AGENTS.md", which mismatched the filename when a legacy adapter pointed elsewhere. The H1 now reads the project name and the filename is purely metadata.
 - **Dynamic versioning:** Header version badge now syncs automatically with Maven `pom.xml`.
 - **JDK 25 compatibility:** Resolved native-access warnings when running via `spring-boot:run`.
 - **Shutdown reliability:** Background processes now use daemon threads to ensure clean JVM exit after quitting.

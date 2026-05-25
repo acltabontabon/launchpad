@@ -20,7 +20,10 @@ class AgentsPrimaryFileBuilder implements PrimaryFileBuilder {
                         AdapterResolver.ResolvedAdapter resolved,
                         SynthesisOutputs synthesis, Set<String> companionPaths) {
         var sb = new StringBuilder();
-        sb.append("# AGENTS.md\n\n");
+        // H1 is the project name. The filename is metadata - the body reads
+        // about the project, not about itself.
+        var title = ctx.name() == null || ctx.name().isBlank() ? "Project" : ctx.name();
+        sb.append("# ").append(title).append("\n\n");
 
         for (var section : plan.sections()) {
             switch (section) {
