@@ -65,7 +65,7 @@ public class ScanProgressView implements View {
     }
 
     private void renderQuitConfirm(Frame frame, Rect area) {
-        var msg = "  Press q again to quit  |  ESC to cancel  ";
+        var msg = "  Press Ctrl-C or q again to exit  |  ESC to cancel  ";
         int bannerWidth = Math.min(msg.length() + 2, area.width());
         int bannerX = area.x() + (area.width() - bannerWidth) / 2;
         int bannerY = area.y() + area.height() / 2;

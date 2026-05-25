@@ -188,6 +188,19 @@ public class LaunchpadRunner implements ApplicationRunner {
             return true;
         }
 
+        // Global Ctrl-C: prompt for confirmation, then quit on a second press.
+        // Mirrors Claude CLI's "press Ctrl-C again to exit" guard - prevents
+        // accidental exits from a fat-fingered terminal shortcut and works
+        // uniformly across text-input screens where 'q' is a content character.
+        if (event instanceof KeyEvent key && key.isCtrlC()) {
+            if (state.quitConfirmPending) {
+                runner.quit();
+            } else {
+                state.quitConfirmPending = true;
+            }
+            return true;
+        }
+
         // Global quit - q from any screen except text-input screens.
         // WELCOME accepts q as quit when the palette is closed; once the user has
         // opened the palette by typing '/', q is a filter character (e.g. /quit).
@@ -213,6 +226,18 @@ public class LaunchpadRunner implements ApplicationRunner {
             }
             runner.quit();
             return true;
+        }
+
+        // Any key press that is neither a quit attempt (Ctrl-C / eligible q)
+        // nor a tick dismisses a pending quit confirmation. The warning
+        // signals "you almost exited"; once the user starts doing something
+        // else it should clear so it does not linger across unrelated input.
+        // ESC also clears it via ScanProgressView's existing handler when on
+        // the scan screen.
+        if (event instanceof KeyEvent dismissKey
+                && state.quitConfirmPending
+                && !dismissKey.isCtrlC()) {
+            state.quitConfirmPending = false;
         }
         boolean handled = currentView().handleEvent(event, runner, state);
         // Any input event should refresh the screen (e.g. typing in path input).

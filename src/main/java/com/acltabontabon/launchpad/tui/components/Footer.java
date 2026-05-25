@@ -26,17 +26,22 @@ public final class Footer {
     private Footer() {}
 
     public static void render(Frame frame, Rect area, AppState state, List<KeyHint> hints) {
-        var hintSpans = KeyHint.render(hints);
-        int hintWidth = visibleWidth(hintSpans);
+        // While a quit confirmation is pending, the footer's primary job is to
+        // warn the user that a second Ctrl-C exits. Suppress regular hints and
+        // show the warning in error style instead.
+        var leftSpans = state.quitConfirmPending
+            ? quitConfirmSpans()
+            : KeyHint.render(hints);
+        int leftWidth = visibleWidth(leftSpans);
 
         var rightSpans = statusSpans(state);
         int rightWidth = visibleWidth(rightSpans);
 
-        int pad = Math.max(2, area.width() - hintWidth - rightWidth - 2);
+        int pad = Math.max(2, area.width() - leftWidth - rightWidth - 2);
 
         var all = new ArrayList<Span>();
         all.add(Span.styled("  ", Style.create()));
-        all.addAll(hintSpans);
+        all.addAll(leftSpans);
         all.add(Span.styled(" ".repeat(pad), Style.create()));
         all.addAll(rightSpans);
 
@@ -44,6 +49,11 @@ public final class Footer {
             .text(Text.from(Line.from(all.toArray(new Span[0]))))
             .build();
         frame.renderWidget(widget, area);
+    }
+
+    private static List<Span> quitConfirmSpans() {
+        return List.of(Span.styled("Press Ctrl-C again to exit  ·  ESC to cancel",
+            Styles.error()));
     }
 
     private static List<Span> statusSpans(AppState state) {
