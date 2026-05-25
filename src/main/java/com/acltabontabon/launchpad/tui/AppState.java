@@ -19,6 +19,8 @@ import com.acltabontabon.launchpad.tui.view.SettingsMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -114,6 +116,58 @@ public class AppState {
     public volatile boolean scanError = false;
     public volatile String scanErrorMessage = null;
 
+    // Currently-processing item (file or rule id). Rendered under the progress
+    // gauge so the user sees concrete forward motion, not just a percentage.
+    public final AtomicReference<String> currentItem = new AtomicReference<>("");
+
+    // Running stats surfaced in the scan view's stats card.
+    public final AtomicInteger statsFilesScanned = new AtomicInteger(0);
+    public final AtomicInteger statsPackages = new AtomicInteger(0);
+    public final AtomicInteger statsDependencies = new AtomicInteger(0);
+    public final AtomicInteger statsRulesTotal = new AtomicInteger(0);
+
+    // Bounded activity log shown at the bottom of the scan view. Producers
+    // (scanner / audit progress) push lines via {@link #pushActivity}; the
+    // render loop reads a snapshot every frame. Capped at ACTIVITY_LOG_CAP
+    // entries; oldest evicted on overflow.
+    public static final int ACTIVITY_LOG_CAP = 200;
+
+    public record ActivityEvent(long timestampMs, String phase, String message, String severity) {}
+
+    private final Deque<ActivityEvent> activityLog = new ArrayDeque<>();
+    private final Object activityLock = new Object();
+
+    public void pushActivity(String phase, String message, String severity) {
+        var evt = new ActivityEvent(System.currentTimeMillis(), phase, message, severity);
+        synchronized (activityLock) {
+            activityLog.addLast(evt);
+            while (activityLog.size() > ACTIVITY_LOG_CAP) activityLog.pollFirst();
+        }
+    }
+
+    public void pushActivity(String phase, String message) {
+        pushActivity(phase, message, "info");
+    }
+
+    public List<ActivityEvent> activitySnapshot() {
+        synchronized (activityLock) {
+            return new ArrayList<>(activityLog);
+        }
+    }
+
+    public void clearActivity() {
+        synchronized (activityLock) {
+            activityLog.clear();
+        }
+        activityScrollOffset = 0;
+    }
+
+    // Activity log scroll: number of entries to step back from the latest.
+    // 0 = pinned to newest; new events are always visible. >0 = user has
+    // scrolled up and rendering shows older entries; new events still land
+    // in the ring but don't disturb the viewport.
+    public volatile int activityScrollOffset = 0;
+
     // Audit phase (updated from background thread). When no rules carry a `check`
     // block, the audit is skipped and these fields stay zero / null.
     public final AtomicInteger auditFindingsCount = new AtomicInteger(0);
@@ -132,6 +186,9 @@ public class AppState {
     public volatile List<String> generationWarnings = new ArrayList<>();
     // Review screen: whether the preview pane is showing the diff vs the existing file.
     public volatile boolean reviewShowDiff = false;
+    // Review screen: scroll offset (in lines) into the Markdown preview pane. Reset
+    // when the selected file changes or when toggling diff mode.
+    public volatile int reviewPreviewScroll = 0;
 
     // Review screen: save-all feedback (shown in the action bar)
     public final AtomicReference<String> reviewSaveStatus = new AtomicReference<>("");
@@ -263,6 +320,12 @@ public class AppState {
         auditRulesEvaluated.set(0);
         auditMarkdownPath = null;
         auditSarifPath = null;
+        currentItem.set("");
+        statsFilesScanned.set(0);
+        statsPackages.set(0);
+        statsDependencies.set(0);
+        statsRulesTotal.set(0);
+        clearActivity();
     }
 
     /**
@@ -280,6 +343,7 @@ public class AppState {
         generationWarnings = new ArrayList<>();
         reviewShowDiff = false;
         reviewFileIndex = 0;
+        reviewPreviewScroll = 0;
     }
 
     /** Clear all per-scan review state so leaving Review back to Welcome lets a
@@ -292,6 +356,7 @@ public class AppState {
         generationWarnings = new ArrayList<>();
         reviewShowDiff = false;
         reviewFileIndex = 0;
+        reviewPreviewScroll = 0;
     }
 
     public void resetTaskFlow() {
@@ -343,12 +408,14 @@ public class AppState {
     public void nextReviewFile() {
         if (!generatedFiles.isEmpty()) {
             reviewFileIndex = (reviewFileIndex + 1) % generatedFiles.size();
+            reviewPreviewScroll = 0;
         }
     }
 
     public void prevReviewFile() {
         if (!generatedFiles.isEmpty()) {
             reviewFileIndex = (reviewFileIndex - 1 + generatedFiles.size()) % generatedFiles.size();
+            reviewPreviewScroll = 0;
         }
     }
 

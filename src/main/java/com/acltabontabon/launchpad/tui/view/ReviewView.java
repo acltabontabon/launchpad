@@ -14,6 +14,7 @@ import com.acltabontabon.launchpad.tui.theme.Theme;
 import dev.tamboui.layout.Constraint;
 import dev.tamboui.layout.Layout;
 import dev.tamboui.layout.Rect;
+import dev.tamboui.markdown.MarkdownView;
 import dev.tamboui.style.Overflow;
 import dev.tamboui.style.Style;
 import dev.tamboui.terminal.Frame;
@@ -24,6 +25,7 @@ import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
+import dev.tamboui.tui.event.MouseEvent;
 import dev.tamboui.widgets.list.ListItem;
 import dev.tamboui.widgets.list.ListState;
 import dev.tamboui.widgets.list.ListWidget;
@@ -169,7 +171,7 @@ public class ReviewView implements View {
                 renderDiff(frame, area, current, plan);
             }
         } else {
-            renderContent(frame, area, current, plan);
+            renderContent(frame, area, current, plan, state);
         }
     }
 
@@ -202,7 +204,7 @@ public class ReviewView implements View {
         frame.renderWidget(widget, inner);
     }
 
-    private void renderContent(Frame frame, Rect area, GeneratedFile current, FilePlan plan) {
+    private void renderContent(Frame frame, Rect area, GeneratedFile current, FilePlan plan, AppState state) {
         var bottom = buildBottomTitle(current, plan);
         var card = Card.of(current.relativePath())
             .bottomTitle(bottom)
@@ -211,11 +213,34 @@ public class ReviewView implements View {
         var inner = card.inner(area);
         frame.renderWidget(card, area);
 
-        var preview = Paragraph.builder()
-            .text(Text.from(current.content()))
-            .overflow(Overflow.WRAP_WORD)
-            .build();
-        frame.renderWidget(preview, inner);
+        var content = current.content() == null ? "" : current.content();
+        if (isMarkdownFile(current.relativePath())) {
+            // Clamp the scroll offset so PgUp/PgDn can't push the view past the
+            // last line of the document. computeHeight gives total rendered rows
+            // for the given width; anything beyond (total - inner.height()) is
+            // empty space.
+            var probe = MarkdownView.builder().source(content).overflow(Overflow.WRAP_WORD).build();
+            int total = probe.computeHeight(inner.width());
+            int maxScroll = Math.max(0, total - inner.height());
+            int scroll = Math.min(state.reviewPreviewScroll, maxScroll);
+            state.reviewPreviewScroll = scroll;
+            var preview = MarkdownView.builder()
+                .source(content)
+                .overflow(Overflow.WRAP_WORD)
+                .scroll(scroll)
+                .build();
+            frame.renderWidget(preview, inner);
+        } else {
+            var preview = Paragraph.builder()
+                .text(Text.from(content))
+                .overflow(Overflow.WRAP_WORD)
+                .build();
+            frame.renderWidget(preview, inner);
+        }
+    }
+
+    private static boolean isMarkdownFile(String relativePath) {
+        return relativePath != null && relativePath.toLowerCase().endsWith(".md");
     }
 
     private void renderAllAddDiff(Frame frame, Rect area, GeneratedFile current, FilePlan plan) {
@@ -359,6 +384,7 @@ public class ReviewView implements View {
             new KeyHint("m", "merge"),
             new KeyHint("x", "skip"),
             new KeyHint("d", "diff"),
+            new KeyHint("pgup/pgdn", "scroll"),
             new KeyHint("s", "save all"),
             new KeyHint("esc", "home")
         );
@@ -366,6 +392,20 @@ public class ReviewView implements View {
 
     @Override
     public boolean handleEvent(Event event, TuiRunner runner, AppState state) {
+        if (event instanceof MouseEvent mouse) {
+            // Route scroll-wheel events to the preview pane only. The file list
+            // is keyboard-driven (↑/↓/j/k); leaving scroll for the preview gives
+            // each pane an unambiguous input channel.
+            if (mouse.kind() == dev.tamboui.tui.event.MouseEventKind.SCROLL_DOWN) {
+                state.reviewPreviewScroll = state.reviewPreviewScroll + 3;
+                return true;
+            }
+            if (mouse.kind() == dev.tamboui.tui.event.MouseEventKind.SCROLL_UP) {
+                state.reviewPreviewScroll = Math.max(0, state.reviewPreviewScroll - 3);
+                return true;
+            }
+            return false;
+        }
         if (!(event instanceof KeyEvent key)) return false;
 
         if (key.isKey(KeyCode.ESCAPE)) {
@@ -395,6 +435,17 @@ public class ReviewView implements View {
         }
         if (key.isChar('d')) {
             state.reviewShowDiff = !state.reviewShowDiff;
+            state.reviewPreviewScroll = 0;
+            return true;
+        }
+        if (key.isKey(KeyCode.PAGE_DOWN)) {
+            // Step is clamped at render time, so a generous jump here just gets
+            // capped against the document length.
+            state.reviewPreviewScroll = state.reviewPreviewScroll + 10;
+            return true;
+        }
+        if (key.isKey(KeyCode.PAGE_UP)) {
+            state.reviewPreviewScroll = Math.max(0, state.reviewPreviewScroll - 10);
             return true;
         }
         if (key.isChar('s')) {

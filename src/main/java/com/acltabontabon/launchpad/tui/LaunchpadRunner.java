@@ -167,6 +167,7 @@ public class LaunchpadRunner implements ApplicationRunner {
         }
         var config = TuiConfig.builder()
             .tickRate(Duration.ofMillis(80))  // ~12fps - enough for smooth spinner
+            .mouseCapture(true)               // so scroll-wheel events reach the views as MouseEvent, not as faked arrow keys
             .build();
         try (var tui = TuiRunner.create(config)) {
             tui.run(this::handleEvent, this::renderFrame);
@@ -272,14 +273,29 @@ public class LaunchpadRunner implements ApplicationRunner {
             try {
                 // Phase 1 - file scan  (eases 5 -> 25 as scanner emits progress)
                 beginPhase(AppState.Phase.SCAN_FILES, 5, "Scanning project files...");
+                state.pushActivity("scan", "walking project tree at " + state.projectPath);
                 if (checkCancelled()) return;
                 var ctx = scanner.scan(state.projectPath, msg -> {
                     if (state.cancelRequested) throw new CancelledException();
                     state.scanMessage.set(msg);
+                    state.currentItem.set(msg);
                     int n = state.streamedChunks.incrementAndGet();
                     int p = 5 + (int) (20 * (1 - Math.exp(-n / 30.0)));
                     state.scanProgress.set(Math.min(25, p));
                 });
+
+                state.statsFilesScanned.set(ctx.sourceFiles() == null ? 0 : ctx.sourceFiles().size());
+                state.statsPackages.set(ctx.packageSummaries() == null ? 0 : ctx.packageSummaries().size());
+                state.statsDependencies.set(ctx.dependencies() == null ? 0 : ctx.dependencies().size());
+                state.currentItem.set("");
+                var stack = ctx.stack();
+                var stackLabel = stack == null ? "unknown stack"
+                    : (stack.framework() == null ? stack.language() : stack.framework())
+                        + (stack.buildTool() == null ? "" : "  " + "·" + "  " + stack.buildTool());
+                state.pushActivity("scan", "scanned " + state.statsFilesScanned.get()
+                    + " files  " + "·" + "  " + state.statsPackages.get() + " packages  "
+                    + "·" + "  " + state.statsDependencies.get() + " deps", "success");
+                state.pushActivity("scan", "detected " + stackLabel);
 
                 if (checkCancelled()) return;
                 var projectRootForAudit = Path.of(state.projectPath).toAbsolutePath();
@@ -302,6 +318,7 @@ public class LaunchpadRunner implements ApplicationRunner {
 
                 // Phase 2 - assemble files
                 beginPhase(AppState.Phase.ASSEMBLE, 30, "Assembling output files...");
+                state.pushActivity("assemble", "rendering vendor-neutral output set");
                 if (checkCancelled()) return;
                 var files = templateEngine.buildFiles(ctx, state.selectedTarget);
                 state.generatedFiles = files;
@@ -309,9 +326,11 @@ public class LaunchpadRunner implements ApplicationRunner {
                 var plans = new java.util.ArrayList<com.acltabontabon.launchpad.template.FilePlan>();
                 for (var f : files) plans.add(com.acltabontabon.launchpad.template.FilePlan.compute(f, projectRoot));
                 state.filePlans = plans;
+                state.pushActivity("assemble", "prepared " + files.size() + " files for review", "success");
 
                 // Done
                 beginPhase(AppState.Phase.DONE, 100, "Done! " + files.size() + " files generated.");
+                state.pushActivity("done", "press enter to review changes", "success");
                 state.scanComplete = true;
 
             } catch (CancelledException | java.util.concurrent.CancellationException ignored) {
@@ -610,9 +629,21 @@ public class LaunchpadRunner implements ApplicationRunner {
     private void runAuditPhase(com.acltabontabon.launchpad.scanner.ProjectContext ctx, Path projectRoot) {
         try {
             beginPhase(AppState.Phase.AUDIT_STANDARDS, 26, "Auditing project against standards...");
-            var result = auditService.run(ctx, projectRoot, progress ->
+            var lastFindings = new java.util.concurrent.atomic.AtomicInteger(0);
+            var result = auditService.run(ctx, projectRoot, progress -> {
                 state.scanMessage.set("Auditing: " + progress.ruleId()
-                    + " (" + progress.index() + "/" + progress.total() + ")"));
+                    + " (" + progress.index() + "/" + progress.total() + ")");
+                state.currentItem.set("rule " + progress.index() + " of " + progress.total()
+                    + "  ·  " + progress.ruleId());
+                state.statsRulesTotal.set(progress.total());
+                // Smooth the gauge from 26 -> 60 across the rules.
+                int span = 60 - 26;
+                int p = 26 + (int) (span * (progress.index() / (double) Math.max(1, progress.total())));
+                state.scanProgress.set(Math.min(60, p));
+                state.pushActivity("audit", "checking " + progress.ruleId()
+                    + "  (" + progress.index() + "/" + progress.total() + ")");
+                lastFindings.set(state.auditFindingsCount.get());
+            });
             state.auditRulesEvaluated.set(result.rulesAudited());
             state.auditFindingsCount.set(result.findings().size());
             var counts = result.countsBySeverity();
@@ -621,10 +652,21 @@ public class LaunchpadRunner implements ApplicationRunner {
             state.auditShouldCount.set(counts.getOrDefault("should", 0L).intValue());
             state.auditMarkdownPath = result.markdownPath() == null ? null : result.markdownPath().toString();
             state.auditSarifPath = result.sarifPath() == null ? null : result.sarifPath().toString();
+            state.currentItem.set("");
+            int findings = result.findings().size();
+            if (findings == 0 && result.rulesAudited() > 0) {
+                state.pushActivity("audit",
+                    "all " + result.rulesAudited() + " rules clean", "success");
+            } else if (findings > 0) {
+                state.pushActivity("audit",
+                    findings + " findings  ·  "
+                        + state.auditMustCount.get() + " must, "
+                        + state.auditShouldCount.get() + " should",
+                    "finding");
+            }
         } catch (RuntimeException e) {
-            // Audit failures are non-fatal - the user still gets context generation.
-            // The message surfaces in the next phase's status briefly.
             state.scanMessage.set("Audit skipped: " + e.getMessage());
+            state.pushActivity("audit", "skipped: " + e.getMessage(), "warn");
         }
     }
 
