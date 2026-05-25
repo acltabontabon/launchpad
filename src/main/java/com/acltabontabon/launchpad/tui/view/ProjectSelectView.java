@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.tui.view;
 
+import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.config.ProjectRegistry;
 import com.acltabontabon.launchpad.config.RegisteredProject;
 import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
@@ -52,15 +53,21 @@ public class ProjectSelectView implements View {
     private final ProjectRegistry registry;
     private final ProjectDiscovery discovery;
     private final LiveProjectSearch liveSearch;
+    private final LaunchpadSettings settings;
+    private final ProjectionSelectView projectionSelectView;
 
     public ProjectSelectView(ProjectSupportDetector projectSupportDetector,
                              ProjectRegistry registry,
                              ProjectDiscovery discovery,
-                             LiveProjectSearch liveSearch) {
+                             LiveProjectSearch liveSearch,
+                             LaunchpadSettings settings,
+                             ProjectionSelectView projectionSelectView) {
         this.projectSupportDetector = projectSupportDetector;
         this.registry = registry;
         this.discovery = discovery;
         this.liveSearch = liveSearch;
+        this.settings = settings;
+        this.projectionSelectView = projectionSelectView;
     }
 
     /** Unified row for the picker. {@code lastScannedAt} is null for discovered-only entries. */
@@ -482,7 +489,16 @@ public class ProjectSelectView implements View {
         state.projectGateError = null;
         state.projectPath = path.toAbsolutePath().normalize().toString();
         state.launchpadAware = AppState.detectLaunchpadAware(state.projectPath);
-        state.currentScreen = AppState.Screen.SCANNING;
+        if (!settings.snapshot().hasProjections()) {
+            // First-run gate: developer hasn't picked their AI tools yet.
+            // Pop the picker before scanning so the generated output set
+            // matches what they actually use.
+            state.projectionPickerReturnsToSettings = false;
+            projectionSelectView.seedSelection(state);
+            state.currentScreen = AppState.Screen.PROJECTION_SELECT;
+        } else {
+            state.currentScreen = AppState.Screen.SCANNING;
+        }
         return true;
     }
 }

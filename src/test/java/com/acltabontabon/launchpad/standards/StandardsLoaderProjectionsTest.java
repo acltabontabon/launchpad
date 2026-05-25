@@ -13,7 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 class StandardsLoaderProjectionsTest {
 
     private final RemoteStandardsFetcher noRemote = mockFetcher();
-    private final StandardsLoader loader = new StandardsLoader(noRemote);
+    private final StandardsLoader loader = new StandardsLoader(noRemote, null);
 
     @Test
     void defaultsToClaudeWhenNoManifestExists(@TempDir Path projectRoot) {

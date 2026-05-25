@@ -17,6 +17,7 @@ import com.acltabontabon.launchpad.template.ContextTemplateEngine;
 import com.acltabontabon.launchpad.tui.components.Footer;
 import com.acltabontabon.launchpad.tui.components.Header;
 import com.acltabontabon.launchpad.tui.view.ProjectSelectView;
+import com.acltabontabon.launchpad.tui.view.ProjectionSelectView;
 import com.acltabontabon.launchpad.tui.view.ProjectsView;
 import com.acltabontabon.launchpad.tui.view.ReviewView;
 import com.acltabontabon.launchpad.tui.view.ScanProgressView;
@@ -64,6 +65,7 @@ public class LaunchpadRunner implements ApplicationRunner {
 
     private final WelcomeView welcomeView;
     private final ProjectSelectView projectSelectView;
+    private final ProjectionSelectView projectionSelectView;
     private final ScanProgressView scanProgressView;
     private final ReviewView reviewView;
     private final SettingsView settingsView;
@@ -110,6 +112,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     public LaunchpadRunner(
         WelcomeView welcomeView,
         ProjectSelectView projectSelectView,
+        ProjectionSelectView projectionSelectView,
         ScanProgressView scanProgressView,
         ReviewView reviewView,
         SettingsView settingsView,
@@ -131,6 +134,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     ) {
         this.welcomeView = welcomeView;
         this.projectSelectView = projectSelectView;
+        this.projectionSelectView = projectionSelectView;
         this.scanProgressView = scanProgressView;
         this.reviewView = reviewView;
         this.settingsView = settingsView;
@@ -738,9 +742,10 @@ public class LaunchpadRunner implements ApplicationRunner {
 
     private View currentView() {
         return switch (state.currentScreen) {
-            case WELCOME        -> welcomeView;
-            case PROJECT_SELECT -> projectSelectView;
-            case SCANNING       -> scanProgressView;
+            case WELCOME           -> welcomeView;
+            case PROJECT_SELECT    -> projectSelectView;
+            case PROJECTION_SELECT -> projectionSelectView;
+            case SCANNING          -> scanProgressView;
             case REVIEW         -> reviewView;
             case TASK_INPUT     -> taskInputView;
             case TASK_INTERVIEW -> taskInterviewView;

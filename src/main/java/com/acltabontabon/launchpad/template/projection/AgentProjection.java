@@ -35,6 +35,23 @@ public interface AgentProjection {
     String id();
 
     /**
+     * Human-readable name shown in the TUI projection picker (e.g.
+     * {@code "Claude Code"}). Defaults to {@link #id()} for terseness in
+     * tests; production projections should override.
+     */
+    default String displayName() {
+        return id();
+    }
+
+    /**
+     * One-line description shown in the TUI picker explaining what files
+     * this projection emits and which agent reads them.
+     */
+    default String description() {
+        return "";
+    }
+
+    /**
      * Project the canonical model into agent-native files. Implementations
      * may return an empty list when nothing applies.
      */

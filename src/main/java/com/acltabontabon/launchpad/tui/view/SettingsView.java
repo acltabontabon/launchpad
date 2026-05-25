@@ -44,8 +44,9 @@ public class SettingsView implements View {
     private static final int FIELD_MODEL = 2;
     private static final int FIELD_API_KEY = 3;
     private static final int FIELD_REMOTE_STANDARDS = 4;
-    private static final int FIELD_CONNECT_ACTION = 5;
-    private static final int FIELD_COUNT = 6;
+    private static final int FIELD_PROJECTIONS = 5;
+    private static final int FIELD_CONNECT_ACTION = 6;
+    private static final int FIELD_COUNT = 7;
 
     private static final int BADGE_WIDTH = "[not found]".length();
 
@@ -53,15 +54,18 @@ public class SettingsView implements View {
     private final ClientRegistry clientRegistry;
     private final SnippetFactory snippetFactory;
     private final McpConfigWriter mcpWriter;
+    private final ProjectionSelectView projectionSelectView;
 
     public SettingsView(LaunchpadSettings settings,
                         ClientRegistry clientRegistry,
                         SnippetFactory snippetFactory,
-                        McpConfigWriter mcpWriter) {
+                        McpConfigWriter mcpWriter,
+                        ProjectionSelectView projectionSelectView) {
         this.settings = settings;
         this.clientRegistry = clientRegistry;
         this.snippetFactory = snippetFactory;
         this.mcpWriter = mcpWriter;
+        this.projectionSelectView = projectionSelectView;
     }
 
     @Override
@@ -89,9 +93,11 @@ public class SettingsView implements View {
                 Constraint.length(1),  // 9  gap
                 Constraint.length(3),  // 10 remote standards
                 Constraint.length(1),  // 11 gap
-                Constraint.length(3),  // 12 connect action
-                Constraint.length(2),  // 13 gap
-                Constraint.min(0)      // 14 error / fill
+                Constraint.length(3),  // 12 ai tools (projections)
+                Constraint.length(1),  // 13 gap
+                Constraint.length(3),  // 14 connect action
+                Constraint.length(2),  // 15 gap
+                Constraint.min(0)      // 16 error / fill
             )
             .split(area);
 
@@ -108,13 +114,24 @@ public class SettingsView implements View {
         renderField(frame, rows.get(10), "Remote standards URL  " + Icons.SEP + "  optional",
             state.settingsRemoteStandardsUrlInput, state.settingsFocusIndex == FIELD_REMOTE_STANDARDS);
         renderActionRow(frame, rows.get(12),
+            "AI tools (projections)",
+            projectionsRowHint(),
+            state.settingsFocusIndex == FIELD_PROJECTIONS);
+        renderActionRow(frame, rows.get(14),
             "Connect to AI tool",
             "wire Launchpad into Claude Desktop / Code / Cursor (MCP)",
             state.settingsFocusIndex == FIELD_CONNECT_ACTION);
 
         if (state.settingsErrorMessage != null) {
-            renderError(frame, rows.get(14), state.settingsErrorMessage);
+            renderError(frame, rows.get(16), state.settingsErrorMessage);
         }
+    }
+
+    private String projectionsRowHint() {
+        var snap = settings.snapshot();
+        if (snap.projections() == null) return "not picked yet - press enter";
+        if (snap.projections().isEmpty()) return "none (just AGENTS.md + .ai/*) - press enter to change";
+        return String.join(", ", snap.projections()) + " - press enter to change";
     }
 
     /** Render the api key as a fixed-length mask so the value never shows on screen. */
@@ -411,6 +428,12 @@ public class SettingsView implements View {
                 openPicker(state);
                 return true;
             }
+            if (state.settingsFocusIndex == FIELD_PROJECTIONS) {
+                state.projectionPickerReturnsToSettings = true;
+                projectionSelectView.seedSelection(state);
+                state.currentScreen = AppState.Screen.PROJECTION_SELECT;
+                return true;
+            }
             return save(state);
         }
         if (key.isKey(KeyCode.TAB)) {
@@ -434,8 +457,9 @@ public class SettingsView implements View {
             // through into another field's buffer.
             return true;
         }
-        if (state.settingsFocusIndex == FIELD_CONNECT_ACTION) {
-            // Action row swallows character input so stray keys don't accumulate.
+        if (state.settingsFocusIndex == FIELD_CONNECT_ACTION
+            || state.settingsFocusIndex == FIELD_PROJECTIONS) {
+            // Action rows swallow character input so stray keys don't accumulate.
             return true;
         }
         if (key.isKey(KeyCode.BACKSPACE)) {

@@ -23,7 +23,7 @@ class LlmProviderRouterTest {
     @Test
     void buildsOllamaDelegateWhenProviderIsOllama() {
         var router = newRouter(new Snapshot(
-            LlmProvider.OLLAMA, "http://localhost:11434", "qwen2.5-coder:7b", null, null));
+            LlmProvider.OLLAMA, "http://localhost:11434", "qwen2.5-coder:7b", null, null, null));
 
         assertThat(delegateOf(router)).isInstanceOf(OllamaChatModel.class);
     }
@@ -31,7 +31,7 @@ class LlmProviderRouterTest {
     @Test
     void buildsOpenAiDelegateWhenProviderIsOpenAiCompatible() {
         var router = newRouter(new Snapshot(
-            LlmProvider.OPENAI_COMPATIBLE, "http://localhost:1234/v1", "local-model", null, null));
+            LlmProvider.OPENAI_COMPATIBLE, "http://localhost:1234/v1", "local-model", null, null, null));
 
         assertThat(delegateOf(router)).isInstanceOf(OpenAiChatModel.class);
     }
@@ -39,11 +39,11 @@ class LlmProviderRouterTest {
     @Test
     void swapsDelegateWhenSettingsEventFires() {
         var router = newRouter(new Snapshot(
-            LlmProvider.OLLAMA, "http://localhost:11434", "qwen2.5-coder:7b", null, null));
+            LlmProvider.OLLAMA, "http://localhost:11434", "qwen2.5-coder:7b", null, null, null));
         assertThat(delegateOf(router)).isInstanceOf(OllamaChatModel.class);
 
         router.onSettingsChanged(new LlmProviderSettingsChanged(new Snapshot(
-            LlmProvider.OPENAI_COMPATIBLE, "http://localhost:1234/v1", "local-model", null, null)));
+            LlmProvider.OPENAI_COMPATIBLE, "http://localhost:1234/v1", "local-model", null, null, null)));
 
         assertThat(delegateOf(router)).isInstanceOf(OpenAiChatModel.class);
     }
@@ -51,7 +51,7 @@ class LlmProviderRouterTest {
     @Test
     void delegatesGetDefaultOptionsToActiveModel() {
         var router = newRouter(new Snapshot(
-            LlmProvider.OLLAMA, "http://localhost:11434", "qwen2.5-coder:7b", null, null));
+            LlmProvider.OLLAMA, "http://localhost:11434", "qwen2.5-coder:7b", null, null, null));
 
         // Should not throw and should return some non-null options from the delegate.
         assertThat(router.getDefaultOptions()).isNotNull();

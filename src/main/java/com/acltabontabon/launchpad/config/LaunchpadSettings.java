@@ -6,9 +6,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
@@ -25,7 +29,8 @@ public class LaunchpadSettings {
         String baseUrl,
         String model,
         String apiKey,
-        String remoteStandardsUrl
+        String remoteStandardsUrl,
+        Set<String> projections
     ) {
         public boolean hasRemoteStandards() {
             return remoteStandardsUrl != null && !remoteStandardsUrl.isBlank();
@@ -35,6 +40,11 @@ public class LaunchpadSettings {
             return apiKey != null && !apiKey.isBlank();
         }
 
+        /** True once the user has explicitly picked their AI tool projections. */
+        public boolean hasProjections() {
+            return projections != null;
+        }
+
         /** Avoid leaking the api key in logs or debuggers. */
         @Override
         public String toString() {
@@ -42,7 +52,8 @@ public class LaunchpadSettings {
                 + ", baseUrl=" + baseUrl
                 + ", model=" + model
                 + ", apiKey=" + (hasApiKey() ? "***" : "<unset>")
-                + ", remoteStandardsUrl=" + remoteStandardsUrl + "]";
+                + ", remoteStandardsUrl=" + remoteStandardsUrl
+                + ", projections=" + projections + "]";
         }
     }
 
@@ -50,12 +61,15 @@ public class LaunchpadSettings {
 
     public record RemoteStandardsSettingsChanged(Snapshot snapshot) {}
 
+    public record ProjectionsSettingsChanged(Snapshot snapshot) {}
+
     // New provider-neutral keys.
     private static final String PROVIDER_KEY = "launchpad.ai.provider";
     private static final String BASE_URL_KEY = "launchpad.ai.base-url";
     private static final String MODEL_KEY = "launchpad.ai.model";
     private static final String API_KEY = "launchpad.ai.api-key";
     private static final String REMOTE_STANDARDS_URL_KEY = "launchpad.standards.remote.url";
+    private static final String PROJECTIONS_KEY = "launchpad.projections";
 
     // Legacy keys read on first run for backward compatibility with pre-0.2 user
     // configs that pinned Ollama explicitly. Never written back.
@@ -93,7 +107,8 @@ public class LaunchpadSettings {
             baseUrl,
             model,
             normalize(apiKey),
-            normalize(remoteStandardsUrl)
+            normalize(remoteStandardsUrl),
+            previous.projections()
         );
         writeFile(next);
         current.set(next);
@@ -102,6 +117,29 @@ public class LaunchpadSettings {
         }
         if (!Objects.equals(previous.remoteStandardsUrl(), next.remoteStandardsUrl())) {
             events.publishEvent(new RemoteStandardsSettingsChanged(next));
+        }
+    }
+
+    /**
+     * Persist the developer's picked AI tool projections (e.g.
+     * {@code {"claude"}} or {@code {"claude", "cursor"}}). An empty set
+     * means "no projections - just AGENTS.md + .ai/*". Distinct from null,
+     * which means "the developer has never been asked".
+     */
+    public void updateProjections(Set<String> projections) throws IOException {
+        var previous = current.get();
+        var normalized = projections == null
+            ? null
+            : projections.stream().map(String::trim).filter(s -> !s.isEmpty())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        var next = new Snapshot(
+            previous.provider(), previous.baseUrl(), previous.model(),
+            previous.apiKey(), previous.remoteStandardsUrl(), normalized
+        );
+        writeFile(next);
+        current.set(next);
+        if (!Objects.equals(previous.projections(), next.projections())) {
+            events.publishEvent(new ProjectionsSettingsChanged(next));
         }
     }
 
@@ -117,14 +155,14 @@ public class LaunchpadSettings {
         String envKey = System.getenv(API_KEY_ENV);
         if (!Files.isRegularFile(configFile)) {
             return new Snapshot(defaultProvider, defaultBaseUrl, defaultModel,
-                normalize(envKey != null ? envKey : defaultApiKey), null);
+                normalize(envKey != null ? envKey : defaultApiKey), null, null);
         }
         var props = new Properties();
         try (InputStream in = Files.newInputStream(configFile)) {
             props.load(in);
         } catch (IOException e) {
             return new Snapshot(defaultProvider, defaultBaseUrl, defaultModel,
-                normalize(envKey != null ? envKey : defaultApiKey), null);
+                normalize(envKey != null ? envKey : defaultApiKey), null, null);
         }
         // Legacy fallback: a pre-0.2 config with only `spring.ai.ollama.*` keys
         // still resolves to a usable Ollama snapshot without manual migration.
@@ -145,8 +183,25 @@ public class LaunchpadSettings {
             baseUrl,
             model,
             normalize(apiKey),
-            normalize(props.getProperty(REMOTE_STANDARDS_URL_KEY))
+            normalize(props.getProperty(REMOTE_STANDARDS_URL_KEY)),
+            parseProjections(props.getProperty(PROJECTIONS_KEY))
         );
+    }
+
+    /**
+     * Decode the comma-separated projections value into a Set, preserving
+     * order. Null when the property is absent (developer has not been
+     * asked); empty set when the property is present but empty (developer
+     * explicitly chose no projections).
+     */
+    private static Set<String> parseProjections(String raw) {
+        if (raw == null) return null;
+        var trimmed = raw.trim();
+        if (trimmed.isEmpty()) return Set.of();
+        return Arrays.stream(trimmed.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     private void writeFile(Snapshot snap) throws IOException {
@@ -160,6 +215,9 @@ public class LaunchpadSettings {
         }
         if (snap.hasRemoteStandards()) {
             props.setProperty(REMOTE_STANDARDS_URL_KEY, snap.remoteStandardsUrl());
+        }
+        if (snap.hasProjections()) {
+            props.setProperty(PROJECTIONS_KEY, String.join(",", snap.projections()));
         }
         try (OutputStream out = Files.newOutputStream(configFile)) {
             props.store(out, "Launchpad user config");

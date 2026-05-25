@@ -38,6 +38,7 @@ public class AppState {
     public enum Screen {
         WELCOME,
         PROJECT_SELECT,
+        PROJECTION_SELECT,
         SCANNING,
         REVIEW,
         TASK_INPUT,
@@ -77,6 +78,18 @@ public class AppState {
     // cursor is clamped to the filtered list size on render.
     public volatile String projectPickerQuery = "";
     public volatile int projectPickerCursor = 0;
+
+    // Projection picker state. The TUI's ProjectionSelectView shows a
+    // multi-select list of available AgentProjection beans. `selected` is the
+    // working set as the user toggles rows; on Enter it is persisted to
+    // LaunchpadSettings.projections and the user transitions to SCANNING.
+    // After persistence, subsequent runs skip the picker entirely.
+    public volatile java.util.Set<String> projectionPickerSelected = new java.util.LinkedHashSet<>();
+    public volatile int projectionPickerCursor = 0;
+    // When true, ProjectionSelectView returns to SETTINGS on save/cancel
+    // instead of advancing to SCANNING. Set by SettingsView when it routes
+    // into the picker for re-editing; cleared on each pre-scan first-run gate.
+    public volatile boolean projectionPickerReturnsToSettings = false;
 
     // Live-updated by ProjectSelectView on every keystroke that mutates projectPath, and
     // again on ENTER. True if <projectPath>/.launchpad/standards/ exists right now.

@@ -12,11 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Interactive log navigation:** Support for scrolling and keyboard navigation (j/k, PageUp/Down) in the scan log.
 - **Legacy primary-file detector:** Surfaces a Review-screen warning (and WARN log line) when older agent-instruction files are found alongside a fresh generation, without injecting migration notes into the emitted content.
 - **`AgentProjection` extension point:** Agent-specific output files are now produced by projection beans that consume the canonical `Rule` / `Skill` / `Checklist` model. The Claude slash-command discovery files (`.claude/skills/<id>/SKILL.md`) are the first such projection (shipped default); future agent integrations follow the same pattern instead of branching the engine.
+- **AI tool picker (first-run + Settings):** The developer is asked once which AI tools they use; the selection drives which projections emit files. Pre-ticked based on detected installs of Claude Desktop / Claude Code / Cursor under `~/.claude/`, `~/.cursor/` etc. Persists to `launchpad.projections` in `~/.launchpad/config.properties`. Re-editable from the Settings screen.
 
 ### Changed
 - **Vendor-neutral primary file:** The primary agent-instructions file is now `AGENTS.md`, read natively by Claude Code (with fallback), Cursor, Codex CLI, Aider, Continue, Zed, Jules, and Amp.
 - **Standards adapter id:** Renamed the default adapter id from `claude` to `agents`. Legacy `claude` adapter blocks in `standards-pack.yml` are accepted with a deprecation warning so existing packs keep working.
 - **Standards-pack projections:** `standards-pack.yml` accepts an optional `projections: [...]` list to enable agent projections explicitly. Absent or null preserves the default (`claude` only); empty list disables all projections; explicit list opts into named projection ids.
+- **Projection precedence:** The developer's persisted user preference (chosen in the TUI picker) overrides the standards-pack manifest's `projections:` field. Manifest opinion is only the fallback for users who have never picked.
 - **Rich Markdown preview:** Styled rendering for headings and code blocks in the Review screen with raw diff toggle.
 - **Brand positioning:** Refined tagline and messaging to focus on local-first repository context for AI agents.
 - **Single output shape:** Collapsed the per-target rendering split; the engine now emits one vendor-neutral output set on every run. `.claude/skills/<id>/SKILL.md` is preserved as a discovery shim so slash-command invocation keeps working.

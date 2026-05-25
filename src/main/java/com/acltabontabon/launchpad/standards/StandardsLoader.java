@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.standards;
 
+import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.util.Set;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -42,9 +44,13 @@ public class StandardsLoader {
 
     private final ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
     private final RemoteStandardsFetcher remoteFetcher;
+    @Nullable
+    private final LaunchpadSettings settings;
 
-    public StandardsLoader(RemoteStandardsFetcher remoteFetcher) {
+    public StandardsLoader(RemoteStandardsFetcher remoteFetcher,
+                           @Nullable LaunchpadSettings settings) {
         this.remoteFetcher = remoteFetcher;
+        this.settings = settings;
     }
 
     public List<Rule> loadRules(Path projectRoot) {
@@ -65,33 +71,46 @@ public class StandardsLoader {
     }
 
     /**
-     * Resolves which {@code AgentProjection} ids are enabled for this project.
+     * Resolves which {@code AgentProjection} ids are enabled for this project,
+     * applying this precedence:
+     * <ol>
+     *   <li>The developer's persisted user preference
+     *       ({@code launchpad.projections} in {@code ~/.launchpad/config.properties}),
+     *       picked via the TUI projection picker.</li>
+     *   <li>The standards-pack manifest's {@code projections:} field, if set.</li>
+     *   <li>The back-compat default {@code Set.of("claude")}.</li>
+     * </ol>
      *
-     * <p>Reads {@code standards-pack.yml}'s {@code projections:} field from the
-     * first source dir whose manifest exists. If no manifest exists, or the
-     * field is absent / null, returns the back-compat default
-     * {@code Set.of("claude")} so existing projects keep emitting
-     * {@code .claude/skills/<id>/SKILL.md}. An explicit empty list disables
-     * all projections.
-     *
-     * <p>Parse failures (e.g. a non-list value) log a WARN and fall back to
-     * the default so a malformed manifest cannot break generation.
+     * <p>Emission targets are a developer concern (which AI tools they use
+     * locally) - the user preference wins over a tech-lead-authored
+     * manifest. An empty user preference set means "no projections, just
+     * AGENTS.md + .ai/*". Parse failures on the manifest log a WARN and
+     * fall back to the default.
      */
     public Set<String> loadProjectionIds(Path projectRoot) {
+        if (settings != null) {
+            var userPref = settings.snapshot().projections();
+            if (userPref != null) return userPref;
+        }
+        return loadManifestProjectionIds(projectRoot)
+            .orElse(Set.of(DEFAULT_PROJECTION_ID));
+    }
+
+    private Optional<Set<String>> loadManifestProjectionIds(Path projectRoot) {
         for (Path dir : sourceDirs(projectRoot)) {
             Path manifestFile = dir.resolve(MANIFEST);
             if (!Files.isRegularFile(manifestFile)) continue;
             try {
                 var manifest = readYaml(manifestFile, StandardsPackManifest.class);
-                if (manifest.projections() == null) return Set.of(DEFAULT_PROJECTION_ID);
-                return new LinkedHashSet<>(manifest.projections());
+                if (manifest.projections() == null) return Optional.empty();
+                return Optional.of(new LinkedHashSet<>(manifest.projections()));
             } catch (Exception e) {
                 log.warn("Failed to parse 'projections' from {}; using default {}: {}",
                     manifestFile, Set.of(DEFAULT_PROJECTION_ID), e.getMessage());
-                return Set.of(DEFAULT_PROJECTION_ID);
+                return Optional.empty();
             }
         }
-        return Set.of(DEFAULT_PROJECTION_ID);
+        return Optional.empty();
     }
 
     public Optional<Adapter> loadAdapter(Path projectRoot, String adapterId) {

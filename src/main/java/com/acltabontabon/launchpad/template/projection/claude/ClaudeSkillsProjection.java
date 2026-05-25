@@ -30,6 +30,16 @@ public class ClaudeSkillsProjection implements AgentProjection {
     }
 
     @Override
+    public String displayName() {
+        return "Claude Code";
+    }
+
+    @Override
+    public String description() {
+        return "Emits .claude/skills/<id>/SKILL.md for slash-command discovery";
+    }
+
+    @Override
     public List<GeneratedFile> project(ProjectContext ctx, List<Rule> rules,
                                        List<Skill> skills, List<Checklist> checklists) {
         if (skills == null || skills.isEmpty()) return List.of();
