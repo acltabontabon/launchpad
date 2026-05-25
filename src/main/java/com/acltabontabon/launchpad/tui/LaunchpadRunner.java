@@ -101,6 +101,26 @@ public class LaunchpadRunner implements ApplicationRunner {
         backgroundExecutor.shutdownNow();
     }
 
+    /**
+     * Signals every in-flight background task to abort. Sets
+     * {@link AppState#cancelRequested} so cooperative cancellation points
+     * (scanner phase boundaries, AI stream callbacks) exit cleanly, and calls
+     * {@code cancel(true)} on each tracked future so blocking IO (HTTP to the
+     * AI provider) is interrupted promptly. Invoked just before
+     * {@link TuiRunner#quit()} on the second Ctrl-C so the JVM does not have
+     * to rely on {@code shutdownNow} ripping threads out from under
+     * partially-written state.
+     */
+    private void cancelAllInFlightWork() {
+        state.cancelRequested = true;
+        var scan = state.currentScanFuture;
+        if (scan != null) scan.cancel(true);
+        var question = state.currentTaskQuestionFuture;
+        if (question != null) question.cancel(true);
+        var finalize = state.currentTaskFinalizeFuture;
+        if (finalize != null) finalize.cancel(true);
+    }
+
     // Millisecond precision so two tasks created within the same second still
     // produce distinct filenames - per-second resolution caused later writes to
     // overwrite earlier ones when a user submitted twice quickly.
@@ -192,8 +212,12 @@ public class LaunchpadRunner implements ApplicationRunner {
         // Mirrors Claude CLI's "press Ctrl-C again to exit" guard - prevents
         // accidental exits from a fat-fingered terminal shortcut and works
         // uniformly across text-input screens where 'q' is a content character.
+        // The second press cancels any in-flight background work before
+        // quitting so partial state unwinds cleanly instead of relying on
+        // executor shutdownNow to interrupt blocked HTTP.
         if (event instanceof KeyEvent key && key.isCtrlC()) {
             if (state.quitConfirmPending) {
+                cancelAllInFlightWork();
                 runner.quit();
             } else {
                 state.quitConfirmPending = true;
@@ -218,12 +242,14 @@ public class LaunchpadRunner implements ApplicationRunner {
                      && state.commandInput.startsWith("/"))) {
             if (state.currentScreen == AppState.Screen.SCANNING && !state.scanComplete) {
                 if (state.quitConfirmPending) {
+                    cancelAllInFlightWork();
                     runner.quit();
                 } else {
                     state.quitConfirmPending = true;
                 }
                 return true;
             }
+            cancelAllInFlightWork();
             runner.quit();
             return true;
         }
