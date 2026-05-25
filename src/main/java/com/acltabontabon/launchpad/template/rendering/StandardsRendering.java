@@ -3,7 +3,6 @@ package com.acltabontabon.launchpad.template.rendering;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.standards.Checklist;
 import com.acltabontabon.launchpad.standards.ChecklistItem;
-import com.acltabontabon.launchpad.standards.Prompt;
 import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
 import java.util.List;
@@ -67,8 +66,7 @@ public final class StandardsRendering {
         return sb.toString();
     }
 
-    public static String buildAiIndex(ProjectContext ctx, List<Skill> skills, boolean hasChecklists,
-                                      boolean hasPrompts, boolean hasProjectNotes) {
+    public static String buildAiIndex(ProjectContext ctx, List<Skill> skills, boolean hasChecklists) {
         var sb = new StringBuilder();
         sb.append("# Project Index - ").append(ctx.name()).append("\n\n");
         sb.append("| File | Purpose |\n");
@@ -77,8 +75,6 @@ public final class StandardsRendering {
         sb.append("| `.ai/engineering-rules.md` | Engineering rules for this project |\n");
         sb.append("| `.ai/stack.md` | Stack details and dependency notes |\n");
         if (hasChecklists) sb.append("| `.ai/checklists.md` | Verification checklists |\n");
-        if (hasPrompts) sb.append("| `.ai/prompts.md` | Reusable prompt templates |\n");
-        if (hasProjectNotes) sb.append("| `.ai/project-notes.md` | Project-specific notes from local AI |\n");
         sb.append("| `.claude/skills/` | Curated workflow skills (invocable via `/<skill-id>`) |\n");
         if (!skills.isEmpty()) {
             sb.append("\n## Available Skills\n\n");
@@ -156,28 +152,6 @@ public final class StandardsRendering {
         return sb.toString();
     }
 
-    public static String buildPromptsMd(List<Prompt> prompts) {
-        var sb = new StringBuilder();
-        sb.append("# Reusable Prompts\n\n");
-        sb.append("Templates for common tasks. Substitute `{{placeholder}}` values before sending.\n\n");
-        prompts.forEach(p -> {
-            sb.append("## ").append(p.title() != null ? p.title() : titleFromId(p.id())).append("\n\n");
-            if (p.template() != null && !p.template().isBlank()) {
-                sb.append("```\n").append(p.template().strip()).append("\n```\n\n");
-            }
-        });
-        return sb.toString();
-    }
-
-    public static String buildProjectNotesMd(ProjectContext ctx, String llmContent) {
-        var sb = new StringBuilder();
-        sb.append("# Project-Specific Notes - ").append(ctx.name()).append("\n\n");
-        sb.append("Notes generated for this project by the local AI from the scanned codebase. ")
-          .append("These complement the engineering rules and workflow skills in this folder.\n\n");
-        sb.append(llmContent.strip()).append("\n");
-        return sb.toString();
-    }
-
     public static String buildCursorEngineeringRules(List<Rule> rules) {
         var sb = new StringBuilder();
         sb.append("---\ndescription: Engineering rules for this project\nglobs: **/*\n---\n\n");
@@ -249,18 +223,6 @@ public final class StandardsRendering {
         return sb.toString();
     }
 
-    public static String buildCursorPrompts(List<Prompt> prompts) {
-        var sb = new StringBuilder();
-        sb.append("---\ndescription: Reusable prompt templates for this project\nglobs: **/*\n---\n\n");
-        prompts.forEach(p -> {
-            sb.append("#### ").append(p.title() != null ? p.title() : titleFromId(p.id())).append("\n\n");
-            if (p.template() != null && !p.template().isBlank()) {
-                sb.append("```\n").append(p.template().strip()).append("\n```\n\n");
-            }
-        });
-        return sb.toString();
-    }
-
     public static String buildCursorStackRules(ProjectContext ctx) {
         return """
             ---
@@ -282,11 +244,4 @@ public final class StandardsRendering {
             );
     }
 
-    public static String buildCursorProjectNotes(ProjectContext ctx, String llmContent) {
-        var sb = new StringBuilder();
-        sb.append("---\ndescription: Project-specific notes for ").append(ctx.name())
-          .append("\nglobs: **/*\n---\n\n");
-        sb.append(llmContent.strip()).append("\n");
-        return sb.toString();
-    }
 }

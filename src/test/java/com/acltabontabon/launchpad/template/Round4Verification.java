@@ -76,11 +76,10 @@ class Round4Verification {
         Mockito.when(loader.loadRules(Mockito.any())).thenReturn(java.util.List.of());
         Mockito.when(loader.loadSkills(Mockito.any())).thenReturn(java.util.List.of());
         Mockito.when(loader.loadChecklists(Mockito.any())).thenReturn(java.util.List.of());
-        Mockito.when(loader.loadPrompts(Mockito.any())).thenReturn(java.util.List.of());
         Mockito.when(loader.loadAdapter(Mockito.any(), Mockito.any())).thenReturn(java.util.Optional.empty());
         var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(generator), new com.acltabontabon.launchpad.template.companion.CompanionFileBuilder(), java.util.List.of(new ClaudePrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
 
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "");
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
         var primary = files.stream()
             .filter(f -> f.relativePath().equals("CLAUDE.md"))
             .findFirst()

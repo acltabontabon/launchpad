@@ -58,11 +58,6 @@ public class StandardsLoader {
             dir -> loadPackEntries(dir, inc -> inc.checklists(), ChecklistsFile.class, ChecklistsFile::checklists));
     }
 
-    public List<Prompt> loadPrompts(Path projectRoot) {
-        return resolvePackOnly(projectRoot,
-            dir -> loadPackEntries(dir, inc -> inc.prompts(), PromptsFile.class, PromptsFile::prompts));
-    }
-
     public Optional<Adapter> loadAdapter(Path projectRoot, String adapterId) {
         for (Path dir : sourceDirs(projectRoot)) {
             Path manifestFile = dir.resolve(MANIFEST);

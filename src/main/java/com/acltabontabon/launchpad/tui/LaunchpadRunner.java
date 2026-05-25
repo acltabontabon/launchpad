@@ -300,35 +300,10 @@ public class LaunchpadRunner implements ApplicationRunner {
                     return;
                 }
 
-                // Phase 2 - AI: target-specific content (eases 30 -> 85). Both
-                // targets now drive synthesis from inside the template engine
-                // (deterministic skeleton + per-section chunked synthesis); the
-                // single legacy mega-prompt for the primary file is gone. This
-                // call still generates the per-target body (Claude skills /
-                // Cursor rules) that lands in the project-notes companion.
-                beginPhase(AppState.Phase.GENERATE_TARGET, 30,
-                    "Generating " + state.selectedTarget.displayName + " content...");
+                // Phase 2 - assemble files
+                beginPhase(AppState.Phase.ASSEMBLE, 30, "Assembling output files...");
                 if (checkCancelled()) return;
-                var targetContent = generatorService.generateTargetSpecificContent(ctx, state.selectedTarget,
-                    chunk -> {
-                        if (state.cancelRequested) throw new CancelledException();
-                        onAiChunk(chunk, 30, 85);
-                    });
-
-                if (checkCancelled()) return;
-
-                // Surface only the user-actionable validation signals (empty/short
-                // output, hallucination strips). Internal retry detail is dropped -
-                // the retry already produced the winning output, and "we retried"
-                // isn't something the user can act on.
-                var warnings = new java.util.ArrayList<String>();
-                targetContent.warnings().forEach(w -> warnings.add(state.selectedTarget.displayName.toLowerCase() + ": " + w));
-                state.generationWarnings = warnings;
-
-                // Phase 4 - assemble files
-                beginPhase(AppState.Phase.ASSEMBLE, 90, "Assembling output files...");
-                if (checkCancelled()) return;
-                var files = templateEngine.buildFiles(ctx, state.selectedTarget, targetContent.content());
+                var files = templateEngine.buildFiles(ctx, state.selectedTarget);
                 state.generatedFiles = files;
                 var projectRoot = java.nio.file.Path.of(state.projectPath).toAbsolutePath();
                 var plans = new java.util.ArrayList<com.acltabontabon.launchpad.template.FilePlan>();

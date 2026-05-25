@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
+### Removed
+- **Prompts output:** Dropped `.ai/prompts.md` and `.cursor/rules/prompts.mdc` from the generated output set. The `Prompt` schema, `PromptsFile` YAML binding, `StandardsLoader.loadPrompts()`, and all associated rendering methods have been removed. The `prompts` field is also removed from the `standards-pack.yml` `includes` schema.
+- **Project-notes output:** Dropped `.ai/project-notes.md` and `.cursor/rules/project-notes.mdc`. The dedicated `generateTargetSpecificContent()` LLM call that fed only these files has been removed from the pipeline, making the context-generation layer fully deterministic. The `GENERATE_TARGET` pipeline phase is removed; the stepper and scan-progress view now show Scan, Assemble, Done.
 
 ## [0.4.0] - 2026-05-25
 ### Changed

@@ -12,7 +12,6 @@ import com.acltabontabon.launchpad.standards.Adapter;
 import com.acltabontabon.launchpad.standards.AdapterOutput;
 import com.acltabontabon.launchpad.standards.Checklist;
 import com.acltabontabon.launchpad.standards.ChecklistItem;
-import com.acltabontabon.launchpad.standards.Prompt;
 import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
@@ -31,8 +30,6 @@ class ContextTemplateEngineTest {
 
     private static final String RULE_BODY_MARKER = "Functions do one thing and stay at one level of abstraction.";
     private static final String RULE_TITLE = "Clean Code";
-    private static final String PROJECT_NOTES_BODY =
-        "## Skill: add-rest-endpoint\nWhen adding a new feature, you need to create a REST endpoint.";
 
     private static final Rule SAMPLE_RULE = new Rule(
         "clean-code", RULE_TITLE, "must",
@@ -50,19 +47,13 @@ class ContextTemplateEngineTest {
         List.of(new ChecklistItem("scope", "Diff matches stated scope.", true)),
         null);
 
-    private static final Prompt SAMPLE_PROMPT = new Prompt(
-        "plan", "Implementation Plan Request", "You are preparing an implementation plan.");
-
     @Test
     void claudePrimaryFileIsAssembledFromDeterministicSkeleton() {
         var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
-            List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
-            claudeAdapterIncluding("rules", "skills", "checklists", "prompts"));
+            List.of(SAMPLE_CHECKLIST),
+            claudeAdapterIncluding("rules", "skills", "checklists"));
 
-        // The Claude path assembles the file from scanner facts and synthesis
-        // fragments; only the per-target project-notes body is threaded through.
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE,
-            PROJECT_NOTES_BODY);
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE);
 
         var primary = contentAt(files, "CLAUDE.md");
 
@@ -95,17 +86,13 @@ class ContextTemplateEngineTest {
         assertThat(primary).doesNotContain("## Standards\n");
         assertThat(primary).doesNotContain("Cross-project MCP tools");
 
-        // No standards body or project-notes body inlined in the primary file.
+        // No standards body inlined in the primary file.
         assertThat(primary).doesNotContain(RULE_BODY_MARKER);
         assertThat(primary).doesNotContain("### " + RULE_TITLE);
-        assertThat(primary).doesNotContain("## Project-Specific Notes");
-        assertThat(primary).doesNotContain("Skill: add-rest-endpoint");
 
         // Companion files still carry the canonical content.
         var rulesMd = contentAt(files, ".ai/engineering-rules.md");
         assertThat(rulesMd).contains(RULE_BODY_MARKER);
-        var notesMd = contentAt(files, ".ai/project-notes.md");
-        assertThat(notesMd).contains("Skill: add-rest-endpoint");
 
         // Per-skill file still emitted so /<skill-id> invocation works.
         assertThat(pathsOf(files)).contains(".claude/skills/add-feature/SKILL.md");
@@ -114,12 +101,12 @@ class ContextTemplateEngineTest {
     @Test
     void claudePrimaryUsesReadmeIntroWhenPresent() {
         var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
-            List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
-            claudeAdapterIncluding("rules", "skills", "checklists", "prompts"));
+            List.of(SAMPLE_CHECKLIST),
+            claudeAdapterIncluding("rules", "skills", "checklists"));
 
         var ctx = contextWithReadmeIntro(
             "A reproducible benchmark of Spring Boot 4 + Oracle GraalVM Native Image 25.");
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, PROJECT_NOTES_BODY);
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
         var primary = contentAt(files, "CLAUDE.md");
 
         assertThat(primary).contains(
@@ -128,14 +115,13 @@ class ContextTemplateEngineTest {
 
     @Test
     void claudePrimaryOmitsGeneratedContextOnNakedProject() {
-        // No rules / no skills / no checklists / no prompts / no project notes
-        // => no companion files beyond `.ai/index.md` and `.ai/stack.md`.
-        // Those two ARE useful, so the section still renders pointing only at
-        // them. Run this assertion to lock in the "honest pointers" contract.
-        var engine = engineWith(List.of(), List.of(), List.of(), List.of(),
+        // No rules / no skills / no checklists => no companion files beyond
+        // `.ai/index.md` and `.ai/stack.md`. Those two ARE useful, so the
+        // section still renders pointing only at them.
+        var engine = engineWith(List.of(), List.of(), List.of(),
             claudeAdapterIncluding("rules", "skills"));
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE, "");
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE);
         var primary = contentAt(files, "CLAUDE.md");
 
         // Section renders, but pointers are limited to what exists.
@@ -146,18 +132,16 @@ class ContextTemplateEngineTest {
         // as pointers in the primary file.
         assertThat(primary).doesNotContain(".ai/engineering-rules.md");
         assertThat(primary).doesNotContain(".ai/checklists.md");
-        assertThat(primary).doesNotContain(".ai/prompts.md");
-        assertThat(primary).doesNotContain(".ai/project-notes.md");
         assertThat(primary).doesNotContain(".claude/skills/");
     }
 
     @Test
     void claudePrimaryOmitsProjectMapWhenNoPackages() {
-        var engine = engineWith(List.of(), List.of(), List.of(), List.of(),
+        var engine = engineWith(List.of(), List.of(), List.of(),
             claudeAdapterIncluding("rules", "skills"));
 
         var ctx = contextWithoutPackages();
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "");
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
         var primary = contentAt(files, "CLAUDE.md");
 
         assertThat(primary).doesNotContain("## Project map");
@@ -165,11 +149,11 @@ class ContextTemplateEngineTest {
 
     @Test
     void claudePrimaryOmitsCommandsAndWorkflowWhenBuildToolUnknown() {
-        var engine = engineWith(List.of(), List.of(), List.of(), List.of(),
+        var engine = engineWith(List.of(), List.of(), List.of(),
             claudeAdapterIncluding("rules", "skills"));
 
         var ctx = contextWithUnknownBuildTool();
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE, "");
+        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
         var primary = contentAt(files, "CLAUDE.md");
 
         assertThat(primary).doesNotContain("## Commands");
@@ -182,10 +166,10 @@ class ContextTemplateEngineTest {
     @Test
     void claudePrimaryFallsBackToDeterministicIntroWhenNoReadmeOrPom() {
         var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
-            List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
-            claudeAdapterIncluding("rules", "skills", "checklists", "prompts"));
+            List.of(SAMPLE_CHECKLIST),
+            claudeAdapterIncluding("rules", "skills", "checklists"));
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE, PROJECT_NOTES_BODY);
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE);
         var primary = contentAt(files, "CLAUDE.md");
 
         // Without README intro, pom <description>, or a synthesizer, the
@@ -197,38 +181,31 @@ class ContextTemplateEngineTest {
     @Test
     void cursorPrimaryFilePointsAtMdcCompanionsInsteadOfInliningStandards() {
         var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
-            List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
-            cursorAdapterIncluding("rules", "skills", "checklists", "prompts"));
+            List.of(SAMPLE_CHECKLIST),
+            cursorAdapterIncluding("rules", "skills", "checklists"));
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR,
-            PROJECT_NOTES_BODY);
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR);
 
         var primary = contentAt(files, ".cursor/rules/main.mdc");
         assertThat(primary).contains("## Standards");
         assertThat(primary).contains(".cursor/rules/engineering.mdc");
         assertThat(primary).contains(".cursor/rules/skills.mdc");
         assertThat(primary).contains(".cursor/rules/checklists.mdc");
-        assertThat(primary).contains(".cursor/rules/prompts.mdc");
-        assertThat(primary).contains(".cursor/rules/project-notes.mdc");
 
         assertThat(primary).doesNotContain(RULE_BODY_MARKER);
         assertThat(primary).doesNotContain("### " + RULE_TITLE);
-        assertThat(primary).doesNotContain("Skill: add-rest-endpoint");
 
         var rulesMdc = contentAt(files, ".cursor/rules/engineering.mdc");
         assertThat(rulesMdc).contains(RULE_BODY_MARKER);
-        var notesMdc = contentAt(files, ".cursor/rules/project-notes.mdc");
-        assertThat(notesMdc).contains("Skill: add-rest-endpoint");
     }
 
     @Test
     void cursorPrimaryFileUsesDeterministicSkeletonNotMegaPromptSummary() {
         var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
-            List.of(SAMPLE_CHECKLIST), List.of(SAMPLE_PROMPT),
-            cursorAdapterIncluding("rules", "skills", "checklists", "prompts"));
+            List.of(SAMPLE_CHECKLIST),
+            cursorAdapterIncluding("rules", "skills", "checklists"));
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR,
-            PROJECT_NOTES_BODY);
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR);
 
         var primary = contentAt(files, ".cursor/rules/main.mdc");
 
@@ -257,11 +234,10 @@ class ContextTemplateEngineTest {
         when(loader.loadRules(any())).thenReturn(List.of(SAMPLE_RULE));
         when(loader.loadSkills(any())).thenReturn(List.of(SAMPLE_SKILL));
         when(loader.loadChecklists(any())).thenReturn(List.of());
-        when(loader.loadPrompts(any())).thenReturn(List.of());
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.empty());
         var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(null), new CompanionFileBuilder(), List.of(new ClaudePrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR, "");
+        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR);
 
         // No adapter -> primary lands at the legacy `.cursorrules` path, but
         // with the new deterministic shape (no frontmatter, same skeleton).
@@ -273,14 +249,13 @@ class ContextTemplateEngineTest {
     }
 
     private static ContextTemplateEngine engineWith(
-        List<Rule> rules, List<Skill> skills, List<Checklist> checklists, List<Prompt> prompts,
+        List<Rule> rules, List<Skill> skills, List<Checklist> checklists,
         Adapter adapter
     ) {
         var loader = mock(StandardsLoader.class);
         when(loader.loadRules(any())).thenReturn(rules);
         when(loader.loadSkills(any())).thenReturn(skills);
         when(loader.loadChecklists(any())).thenReturn(checklists);
-        when(loader.loadPrompts(any())).thenReturn(prompts);
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.of(adapter));
 
         return new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(null), new CompanionFileBuilder(), List.of(new ClaudePrimaryFileBuilder(), new CursorPrimaryFileBuilder()));

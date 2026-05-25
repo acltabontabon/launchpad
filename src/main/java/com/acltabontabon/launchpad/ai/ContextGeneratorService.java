@@ -2,7 +2,6 @@ package com.acltabontabon.launchpad.ai;
 
 import com.acltabontabon.launchpad.config.LaunchpadAiProperties;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
-import com.acltabontabon.launchpad.template.ContextTarget;
 import java.time.Duration;
 import java.util.List;
 import java.util.function.Consumer;
@@ -25,7 +24,6 @@ public class ContextGeneratorService {
     // "## Skill\n", or any other variation where the model drops the colon. The
     // downstream ContextTemplateEngine handles further parsing.
     private static final List<String> SKILLS_HEADINGS = List.of("## Skill");
-    private static final List<String> RULES_HEADINGS = List.of("-");  // bullet list; weaker check
 
     private static final String RETRY_REMINDER = """
 
@@ -91,16 +89,6 @@ public class ContextGeneratorService {
     public GeneratedOutput generateSkills(ProjectContext ctx, Consumer<String> onChunk) {
         var template = promptSelector.load(PromptSelector.Kind.SKILLS, ctx.stack());
         return runWithValidation(template, ctx, SKILLS_HEADINGS, onChunk);
-    }
-
-    public GeneratedOutput generateTargetSpecificContent(ProjectContext ctx, ContextTarget target, Consumer<String> onChunk) {
-        return switch (target) {
-            case CURSOR -> {
-                var template = promptSelector.load(PromptSelector.Kind.RULES, ctx.stack());
-                yield runWithValidation(template, ctx, RULES_HEADINGS, onChunk);
-            }
-            case CLAUDE -> generateSkills(ctx, onChunk);
-        };
     }
 
     private GeneratedOutput runWithValidation(

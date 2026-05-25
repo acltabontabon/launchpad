@@ -42,19 +42,17 @@ public class ContextTemplateEngine {
 
     public List<GeneratedFile> buildFiles(
         ProjectContext ctx,
-        ContextTarget target,
-        String targetSpecificContent
+        ContextTarget target
     ) {
         var projectRoot = Path.of(ctx.rootPath());
         var rules = standardsLoader.loadRules(projectRoot);
         var skills = standardsLoader.loadSkills(projectRoot);
         var checklists = standardsLoader.loadChecklists(projectRoot);
-        var prompts = standardsLoader.loadPrompts(projectRoot);
         var resolved = adapterResolver.resolve(projectRoot, target);
         var synthesis = sectionSynthesizer.synthesize(ctx);
 
         var companions = companionFileBuilder.build(
-            target, ctx, rules, skills, checklists, prompts, targetSpecificContent);
+            target, ctx, rules, skills, checklists);
         var companionPaths = new LinkedHashSet<String>();
         for (var c : companions) companionPaths.add(c.relativePath());
 

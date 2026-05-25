@@ -53,7 +53,6 @@ public class AppState {
     public enum Phase {
         SCAN_FILES,
         AUDIT_STANDARDS,
-        GENERATE_TARGET,
         ASSEMBLE,
         DONE
     }

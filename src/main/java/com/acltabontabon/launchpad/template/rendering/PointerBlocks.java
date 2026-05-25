@@ -23,10 +23,6 @@ public final class PointerBlocks {
             entries.add("- `.ai/engineering-rules.md` - team coding rules");
         if (companionPaths.contains(".ai/checklists.md"))
             entries.add("- `.ai/checklists.md` - verification checklists");
-        if (companionPaths.contains(".ai/prompts.md"))
-            entries.add("- `.ai/prompts.md` - reusable prompts");
-        if (companionPaths.contains(".ai/project-notes.md"))
-            entries.add("- `.ai/project-notes.md` - project-specific notes");
         boolean hasSkillFile = companionPaths.stream().anyMatch(p -> p.startsWith(".claude/skills/"));
         if (hasSkillFile)
             entries.add("- `.claude/skills/<skill-id>/SKILL.md` - invoke via `/<skill-id>`");
@@ -56,10 +52,6 @@ public final class PointerBlocks {
             entries.add("- **Stack and dependencies:** see `.cursor/rules/stack.mdc`");
         if (companionPaths.contains(".cursor/rules/checklists.mdc"))
             entries.add("- **Checklists:** see `.cursor/rules/checklists.mdc`");
-        if (companionPaths.contains(".cursor/rules/prompts.mdc"))
-            entries.add("- **Reusable prompts:** see `.cursor/rules/prompts.mdc`");
-        if (companionPaths.contains(".cursor/rules/project-notes.mdc"))
-            entries.add("- **Project-specific notes:** see `.cursor/rules/project-notes.mdc`");
 
         if (entries.isEmpty()) return "";
 

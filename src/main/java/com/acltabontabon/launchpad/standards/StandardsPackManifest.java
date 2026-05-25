@@ -24,7 +24,6 @@ record StandardsPackManifest(
     record Includes(
         List<String> rules,
         List<String> skills,
-        List<String> checklists,
-        List<String> prompts
+        List<String> checklists
     ) {}
 }

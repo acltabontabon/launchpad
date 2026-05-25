@@ -36,7 +36,6 @@ public final class Stepper {
 
     private static final List<Step> INIT_STEPS = List.of(
         new Step(AppState.Phase.SCAN_FILES, "Scan"),
-        new Step(AppState.Phase.GENERATE_TARGET, "Generate"),
         new Step(AppState.Phase.ASSEMBLE, "Assemble"),
         new Step(AppState.Phase.DONE, "Done")
     );
