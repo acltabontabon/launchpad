@@ -482,9 +482,7 @@ public class ProjectSelectView implements View {
         state.projectGateError = null;
         state.projectPath = path.toAbsolutePath().normalize().toString();
         state.launchpadAware = AppState.detectLaunchpadAware(state.projectPath);
-        state.currentScreen = state.taskFlow
-            ? AppState.Screen.SCANNING
-            : AppState.Screen.TARGET_SELECT;
+        state.currentScreen = AppState.Screen.SCANNING;
         return true;
     }
 }

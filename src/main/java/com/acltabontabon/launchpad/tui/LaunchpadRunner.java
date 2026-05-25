@@ -21,7 +21,6 @@ import com.acltabontabon.launchpad.tui.view.ProjectsView;
 import com.acltabontabon.launchpad.tui.view.ReviewView;
 import com.acltabontabon.launchpad.tui.view.ScanProgressView;
 import com.acltabontabon.launchpad.tui.view.SettingsView;
-import com.acltabontabon.launchpad.tui.view.TargetSelectView;
 import com.acltabontabon.launchpad.tui.view.TaskInputView;
 import com.acltabontabon.launchpad.tui.view.TaskInterviewView;
 import com.acltabontabon.launchpad.tui.view.TaskResultView;
@@ -65,7 +64,6 @@ public class LaunchpadRunner implements ApplicationRunner {
 
     private final WelcomeView welcomeView;
     private final ProjectSelectView projectSelectView;
-    private final TargetSelectView targetSelectView;
     private final ScanProgressView scanProgressView;
     private final ReviewView reviewView;
     private final SettingsView settingsView;
@@ -112,7 +110,6 @@ public class LaunchpadRunner implements ApplicationRunner {
     public LaunchpadRunner(
         WelcomeView welcomeView,
         ProjectSelectView projectSelectView,
-        TargetSelectView targetSelectView,
         ScanProgressView scanProgressView,
         ReviewView reviewView,
         SettingsView settingsView,
@@ -134,7 +131,6 @@ public class LaunchpadRunner implements ApplicationRunner {
     ) {
         this.welcomeView = welcomeView;
         this.projectSelectView = projectSelectView;
-        this.targetSelectView = targetSelectView;
         this.scanProgressView = scanProgressView;
         this.reviewView = reviewView;
         this.settingsView = settingsView;
@@ -325,7 +321,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                 beginPhase(AppState.Phase.ASSEMBLE, 30, "Assembling output files...");
                 state.pushActivity("assemble", "rendering vendor-neutral output set");
                 if (checkCancelled()) return;
-                var files = templateEngine.buildFiles(ctx, state.selectedTarget);
+                var files = templateEngine.buildFiles(ctx);
                 state.generatedFiles = files;
                 var projectRoot = java.nio.file.Path.of(state.projectPath).toAbsolutePath();
                 var plans = new java.util.ArrayList<com.acltabontabon.launchpad.template.FilePlan>();
@@ -744,7 +740,6 @@ public class LaunchpadRunner implements ApplicationRunner {
         return switch (state.currentScreen) {
             case WELCOME        -> welcomeView;
             case PROJECT_SELECT -> projectSelectView;
-            case TARGET_SELECT  -> targetSelectView;
             case SCANNING       -> scanProgressView;
             case REVIEW         -> reviewView;
             case TASK_INPUT     -> taskInputView;

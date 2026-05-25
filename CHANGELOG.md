@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Standards adapter id:** Renamed the default adapter id from `claude` to `agents`. Legacy `claude` adapter blocks in `standards-pack.yml` are accepted with a deprecation warning so existing packs keep working.
 - **Rich Markdown preview:** Styled rendering for headings and code blocks in the Review screen with raw diff toggle.
 - **Brand positioning:** Refined tagline and messaging to focus on local-first repository context for AI agents.
+- **Single output shape:** Collapsed the per-target rendering split; the engine now emits one vendor-neutral output set on every run. `.claude/skills/<id>/SKILL.md` is preserved as a discovery shim so slash-command invocation keeps working.
+- **Streamlined TUI flow:** Removed the pre-scan target-selection screen. The flow is now Welcome -> ProjectSelect -> Scanning -> Review.
 
 ### Fixed
 - **Dynamic versioning:** Header version badge now syncs automatically with Maven `pom.xml`.
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Redundant UI:** Removed the Scan screen stepper and unnecessary project-info footer.
 - **Non-deterministic outputs:** Dropped AI-generated prompts and project notes to ensure a fully deterministic context layer.
 - **Legacy schemas:** Removed obsolete prompt and notes fields from standards and YAML bindings.
+- **Dedicated Cursor target:** Removed the baked-in `.cursorrules` + `.cursor/rules/*.mdc` rendering path. Cursor reads `AGENTS.md` natively; teams who want Cursor's per-rule `.mdc` format can declare an opt-in adapter in `standards-pack.yml`. Legacy `cursor` adapter blocks are ignored with a deprecation warning.
 
 ## [0.4.0] - 2026-05-25
 ### Changed

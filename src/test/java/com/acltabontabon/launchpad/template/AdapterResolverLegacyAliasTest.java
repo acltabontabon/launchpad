@@ -20,11 +20,11 @@ class AdapterResolverLegacyAliasTest {
     @Test
     void agentsAdapterResolvesDirectly() {
         var loader = mock(StandardsLoader.class);
-        var adapter = new Adapter("agents", "claude", "Vendor-neutral adapter",
+        var adapter = new Adapter("agents", "agents", "Vendor-neutral adapter",
             List.of(new AdapterOutput("CUSTOM.md", "markdown", List.of("rules"), Map.of())));
         when(loader.loadAdapter(any(), eq("agents"))).thenReturn(Optional.of(adapter));
 
-        var resolved = new AdapterResolver(loader).resolve(Path.of("/tmp/x"), ContextTarget.CLAUDE);
+        var resolved = new AdapterResolver(loader).resolve(Path.of("/tmp/x"));
 
         assertThat(resolved.primaryPath()).isEqualTo("CUSTOM.md");
         assertThat(resolved.adapter()).isPresent();
@@ -38,7 +38,7 @@ class AdapterResolverLegacyAliasTest {
         when(loader.loadAdapter(any(), eq("agents"))).thenReturn(Optional.empty());
         when(loader.loadAdapter(any(), eq("claude"))).thenReturn(Optional.of(legacy));
 
-        var resolved = new AdapterResolver(loader).resolve(Path.of("/tmp/x"), ContextTarget.CLAUDE);
+        var resolved = new AdapterResolver(loader).resolve(Path.of("/tmp/x"));
 
         assertThat(resolved.primaryPath()).isEqualTo("CUSTOM-LEGACY.md");
         assertThat(resolved.adapter()).isPresent();
@@ -49,7 +49,22 @@ class AdapterResolverLegacyAliasTest {
         var loader = mock(StandardsLoader.class);
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.empty());
 
-        var resolved = new AdapterResolver(loader).resolve(Path.of("/tmp/x"), ContextTarget.CLAUDE);
+        var resolved = new AdapterResolver(loader).resolve(Path.of("/tmp/x"));
+
+        assertThat(resolved.primaryPath()).isEqualTo("AGENTS.md");
+        assertThat(resolved.adapter()).isEmpty();
+    }
+
+    @Test
+    void legacyCursorAdapterIsIgnoredAndFallsBackToDefault() {
+        var loader = mock(StandardsLoader.class);
+        var legacyCursor = new Adapter("cursor", "cursor", "Legacy cursor adapter",
+            List.of(new AdapterOutput(".cursorrules", "markdown", List.of("rules"), Map.of())));
+        when(loader.loadAdapter(any(), eq("agents"))).thenReturn(Optional.empty());
+        when(loader.loadAdapter(any(), eq("claude"))).thenReturn(Optional.empty());
+        when(loader.loadAdapter(any(), eq("cursor"))).thenReturn(Optional.of(legacyCursor));
+
+        var resolved = new AdapterResolver(loader).resolve(Path.of("/tmp/x"));
 
         assertThat(resolved.primaryPath()).isEqualTo("AGENTS.md");
         assertThat(resolved.adapter()).isEmpty();

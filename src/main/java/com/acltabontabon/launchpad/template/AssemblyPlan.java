@@ -2,7 +2,7 @@ package com.acltabontabon.launchpad.template;
 
 import java.util.List;
 
-public record AssemblyPlan(ContextTarget target, List<Section> sections) {
+public record AssemblyPlan(List<Section> sections) {
 
     public enum Section {
         INTRO,
@@ -14,26 +14,17 @@ public record AssemblyPlan(ContextTarget target, List<Section> sections) {
         BOUNDARIES
     }
 
-    public static AssemblyPlan forTarget(ContextTarget target) {
-        return switch (target) {
-            case CLAUDE -> new AssemblyPlan(target, List.of(
-                Section.INTRO,
-                Section.COMMANDS,
-                Section.ARCHITECTURE,
-                Section.ENDPOINTS,
-                Section.BUILD_PROFILES,
-                Section.COMPANION_POINTERS,
-                Section.BOUNDARIES
-            ));
-            case CURSOR -> new AssemblyPlan(target, List.of(
-                Section.INTRO,
-                Section.COMMANDS,
-                Section.ARCHITECTURE,
-                Section.ENDPOINTS,
-                Section.BUILD_PROFILES,
-                Section.COMPANION_POINTERS,
-                Section.BOUNDARIES
-            ));
-        };
+    private static final List<Section> STANDARD = List.of(
+        Section.INTRO,
+        Section.COMMANDS,
+        Section.ARCHITECTURE,
+        Section.ENDPOINTS,
+        Section.BUILD_PROFILES,
+        Section.COMPANION_POINTERS,
+        Section.BOUNDARIES
+    );
+
+    public static AssemblyPlan standard() {
+        return new AssemblyPlan(STANDARD);
     }
 }

@@ -6,8 +6,6 @@ import java.util.Set;
 
 public interface PrimaryFileBuilder {
 
-    ContextTarget target();
-
     String build(ProjectContext ctx, AssemblyPlan plan, AdapterResolver.ResolvedAdapter resolved,
                  SynthesisOutputs synthesis, Set<String> companionPaths);
 }

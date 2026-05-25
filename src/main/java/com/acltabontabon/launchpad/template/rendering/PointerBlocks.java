@@ -36,31 +36,4 @@ public final class PointerBlocks {
         return sb.toString();
     }
 
-    /**
-     * Cursor analogue of {@link #renderGeneratedContextBlock(Set)}.
-     * Renders a `## Standards` pointer list keyed on the `.cursor/rules/*.mdc`
-     * companion files actually emitted, so we never point at a file we did not
-     * write.
-     */
-    public static String renderCursorStandardsBlock(Set<String> companionPaths) {
-        var entries = new ArrayList<String>();
-        if (companionPaths.contains(".cursor/rules/engineering.mdc"))
-            entries.add("- **Engineering rules:** see `.cursor/rules/engineering.mdc`");
-        if (companionPaths.contains(".cursor/rules/skills.mdc"))
-            entries.add("- **Workflow skills:** see `.cursor/rules/skills.mdc`");
-        if (companionPaths.contains(".cursor/rules/stack.mdc"))
-            entries.add("- **Stack and dependencies:** see `.cursor/rules/stack.mdc`");
-        if (companionPaths.contains(".cursor/rules/checklists.mdc"))
-            entries.add("- **Checklists:** see `.cursor/rules/checklists.mdc`");
-
-        if (entries.isEmpty()) return "";
-
-        var sb = new StringBuilder();
-        sb.append("## Standards\n\n");
-        sb.append("Canonical sources for this project's engineering standards. The primary file ")
-          .append("references them so a single edit propagates everywhere.\n\n");
-        entries.forEach(e -> sb.append(e).append("\n"));
-        sb.append("\n");
-        return sb.toString();
-    }
 }

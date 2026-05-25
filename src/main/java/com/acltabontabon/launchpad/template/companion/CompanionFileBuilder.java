@@ -4,7 +4,6 @@ import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.standards.Checklist;
 import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
-import com.acltabontabon.launchpad.template.ContextTarget;
 import com.acltabontabon.launchpad.template.GeneratedFile;
 import com.acltabontabon.launchpad.template.rendering.StandardsRendering;
 import java.util.ArrayList;
@@ -14,19 +13,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class CompanionFileBuilder {
 
-    public List<GeneratedFile> build(ContextTarget target, ProjectContext ctx,
+    public List<GeneratedFile> build(ProjectContext ctx,
                                      List<Rule> rules, List<Skill> skills,
                                      List<Checklist> checklists) {
-        return switch (target) {
-            case CLAUDE -> collectClaudeCompanions(ctx, rules, skills, checklists);
-            case CURSOR -> collectCursorCompanions(ctx, rules, skills, checklists);
-        };
-    }
-
-    private List<GeneratedFile> collectClaudeCompanions(
-        ProjectContext ctx,
-        List<Rule> rules, List<Skill> skills, List<Checklist> checklists
-    ) {
         var out = new ArrayList<GeneratedFile>();
         out.add(new GeneratedFile(".ai/index.md",
             StandardsRendering.buildAiIndex(ctx, skills, !checklists.isEmpty()),
@@ -49,28 +38,6 @@ public class CompanionFileBuilder {
             StandardsRendering.buildClaudeSkillFile(s),
             GeneratedFile.FileKind.SKILL
         )));
-        return out;
-    }
-
-    private List<GeneratedFile> collectCursorCompanions(
-        ProjectContext ctx,
-        List<Rule> rules, List<Skill> skills, List<Checklist> checklists
-    ) {
-        var out = new ArrayList<GeneratedFile>();
-        out.add(new GeneratedFile(".cursor/rules/engineering.mdc",
-            StandardsRendering.buildCursorEngineeringRules(rules),
-            GeneratedFile.FileKind.RULES));
-        out.add(new GeneratedFile(".cursor/rules/skills.mdc",
-            StandardsRendering.buildCursorSkills(skills),
-            GeneratedFile.FileKind.RULES));
-        out.add(new GeneratedFile(".cursor/rules/stack.mdc",
-            StandardsRendering.buildCursorStackRules(ctx),
-            GeneratedFile.FileKind.CONTEXT));
-        if (!checklists.isEmpty()) {
-            out.add(new GeneratedFile(".cursor/rules/checklists.mdc",
-                StandardsRendering.buildCursorChecklists(checklists),
-                GeneratedFile.FileKind.RULES));
-        }
         return out;
     }
 }

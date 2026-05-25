@@ -81,15 +81,10 @@ public final class Header {
                 segs.add(Span.styled("  " + Icons.ARROW_RIGHT + "  ", Styles.dim()));
                 segs.add(Span.styled("Project", Style.create().fg(Theme.text)));
             }
-            case TARGET_SELECT -> {
-                segs.add(Span.styled(shortenPath(state.projectPath), Styles.muted()));
-                segs.add(Span.styled("  " + Icons.ARROW_RIGHT + "  ", Styles.dim()));
-                segs.add(Span.styled("Target", Style.create().fg(Theme.text)));
-            }
             case SCANNING -> {
                 var lead = state.taskFlow
                     ? "Scanning for New Task"
-                    : "Generating " + state.selectedTarget.displayName;
+                    : "Generating context";
                 segs.add(Span.styled(lead, Style.create().fg(Theme.text)));
                 if (!state.projectPath.isEmpty()) {
                     segs.add(Span.styled("  " + Icons.SEP + "  ", Styles.dim()));
@@ -118,16 +113,6 @@ public final class Header {
                 segs.add(Span.styled("  " + Icons.ARROW_RIGHT + "  ", Styles.dim()));
                 segs.add(Span.styled("Prompt", Style.create().fg(Theme.text)));
             }
-        }
-        if (state.currentScreen != AppState.Screen.WELCOME
-            && state.currentScreen != AppState.Screen.PROJECT_SELECT
-            && state.currentScreen != AppState.Screen.SETTINGS
-            && state.currentScreen != AppState.Screen.TARGET_SELECT
-            && state.currentScreen != AppState.Screen.SCANNING
-            && state.currentScreen != AppState.Screen.REVIEW) {
-            segs.add(Span.styled("  " + Icons.SEP + "  ", Styles.dim()));
-            segs.add(Span.styled(Icons.ARROW_TARGET + " " + state.selectedTarget.displayName,
-                Style.create().fg(Theme.brand)));
         }
         return segs;
     }

@@ -16,11 +16,6 @@ import org.springframework.stereotype.Component;
 class AgentsPrimaryFileBuilder implements PrimaryFileBuilder {
 
     @Override
-    public ContextTarget target() {
-        return ContextTarget.CLAUDE;
-    }
-
-    @Override
     public String build(ProjectContext ctx, AssemblyPlan plan,
                         AdapterResolver.ResolvedAdapter resolved,
                         SynthesisOutputs synthesis, Set<String> companionPaths) {

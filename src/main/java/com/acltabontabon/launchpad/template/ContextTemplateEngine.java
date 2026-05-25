@@ -9,14 +9,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 /**
  * Thin orchestrator: loads standards, resolves the adapter, runs synthesis,
  * builds companion files, then delegates primary-file construction to the
- * per-target {@link PrimaryFileBuilder}.
+ * {@link PrimaryFileBuilder}.
  */
 @Component
 public class ContextTemplateEngine {
@@ -25,39 +23,34 @@ public class ContextTemplateEngine {
     private final AdapterResolver adapterResolver;
     private final SectionSynthesizer sectionSynthesizer;
     private final CompanionFileBuilder companionFileBuilder;
-    private final Map<ContextTarget, PrimaryFileBuilder> primaryBuilders;
+    private final PrimaryFileBuilder primaryBuilder;
 
     public ContextTemplateEngine(StandardsLoader standardsLoader,
                                  AdapterResolver adapterResolver,
                                  SectionSynthesizer sectionSynthesizer,
                                  CompanionFileBuilder companionFileBuilder,
-                                 List<PrimaryFileBuilder> primaryBuilderList) {
+                                 PrimaryFileBuilder primaryBuilder) {
         this.standardsLoader = standardsLoader;
         this.adapterResolver = adapterResolver;
         this.sectionSynthesizer = sectionSynthesizer;
         this.companionFileBuilder = companionFileBuilder;
-        this.primaryBuilders = primaryBuilderList.stream()
-            .collect(Collectors.toMap(PrimaryFileBuilder::target, b -> b));
+        this.primaryBuilder = primaryBuilder;
     }
 
-    public List<GeneratedFile> buildFiles(
-        ProjectContext ctx,
-        ContextTarget target
-    ) {
+    public List<GeneratedFile> buildFiles(ProjectContext ctx) {
         var projectRoot = Path.of(ctx.rootPath());
         var rules = standardsLoader.loadRules(projectRoot);
         var skills = standardsLoader.loadSkills(projectRoot);
         var checklists = standardsLoader.loadChecklists(projectRoot);
-        var resolved = adapterResolver.resolve(projectRoot, target);
+        var resolved = adapterResolver.resolve(projectRoot);
         var synthesis = sectionSynthesizer.synthesize(ctx);
 
-        var companions = companionFileBuilder.build(
-            target, ctx, rules, skills, checklists);
+        var companions = companionFileBuilder.build(ctx, rules, skills, checklists);
         var companionPaths = new LinkedHashSet<String>();
         for (var c : companions) companionPaths.add(c.relativePath());
 
-        var plan = AssemblyPlan.forTarget(target);
-        var primaryBody = primaryBuilders.get(target).build(ctx, plan, resolved, synthesis, companionPaths);
+        var plan = AssemblyPlan.standard();
+        var primaryBody = primaryBuilder.build(ctx, plan, resolved, synthesis, companionPaths);
 
         var files = new ArrayList<GeneratedFile>();
         files.add(new GeneratedFile(resolved.primaryPath(),

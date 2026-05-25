@@ -8,7 +8,6 @@ import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
 import com.acltabontabon.launchpad.task.TaskTurn;
-import com.acltabontabon.launchpad.template.ContextTarget;
 import com.acltabontabon.launchpad.template.FilePlan;
 import com.acltabontabon.launchpad.template.GeneratedFile;
 import com.acltabontabon.launchpad.tui.mcp.AiClient;
@@ -39,7 +38,6 @@ public class AppState {
     public enum Screen {
         WELCOME,
         PROJECT_SELECT,
-        TARGET_SELECT,
         SCANNING,
         REVIEW,
         TASK_INPUT,
@@ -79,8 +77,6 @@ public class AppState {
     // cursor is clamped to the filtered list size on render.
     public volatile String projectPickerQuery = "";
     public volatile int projectPickerCursor = 0;
-    public volatile ContextTarget selectedTarget = ContextTarget.CLAUDE;
-    public volatile int targetCursorIndex = 0;
 
     // Live-updated by ProjectSelectView on every keystroke that mutates projectPath, and
     // again on ENTER. True if <projectPath>/.launchpad/standards/ exists right now.

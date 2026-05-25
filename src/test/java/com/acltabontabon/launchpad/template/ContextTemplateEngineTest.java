@@ -15,9 +15,6 @@ import com.acltabontabon.launchpad.standards.ChecklistItem;
 import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
-import com.acltabontabon.launchpad.template.AdapterResolver;
-import com.acltabontabon.launchpad.template.AgentsPrimaryFileBuilder;
-import com.acltabontabon.launchpad.template.CursorPrimaryFileBuilder;
 import com.acltabontabon.launchpad.template.companion.CompanionFileBuilder;
 import com.acltabontabon.launchpad.template.synthesis.SectionSynthesizer;
 import java.nio.file.Path;
@@ -48,12 +45,12 @@ class ContextTemplateEngineTest {
         null);
 
     @Test
-    void claudePrimaryFileIsAssembledFromDeterministicSkeleton() {
+    void primaryFileIsAssembledFromDeterministicSkeleton() {
         var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
             List.of(SAMPLE_CHECKLIST),
-            claudeAdapterIncluding("rules", "skills", "checklists"));
+            agentsAdapterIncluding("rules", "skills", "checklists"));
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE);
+        var files = engine.buildFiles(sampleContext());
 
         var primary = contentAt(files, "AGENTS.md");
 
@@ -62,8 +59,6 @@ class ContextTemplateEngineTest {
         assertThat(primary).doesNotContain("Launchpad prepares. Paid agents execute.");
 
         // Every required heading is emitted by the template engine, in order.
-        // Round 9 removed `## How to work in this repo` (it just paraphrased
-        // the deterministic `## Commands` block below it).
         int whatIdx = primary.indexOf("## What this project is");
         int commandsIdx = primary.indexOf("## Commands");
         int mapIdx = primary.indexOf("## Project map");
@@ -99,14 +94,14 @@ class ContextTemplateEngineTest {
     }
 
     @Test
-    void claudePrimaryUsesReadmeIntroWhenPresent() {
+    void primaryUsesReadmeIntroWhenPresent() {
         var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
             List.of(SAMPLE_CHECKLIST),
-            claudeAdapterIncluding("rules", "skills", "checklists"));
+            agentsAdapterIncluding("rules", "skills", "checklists"));
 
         var ctx = contextWithReadmeIntro(
             "A reproducible benchmark of Spring Boot 4 + Oracle GraalVM Native Image 25.");
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
+        var files = engine.buildFiles(ctx);
         var primary = contentAt(files, "AGENTS.md");
 
         assertThat(primary).contains(
@@ -114,14 +109,14 @@ class ContextTemplateEngineTest {
     }
 
     @Test
-    void claudePrimaryOmitsGeneratedContextOnNakedProject() {
+    void primaryOmitsGeneratedContextOnNakedProject() {
         // No rules / no skills / no checklists => no companion files beyond
         // `.ai/index.md` and `.ai/stack.md`. Those two ARE useful, so the
         // section still renders pointing only at them.
         var engine = engineWith(List.of(), List.of(), List.of(),
-            claudeAdapterIncluding("rules", "skills"));
+            agentsAdapterIncluding("rules", "skills"));
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE);
+        var files = engine.buildFiles(sampleContext());
         var primary = contentAt(files, "AGENTS.md");
 
         // Section renders, but pointers are limited to what exists.
@@ -136,24 +131,24 @@ class ContextTemplateEngineTest {
     }
 
     @Test
-    void claudePrimaryOmitsProjectMapWhenNoPackages() {
+    void primaryOmitsProjectMapWhenNoPackages() {
         var engine = engineWith(List.of(), List.of(), List.of(),
-            claudeAdapterIncluding("rules", "skills"));
+            agentsAdapterIncluding("rules", "skills"));
 
         var ctx = contextWithoutPackages();
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
+        var files = engine.buildFiles(ctx);
         var primary = contentAt(files, "AGENTS.md");
 
         assertThat(primary).doesNotContain("## Project map");
     }
 
     @Test
-    void claudePrimaryOmitsCommandsAndWorkflowWhenBuildToolUnknown() {
+    void primaryOmitsCommandsAndWorkflowWhenBuildToolUnknown() {
         var engine = engineWith(List.of(), List.of(), List.of(),
-            claudeAdapterIncluding("rules", "skills"));
+            agentsAdapterIncluding("rules", "skills"));
 
         var ctx = contextWithUnknownBuildTool();
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
+        var files = engine.buildFiles(ctx);
         var primary = contentAt(files, "AGENTS.md");
 
         assertThat(primary).doesNotContain("## Commands");
@@ -164,12 +159,12 @@ class ContextTemplateEngineTest {
     }
 
     @Test
-    void claudePrimaryFallsBackToDeterministicIntroWhenNoReadmeOrPom() {
+    void primaryFallsBackToDeterministicIntroWhenNoReadmeOrPom() {
         var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
             List.of(SAMPLE_CHECKLIST),
-            claudeAdapterIncluding("rules", "skills", "checklists"));
+            agentsAdapterIncluding("rules", "skills", "checklists"));
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE);
+        var files = engine.buildFiles(sampleContext());
         var primary = contentAt(files, "AGENTS.md");
 
         // Without README intro, pom <description>, or a synthesizer, the
@@ -179,71 +174,20 @@ class ContextTemplateEngineTest {
     }
 
     @Test
-    void cursorPrimaryFilePointsAtMdcCompanionsInsteadOfInliningStandards() {
-        var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
-            List.of(SAMPLE_CHECKLIST),
-            cursorAdapterIncluding("rules", "skills", "checklists"));
-
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR);
-
-        var primary = contentAt(files, ".cursor/rules/main.mdc");
-        assertThat(primary).contains("## Standards");
-        assertThat(primary).contains(".cursor/rules/engineering.mdc");
-        assertThat(primary).contains(".cursor/rules/skills.mdc");
-        assertThat(primary).contains(".cursor/rules/checklists.mdc");
-
-        assertThat(primary).doesNotContain(RULE_BODY_MARKER);
-        assertThat(primary).doesNotContain("### " + RULE_TITLE);
-
-        var rulesMdc = contentAt(files, ".cursor/rules/engineering.mdc");
-        assertThat(rulesMdc).contains(RULE_BODY_MARKER);
-    }
-
-    @Test
-    void cursorPrimaryFileUsesDeterministicSkeletonNotMegaPromptSummary() {
-        var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
-            List.of(SAMPLE_CHECKLIST),
-            cursorAdapterIncluding("rules", "skills", "checklists"));
-
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR);
-
-        var primary = contentAt(files, ".cursor/rules/main.mdc");
-
-        // Cursor primary now mirrors the Claude path: deterministic skeleton
-        // with section headings owned by Java. The legacy mega-prompt
-        // sections must not appear.
-        assertThat(primary).contains("description: Primary project rules");
-        assertThat(primary).contains("globs: **/*");
-        assertThat(primary).contains("# sample-project");
-        int whatIdx = primary.indexOf("## What this project is");
-        int commandsIdx = primary.indexOf("## Commands");
-        int boundsIdx = primary.indexOf("## Boundaries for AI agents");
-        assertThat(whatIdx).isPositive();
-        assertThat(commandsIdx).isGreaterThan(whatIdx);
-        assertThat(boundsIdx).isGreaterThan(commandsIdx);
-        assertThat(primary).contains("./mvnw spring-boot:run");
-
-        // Legacy mega-prompt sections must be absent.
-        assertThat(primary).doesNotContain("## Project Context");
-        assertThat(primary).doesNotContain("Cursor Rules - sample-project");
-    }
-
-    @Test
-    void cursorPrimaryFileFallsBackToCursorrulesWithoutAdapter() {
+    void primaryFileFallsBackToAgentsMdWithoutAdapter() {
         var loader = mock(StandardsLoader.class);
         when(loader.loadRules(any())).thenReturn(List.of(SAMPLE_RULE));
         when(loader.loadSkills(any())).thenReturn(List.of(SAMPLE_SKILL));
         when(loader.loadChecklists(any())).thenReturn(List.of());
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.empty());
-        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(null), new CompanionFileBuilder(), List.of(new AgentsPrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
+        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader),
+            new SectionSynthesizer(null), new CompanionFileBuilder(),
+            new AgentsPrimaryFileBuilder());
 
-        var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR);
+        var files = engine.buildFiles(sampleContext());
 
-        // No adapter -> primary lands at the legacy `.cursorrules` path, but
-        // with the new deterministic shape (no frontmatter, same skeleton).
-        var primary = contentAt(files, ".cursorrules");
-        assertThat(primary).doesNotStartWith("---\n");
-        assertThat(primary).contains("# sample-project");
+        var primary = contentAt(files, "AGENTS.md");
+        assertThat(primary).contains("# AGENTS.md");
         assertThat(primary).contains("## What this project is");
         assertThat(primary).contains("## Boundaries for AI agents");
     }
@@ -258,18 +202,14 @@ class ContextTemplateEngineTest {
         when(loader.loadChecklists(any())).thenReturn(checklists);
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.of(adapter));
 
-        return new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(null), new CompanionFileBuilder(), List.of(new AgentsPrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
+        return new ContextTemplateEngine(loader, new AdapterResolver(loader),
+            new SectionSynthesizer(null), new CompanionFileBuilder(),
+            new AgentsPrimaryFileBuilder());
     }
 
-    private static Adapter claudeAdapterIncluding(String... includes) {
-        return new Adapter("agents", "claude", "Vendor-neutral agents adapter",
+    private static Adapter agentsAdapterIncluding(String... includes) {
+        return new Adapter("agents", "agents", "Vendor-neutral agents adapter",
             List.of(new AdapterOutput("AGENTS.md", "markdown", List.of(includes), Map.of())));
-    }
-
-    private static Adapter cursorAdapterIncluding(String... includes) {
-        return new Adapter("cursor", "cursor", "Cursor adapter",
-            List.of(new AdapterOutput(".cursor/rules/main.mdc", "mdc", List.of(includes),
-                Map.of("description", "Primary project rules", "globs", "**/*"))));
     }
 
     private static ProjectContext sampleContext() {

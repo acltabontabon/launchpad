@@ -8,7 +8,6 @@ import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import com.acltabontabon.launchpad.template.AdapterResolver;
 import com.acltabontabon.launchpad.template.AgentsPrimaryFileBuilder;
-import com.acltabontabon.launchpad.template.CursorPrimaryFileBuilder;
 import com.acltabontabon.launchpad.template.synthesis.SectionSynthesizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -77,9 +76,9 @@ class Round4Verification {
         Mockito.when(loader.loadSkills(Mockito.any())).thenReturn(java.util.List.of());
         Mockito.when(loader.loadChecklists(Mockito.any())).thenReturn(java.util.List.of());
         Mockito.when(loader.loadAdapter(Mockito.any(), Mockito.any())).thenReturn(java.util.Optional.empty());
-        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(generator), new com.acltabontabon.launchpad.template.companion.CompanionFileBuilder(), java.util.List.of(new AgentsPrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
+        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(generator), new com.acltabontabon.launchpad.template.companion.CompanionFileBuilder(), new AgentsPrimaryFileBuilder());
 
-        var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
+        var files = engine.buildFiles(ctx);
         var primary = files.stream()
             .filter(f -> f.relativePath().equals("AGENTS.md"))
             .findFirst()
