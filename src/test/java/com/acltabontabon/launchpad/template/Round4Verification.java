@@ -7,7 +7,7 @@ import com.acltabontabon.launchpad.config.LaunchpadAiProperties;
 import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import com.acltabontabon.launchpad.template.AdapterResolver;
-import com.acltabontabon.launchpad.template.ClaudePrimaryFileBuilder;
+import com.acltabontabon.launchpad.template.AgentsPrimaryFileBuilder;
 import com.acltabontabon.launchpad.template.CursorPrimaryFileBuilder;
 import com.acltabontabon.launchpad.template.synthesis.SectionSynthesizer;
 import java.nio.file.Files;
@@ -31,7 +31,7 @@ import org.springframework.ai.ollama.api.OllamaChatOptions;
  *   - Ollama running at http://localhost:11434
  *   - the configured model is pulled
  *
- * Prints the generated CLAUDE.md to stdout and writes it to
+ * Prints the generated AGENTS.md to stdout and writes it to
  * `target/round4-claude.md` for inspection.
  */
 class Round4Verification {
@@ -71,17 +71,17 @@ class Round4Verification {
             java.util.List.of(new com.acltabontabon.launchpad.springboot.synthesizer.SpringPromptStrategy()));
         var generator = new ContextGeneratorService(clientBuilder, promptSelector, aiProps);
 
-        // 3) Engine + assemble. StandardsLoader is mocked - we don't need rules to verify CLAUDE.md shape.
+        // 3) Engine + assemble. StandardsLoader is mocked - we don't need rules to verify AGENTS.md shape.
         var loader = Mockito.mock(StandardsLoader.class);
         Mockito.when(loader.loadRules(Mockito.any())).thenReturn(java.util.List.of());
         Mockito.when(loader.loadSkills(Mockito.any())).thenReturn(java.util.List.of());
         Mockito.when(loader.loadChecklists(Mockito.any())).thenReturn(java.util.List.of());
         Mockito.when(loader.loadAdapter(Mockito.any(), Mockito.any())).thenReturn(java.util.Optional.empty());
-        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(generator), new com.acltabontabon.launchpad.template.companion.CompanionFileBuilder(), java.util.List.of(new ClaudePrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
+        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(generator), new com.acltabontabon.launchpad.template.companion.CompanionFileBuilder(), java.util.List.of(new AgentsPrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
 
         var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
         var primary = files.stream()
-            .filter(f -> f.relativePath().equals("CLAUDE.md"))
+            .filter(f -> f.relativePath().equals("AGENTS.md"))
             .findFirst()
             .orElseThrow();
 
@@ -89,7 +89,7 @@ class Round4Verification {
         Files.createDirectories(outPath.getParent());
         Files.writeString(outPath, primary.content());
 
-        System.out.println("================ GENERATED CLAUDE.md ================");
+        System.out.println("================ GENERATED AGENTS.md ================");
         System.out.println(primary.content());
         System.out.println("================ END ================");
         System.out.println("[wrote] " + outPath.toAbsolutePath());

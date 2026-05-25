@@ -31,9 +31,9 @@ class MergeMarkersTest {
 
     @Test
     void mergeAppendsBlockWhenAbsent() {
-        var existing = "# Hand-written CLAUDE.md\nLine.\n";
+        var existing = "# Hand-written AGENTS.md\nLine.\n";
         var merged = MergeMarkers.mergeInto(existing, "generated content");
-        assertThat(merged).startsWith("# Hand-written CLAUDE.md");
+        assertThat(merged).startsWith("# Hand-written AGENTS.md");
         assertThat(merged).contains("generated content");
         assertThat(MergeMarkers.hasMarkers(merged)).isTrue();
     }

@@ -71,7 +71,7 @@ public final class StandardsRendering {
         sb.append("# Project Index - ").append(ctx.name()).append("\n\n");
         sb.append("| File | Purpose |\n");
         sb.append("|------|---------|\n");
-        sb.append("| `CLAUDE.md` | Main context file - start here |\n");
+        sb.append("| `AGENTS.md` | Main context file - start here |\n");
         sb.append("| `.ai/engineering-rules.md` | Engineering rules for this project |\n");
         sb.append("| `.ai/stack.md` | Stack details and dependency notes |\n");
         if (hasChecklists) sb.append("| `.ai/checklists.md` | Verification checklists |\n");

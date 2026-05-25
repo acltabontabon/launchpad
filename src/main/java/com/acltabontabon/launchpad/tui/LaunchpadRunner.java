@@ -331,6 +331,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                 var plans = new java.util.ArrayList<com.acltabontabon.launchpad.template.FilePlan>();
                 for (var f : files) plans.add(com.acltabontabon.launchpad.template.FilePlan.compute(f, projectRoot));
                 state.filePlans = plans;
+                detectLegacyPrimaryFiles(projectRoot, files);
                 state.pushActivity("assemble", "prepared " + files.size() + " files for review", "success");
 
                 // Done
@@ -355,6 +356,24 @@ public class LaunchpadRunner implements ApplicationRunner {
             }
         });
         state.currentScanFuture = future;
+    }
+
+    /**
+     * If the project already contains legacy primary-instruction files
+     * (CLAUDE.md, .cursorrules) that Launchpad no longer regenerates, surface
+     * a warning so the user knows to delete or migrate them. The note lands
+     * in the WARN log and in AppState.generationWarnings so the Review screen
+     * banner picks it up. The generated AGENTS.md body itself stays clean.
+     */
+    private void detectLegacyPrimaryFiles(Path projectRoot,
+                                          java.util.List<com.acltabontabon.launchpad.template.GeneratedFile> files) {
+        com.acltabontabon.launchpad.template.LegacyPrimaryFileDetector.detect(projectRoot, files)
+            .ifPresent(msg -> {
+                org.slf4j.LoggerFactory.getLogger(LaunchpadRunner.class).warn(msg);
+                var merged = new java.util.ArrayList<>(state.generationWarnings);
+                merged.add(msg);
+                state.generationWarnings = merged;
+            });
     }
 
     // ── /new-task background dispatch ──────────────────────────────────────────

@@ -7,13 +7,13 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Deterministic primary-file builder for the Claude target.
+ * Deterministic primary-file builder for the vendor-neutral AGENTS.md output.
  * Java owns every heading, table, and section; synthesis fills bounded body
  * fragments with deterministic fallbacks per job. The model can never invent
  * the document structure.
  */
 @Component
-class ClaudePrimaryFileBuilder implements PrimaryFileBuilder {
+class AgentsPrimaryFileBuilder implements PrimaryFileBuilder {
 
     @Override
     public ContextTarget target() {
@@ -25,7 +25,7 @@ class ClaudePrimaryFileBuilder implements PrimaryFileBuilder {
                         AdapterResolver.ResolvedAdapter resolved,
                         SynthesisOutputs synthesis, Set<String> companionPaths) {
         var sb = new StringBuilder();
-        sb.append("# CLAUDE.md\n\n");
+        sb.append("# AGENTS.md\n\n");
 
         for (var section : plan.sections()) {
             switch (section) {

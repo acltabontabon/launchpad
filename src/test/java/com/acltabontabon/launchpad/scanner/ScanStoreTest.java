@@ -82,7 +82,7 @@ class ScanStoreTest {
             ),
             Map.of("pom.xml", "<project>...</project>"),
             List.of(new PackageSummary("src/main/java/api", 3, List.of("UserController", "OrderController"))),
-            "Existing CLAUDE.md preview text."
+            "Existing AGENTS.md preview text."
         );
     }
 }

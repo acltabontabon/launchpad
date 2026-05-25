@@ -10,8 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fuzzy project picker:** Filterable list for recent and auto-discovered Spring Boot projects with background search.
 - **Enhanced Scan screen:** Real-time activity log, scan statistics, and detailed progress tracking.
 - **Interactive log navigation:** Support for scrolling and keyboard navigation (j/k, PageUp/Down) in the scan log.
+- **Legacy primary-file detector:** Surfaces a Review-screen warning (and WARN log line) when older agent-instruction files are found alongside a fresh generation, without injecting migration notes into the emitted content.
 
 ### Changed
+- **Vendor-neutral primary file:** The primary agent-instructions file is now `AGENTS.md`, read natively by Claude Code (with fallback), Cursor, Codex CLI, Aider, Continue, Zed, Jules, and Amp.
+- **Standards adapter id:** Renamed the default adapter id from `claude` to `agents`. Legacy `claude` adapter blocks in `standards-pack.yml` are accepted with a deprecation warning so existing packs keep working.
 - **Rich Markdown preview:** Styled rendering for headings and code blocks in the Review screen with raw diff toggle.
 - **Brand positioning:** Refined tagline and messaging to focus on local-first repository context for AI agents.
 

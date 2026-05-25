@@ -16,7 +16,7 @@ import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import com.acltabontabon.launchpad.template.AdapterResolver;
-import com.acltabontabon.launchpad.template.ClaudePrimaryFileBuilder;
+import com.acltabontabon.launchpad.template.AgentsPrimaryFileBuilder;
 import com.acltabontabon.launchpad.template.CursorPrimaryFileBuilder;
 import com.acltabontabon.launchpad.template.companion.CompanionFileBuilder;
 import com.acltabontabon.launchpad.template.synthesis.SectionSynthesizer;
@@ -55,10 +55,10 @@ class ContextTemplateEngineTest {
 
         var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE);
 
-        var primary = contentAt(files, "CLAUDE.md");
+        var primary = contentAt(files, "AGENTS.md");
 
         // Round-4 shape: title + tagline.
-        assertThat(primary).startsWith("<!-- launchpad:managed:start -->\n# CLAUDE.md");
+        assertThat(primary).startsWith("<!-- launchpad:managed:start -->\n# AGENTS.md");
         assertThat(primary).doesNotContain("Launchpad prepares. Paid agents execute.");
 
         // Every required heading is emitted by the template engine, in order.
@@ -107,7 +107,7 @@ class ContextTemplateEngineTest {
         var ctx = contextWithReadmeIntro(
             "A reproducible benchmark of Spring Boot 4 + Oracle GraalVM Native Image 25.");
         var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
-        var primary = contentAt(files, "CLAUDE.md");
+        var primary = contentAt(files, "AGENTS.md");
 
         assertThat(primary).contains(
             "A reproducible benchmark of Spring Boot 4 + Oracle GraalVM Native Image 25.");
@@ -122,7 +122,7 @@ class ContextTemplateEngineTest {
             claudeAdapterIncluding("rules", "skills"));
 
         var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE);
-        var primary = contentAt(files, "CLAUDE.md");
+        var primary = contentAt(files, "AGENTS.md");
 
         // Section renders, but pointers are limited to what exists.
         assertThat(primary).contains("## Generated context");
@@ -142,7 +142,7 @@ class ContextTemplateEngineTest {
 
         var ctx = contextWithoutPackages();
         var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
-        var primary = contentAt(files, "CLAUDE.md");
+        var primary = contentAt(files, "AGENTS.md");
 
         assertThat(primary).doesNotContain("## Project map");
     }
@@ -154,12 +154,12 @@ class ContextTemplateEngineTest {
 
         var ctx = contextWithUnknownBuildTool();
         var files = engine.buildFiles(ctx, ContextTarget.CLAUDE);
-        var primary = contentAt(files, "CLAUDE.md");
+        var primary = contentAt(files, "AGENTS.md");
 
         assertThat(primary).doesNotContain("## Commands");
         assertThat(primary).doesNotContain("## How to work in this repo");
         // The naked file still survives - title + tagline + intro + boundaries.
-        assertThat(primary).contains("# CLAUDE.md");
+        assertThat(primary).contains("# AGENTS.md");
         assertThat(primary).contains("## Boundaries for AI agents");
     }
 
@@ -170,7 +170,7 @@ class ContextTemplateEngineTest {
             claudeAdapterIncluding("rules", "skills", "checklists"));
 
         var files = engine.buildFiles(sampleContext(), ContextTarget.CLAUDE);
-        var primary = contentAt(files, "CLAUDE.md");
+        var primary = contentAt(files, "AGENTS.md");
 
         // Without README intro, pom <description>, or a synthesizer, the
         // deterministic fallback names the project + stack.
@@ -235,7 +235,7 @@ class ContextTemplateEngineTest {
         when(loader.loadSkills(any())).thenReturn(List.of(SAMPLE_SKILL));
         when(loader.loadChecklists(any())).thenReturn(List.of());
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.empty());
-        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(null), new CompanionFileBuilder(), List.of(new ClaudePrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
+        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(null), new CompanionFileBuilder(), List.of(new AgentsPrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
 
         var files = engine.buildFiles(sampleContext(), ContextTarget.CURSOR);
 
@@ -258,12 +258,12 @@ class ContextTemplateEngineTest {
         when(loader.loadChecklists(any())).thenReturn(checklists);
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.of(adapter));
 
-        return new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(null), new CompanionFileBuilder(), List.of(new ClaudePrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
+        return new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(null), new CompanionFileBuilder(), List.of(new AgentsPrimaryFileBuilder(), new CursorPrimaryFileBuilder()));
     }
 
     private static Adapter claudeAdapterIncluding(String... includes) {
-        return new Adapter("claude", "claude", "Claude Code adapter",
-            List.of(new AdapterOutput("CLAUDE.md", "markdown", List.of(includes), Map.of())));
+        return new Adapter("agents", "claude", "Vendor-neutral agents adapter",
+            List.of(new AdapterOutput("AGENTS.md", "markdown", List.of(includes), Map.of())));
     }
 
     private static Adapter cursorAdapterIncluding(String... includes) {

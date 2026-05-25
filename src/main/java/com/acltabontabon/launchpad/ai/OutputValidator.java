@@ -104,7 +104,7 @@ public final class OutputValidator {
      */
     private static final Set<String> WELL_KNOWN_FILES = Set.of(
         // AI / docs
-        "CLAUDE.md", ".cursorrules", "README.md", "LICENSE", "CHANGELOG.md",
+        "AGENTS.md", "CLAUDE.md", ".cursorrules", "README.md", "LICENSE", "CHANGELOG.md",
         // Java / JVM
         "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle",
         "settings.gradle.kts", "gradle.properties", "application.properties",

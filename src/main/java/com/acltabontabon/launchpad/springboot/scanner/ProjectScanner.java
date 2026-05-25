@@ -297,11 +297,11 @@ public class ProjectScanner {
 
     /**
      * Pick up any existing AI context file in the project so the LLM is told
-     * "this is already documented, don't duplicate". Reads CLAUDE.md first
-     * (preferred), falls back to .cursorrules.
+     * "this is already documented, don't duplicate". Reads AGENTS.md first
+     * (preferred); falls back to legacy CLAUDE.md / .cursorrules.
      */
     private static String readExistingContextSummary(Path root) {
-        for (var name : new String[] { "CLAUDE.md", ".cursorrules" }) {
+        for (var name : new String[] { "AGENTS.md", "CLAUDE.md", ".cursorrules" }) {
             var p = root.resolve(name);
             if (Files.isRegularFile(p)) {
                 try {
