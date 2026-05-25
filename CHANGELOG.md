@@ -7,20 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- **Live activity log on Scan screen:** A bounded ring buffer of scan/audit events is rendered in a new bottom card so users see what the pipeline is actually doing (rule checks, finding counts, stack detection) instead of just a spinner.
-- **Stats card on Scan screen:** Files scanned, packages, dependencies, rules evaluated, and findings-by-severity are surfaced live next to the phases list. Layout stacks vertically on narrow terminals.
-- **Current-item line under the gauge:** The progress card now shows the file or rule currently being processed beneath the status message.
-- **Scrollable activity log:** Arrow keys (or j/k) scroll back through the activity log; PageUp/Down jump by ten; Home/End (or g/G) pin to oldest/newest. A bottom-right label on the card shows when the view is detached from the live tail.
-### Removed
-- **Top stepper on the Scan screen:** The horizontal step indicator duplicated information already shown in the phases card (with finer detail like elapsed time and rule counts). The `Stepper` component is gone.
+- **Fuzzy project picker:** Replaced path input with a filterable list of recent and auto-discovered Spring Boot projects. Supports live background search for projects outside common dev roots.
+- **Enhanced Scan screen:** Added a live activity log, real-time scan statistics (files, dependencies, rules), and a detailed progress line showing the current item being processed.
+- **Interactive activity log:** Support for scrolling and navigation (j/k, PageUp/Down) within the Scan screen's activity log.
+
 ### Changed
-- **Styled Markdown preview on Review screen:** Generated `.md` files now render with headings, lists, and fenced code blocks via TamboUI's `MarkdownView`. The `d` key still toggles to the raw unified-diff view, and non-Markdown outputs continue to render as plain text.
-- **Refreshed welcome tagline:** Updated the hero subtitle to "Local AI Context Prep" with a new tag line "Sharper prompts. Smaller Bills."
+- **Rich Markdown preview:** Generated `.md` files now render with full styling (headings, code blocks) in the Review screen, with a toggle for raw diffs.
+- **Positioning update:** Refined branding and tagline to focus on local-first repository context for AI coding agents.
+
 ### Fixed
-- **Version badge synced to pom:** The header version chip now reads from a Maven-filtered `launchpad-version.properties` resource so it always matches `${project.version}` instead of falling back to a stale hardcoded string when launched via `spring-boot:run`.
+- **Dynamic versioning:** The header version badge now stays in sync with the Maven `pom.xml` version.
+
 ### Removed
-- **Prompts output:** Dropped `.ai/prompts.md` and `.cursor/rules/prompts.mdc` from the generated output set. The `Prompt` schema, `PromptsFile` YAML binding, `StandardsLoader.loadPrompts()`, and all associated rendering methods have been removed. The `prompts` field is also removed from the `standards-pack.yml` `includes` schema.
-- **Project-notes output:** Dropped `.ai/project-notes.md` and `.cursor/rules/project-notes.mdc`. The dedicated `generateTargetSpecificContent()` LLM call that fed only these files has been removed from the pipeline, making the context-generation layer fully deterministic. The `GENERATE_TARGET` pipeline phase is removed; the stepper and scan-progress view now show Scan, Assemble, Done.
+- **Redundant UI elements:** Removed the top stepper from the Scan screen to reduce visual clutter.
+- **Non-deterministic outputs:** Dropped prompts and project-notes generation to ensure a fully deterministic, context-only generation layer.
+- **Obsolete schemas:** Removed legacy prompt and project-notes fields from standards and YAML bindings.
 
 ## [0.4.0] - 2026-05-25
 ### Changed

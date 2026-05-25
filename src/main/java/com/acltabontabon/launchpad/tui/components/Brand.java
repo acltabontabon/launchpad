@@ -52,8 +52,8 @@ public final class Brand {
             Line.from(Span.styled("", Style.create())),
             Line.from(Span.styled("LAUNCHPAD", wordmarkStyle)),
             Line.from(Span.styled("─────────", ruleStyle)),
-            Line.from(Span.styled("Spring Boot Java + Maven Context Prep", subStyle)),
-            Line.from(Span.styled("Local-first. Deterministic-first.", tagStyle))
+            Line.from(Span.styled("Launchpad prepares. Paid agents execute.", subStyle)),
+            Line.from(Span.styled("Local-first repo context for AI coding agents", tagStyle))
         );
     }
 }

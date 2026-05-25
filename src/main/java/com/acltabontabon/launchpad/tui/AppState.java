@@ -73,12 +73,12 @@ public class AppState {
     public volatile boolean remoteStandardsCheckRequested = true;
 
     // User selections
-    public volatile String projectPath = System.getProperty("user.home");
-    public volatile String pathSuggestion = PathAutocomplete.suggest(projectPath);
-    // Live candidate list shown beneath the path input. Updated on every keystroke
-    // that mutates projectPath. Cursor is clamped to the current list size on render.
-    public volatile List<String> pathMatches = PathAutocomplete.matches(projectPath);
-    public volatile int pathMatchesCursor = 0;
+    public volatile String projectPath = "";
+    // Project-picker filter state. The picker fuzzy-filters the union of
+    // ProjectRegistry recents and ProjectDiscovery hits by the query string;
+    // cursor is clamped to the filtered list size on render.
+    public volatile String projectPickerQuery = "";
+    public volatile int projectPickerCursor = 0;
     public volatile ContextTarget selectedTarget = ContextTarget.CLAUDE;
     public volatile int targetCursorIndex = 0;
 
@@ -200,9 +200,6 @@ public class AppState {
     // contains() at ~12 fps while the save action thread calls add(); a plain
     // HashSet would risk lost updates or CME during iteration.
     public final Set<Integer> savedFileIndices = ConcurrentHashMap.newKeySet();
-
-    // Text input cursor for path input
-    public volatile int inputCursorPos = 0;
 
     // Active Ollama model name (e.g. "qwen2.5-coder:7b"). Surfaced in the Welcome
     // header so the user knows which local model will do the work. Updated on
