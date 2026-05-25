@@ -1,0 +1,567 @@
+= Authoring a standards pack
+:toc: macro
+:toclevels: 2
+:source-highlighter: rouge
+
+A *standards pack* is a folder of YAML files that tells Launchpad what
+engineering rules, recipes, and checklists to bake into a project's AI
+context. Launchpad reads the pack, renders a vendor-neutral `AGENTS.md`
+(plus companion `.ai/*.md` files), and emits agent-native discovery files
+for the AI tools the developer has selected (`.claude/skills/`,
+`.cursor/rules/`, `.windsurf/rules/`).
+
+*Why packs exist.* Most teams want the same engineering opinions to travel
+with every project the AI touches, regardless of which AI tool the
+developer runs. A pack is the single source of truth: tech leads edit YAML
+in one repository; Launchpad re-renders the right files in every consuming
+project on the next run. Switching from Claude Code to Cursor (or adding a
+new agent) costs zero re-authoring.
+
+The reference pack lives at
+https://github.com/acltabontabon/ai-standard-packs[`ai-standard-packs`].
+Use it as a template; everything in this guide describes the same format.
+
+The mental model is two-step:
+
+. *A tech lead authors YAML* in the pack (rules, skills, checklists).
+. *Launchpad renders and projects* that content into each consuming project.
+
+You only ever edit YAML. You never write code to add new content.
+
+toc::[]
+
+== 1. What's in a pack
+
+[source]
+----
+ai-standard-packs/
+├── standards-pack.yml      # manifest (entry point)
+├── rules/                  # directives the AI must follow
+├── skills/                 # "how to do X" recipes
+├── checklists/             # acceptance items for review or release
+├── prompts/                # reusable prompt templates (see §4.4)
+└── adapters/               # render targets (today: agents.yml -> AGENTS.md)
+----
+
+=== When to reach for which
+
+The four content types exist because they answer different questions an AI
+agent asks itself while working:
+
+[cols="1,2,3", options="header"]
+|===
+| Type | Answers | Reach for it when
+
+| *rule*
+| "Am I allowed to do this?"
+| The team has a hard or soft constraint that applies regardless of task (no secrets in logs, always parameterise SQL).
+
+| *skill*
+| "How do I do this?"
+| A specific recurring task has a known good shape (adding an HTTP endpoint, wiring a feature flag).
+
+| *checklist*
+| "Am I done?"
+| A workflow stage has acceptance criteria (PR review, production readiness).
+
+| *prompt*
+| "What should I ask for?"
+| You want a reusable, parameterised AI request template (planning, code review handoff).
+|===
+
+If you find yourself debating whether a piece of guidance is a rule or a
+skill: rules are _constraints_ on any work; skills are _procedures_ for a
+named task. A rule cuts across many tasks; a skill is one task.
+
+=== What each folder produces
+
+[cols="1,3", options="header"]
+|===
+| Folder | What it produces
+
+| `rules/`
+| Engineering rules grouped by severity. Rendered into `AGENTS.md`, `.ai/engineering-rules.md`, `.cursor/rules/engineering.mdc`, `.windsurf/rules/engineering.md`.
+
+| `skills/`
+| Task recipes. Rendered per-skill into `.claude/skills/<id>/SKILL.md`, `.cursor/rules/<id>.mdc`, `.windsurf/rules/<id>.md`, and summarised in `AGENTS.md`.
+
+| `checklists/`
+| Review/release gates. Rendered into `AGENTS.md`, `.ai/checklists.md`, `.cursor/rules/checklists.mdc`, `.windsurf/rules/checklists.md`.
+
+| `prompts/`
+| Reusable prompt templates. Authored today; not yet consumed by the renderer (see §4.4).
+
+| `adapters/`
+| Declares the canonical render target. Today only `agents.yml` exists; you rarely need to add new ones.
+|===
+
+== 2. Where Launchpad looks for your pack
+
+There are two source locations because they serve two different intents:
+
+[cols="1,2", options="header"]
+|===
+| Location | Intent
+
+| *Remote cache* at `~/.launchpad/standards-cache/`
+| The team-wide standard. Cloned from `launchpad.remote.standards.url` (TTL 1 hour). Everyone on the team gets the same content.
+
+| *Per-project override* at `<project-root>/.launchpad/standards/`
+| Local testing or a single project that needs to deviate. Useful when iterating on the pack itself, or pinning one repo to an older version.
+|===
+
+The first location that contains a `standards-pack.yml` wins.
+
+Point Launchpad at your pack by adding one line to
+`~/.launchpad/config.properties`:
+
+[source,properties]
+----
+launchpad.remote.standards.url=https://github.com/<org>/ai-standard-packs.git
+----
+
+For local iteration, either:
+
+* Point the remote URL at a local git clone
+  (`file:///Users/you/Workspace/ai-standard-packs`), or
+* Drop the pack contents directly into
+  `<project-root>/.launchpad/standards/`.
+
+To force a refresh after a push, delete `~/.launchpad/standards-cache/`.
+
+== 3. The manifest (`standards-pack.yml`)
+
+The manifest is the entry point. Its job is twofold:
+
+. *Identify the pack* (id, version, name) so consuming projects can reason
+  about which pack they're on.
+. *Declare every content file* so the loader knows what to read. Files
+  that aren't listed are invisible to Launchpad, even if they sit in the
+  right folder.
+
+[source,yaml]
+----
+id: launchpad-default-ai-standards
+version: 1.0.0
+name: Launchpad Default AI Standards
+description: |
+  Default standards pack for preparing repo-aware AI coding context.
+maintainers:
+  - Your Team
+
+includes:
+  rules:
+    - rules/engineering.yml
+    - rules/security.yml
+  skills:
+    - skills/delivery.yml
+    - skills/review.yml
+  checklists:
+    - checklists/pull-request.yml
+
+adapters:
+  agents: adapters/agents.yml
+
+projections:
+  - claude
+  - cursor
+  - windsurf
+----
+
+[cols="1,1,3", options="header"]
+|===
+| Field | Required | Purpose
+
+| `id`          | yes | Stable, machine-readable identifier. Used in logs and (eventually) for cross-pack references. Keep it kebab-case and don't rename it casually.
+| `version`     | yes | Semver. Bump when you make a change consumers should notice.
+| `name`        | yes | Human-readable name shown in Launchpad's UI and rendered output.
+| `description` | no  | Short paragraph readers see when picking or auditing the pack.
+| `maintainers` | no  | Who to ask when something breaks. Pure documentation.
+| `includes`    | yes | The registry of content files. The loader reads only what's listed here; new files are inert until registered.
+| `adapters`    | yes | Maps adapter id to file path. `agents` is the canonical entry and ships in every pack.
+| `projections` | no  | The pack's default opinion about which AI tools to emit files for. The developer's TUI choice overrides this (see §6).
+|===
+
+[IMPORTANT]
+====
+Every new YAML file under `rules/`, `skills/`, `checklists/` must be listed
+in `includes:`. This is a deliberate registration step: it lets you keep
+work-in-progress files in the folder without shipping them, and it makes
+the active content set explicit at a glance. If you forget, Launchpad
+fails at load time with the exact missing path.
+====
+
+== 4. Authoring each content type
+
+Every content file starts with `version: 1` and a top-level collection key
+that matches the directory name (`rules:`, `skills:`, `checklists:`,
+`prompts:`).
+
+A few fields appear in every type and have the same intent everywhere:
+
+* *`priority`* decides how much weight the renderer gives the entry.
+  `1` = always-on; surface it prominently in agent files. `2` = situational;
+  include it but don't elevate it. Pick `1` only for things every developer
+  on every task should see.
+* *`scope`* is the filter that tells future tooling (and humans reading
+  the file) when this entry applies. `languages`, `frameworks`, `tools`,
+  `tasks`, `tags` are all free-form lists; empty means "applies broadly."
+  Today most consumers ignore scope for filtering, but it documents intent
+  and unlocks future per-task selection.
+* *`id` / `title`* are the addressable handle and the human label. Ids
+  are kebab-case and unique within the content type. Titles can change
+  freely; ids should not.
+
+=== 4.1 Skills
+
+*Intent:* capture a named, repeatable procedure so every agent (and every
+developer) follows the same recipe. A skill is the answer to "we keep
+doing X and people keep doing it differently."
+
+[source,yaml]
+----
+version: 1
+skills:
+  - id: add-endpoint
+    title: Add an HTTP Endpoint
+    type: skill
+    priority: 1
+    trigger: |
+      When adding a new HTTP route or extending the API surface.
+    scope:
+      languages: [java]
+      frameworks: [spring-boot]
+      tools: []
+      tasks: [feature]
+      tags: [delivery, http]
+    steps:
+      - Define a request record and a response record co-located with the controller.
+      - Add a controller method that validates input, calls one application service, and shapes the response.
+      - Implement or extend the application service so the endpoint can stay thin.
+      - Add a test at the controller level that exercises validation and one happy-path call.
+      - Update OpenAPI or equivalent API description if the project uses one.
+    output_expectations:
+      - Controller method under 20 lines.
+      - Application service signature does not expose Spring or web types.
+      - Test covering at least one input validation failure.
+    notes: |
+      Prefer extending an existing endpoint over forking a parallel implementation.
+----
+
+[cols="1,1,3", options="header"]
+|===
+| Field | Required | Purpose
+
+| `type`                | yes | Always `skill`. Lets the loader validate it found the right shape.
+| `trigger`             | yes | Plain-English condition that tells the agent _when_ to use this skill. Cursor and Windsurf surface this as the rule description for activation. Write it as a sentence starting with "When..." so it reads naturally to an AI scanning candidates.
+| `steps`               | yes | The ordered procedure. Keep steps small and concrete; they become the agent's actual plan.
+| `output_expectations` | no  | Acceptance criteria the agent can self-check against. Think "definition of done for this skill."
+| `notes`               | no  | Anything that doesn't fit the steps: tradeoffs, common mistakes, exceptions.
+|===
+
+=== 4.2 Rules
+
+*Intent:* encode a constraint that applies regardless of which task the
+agent is doing. A rule answers "we always / we never," not "to do X,
+follow these steps."
+
+[source,yaml]
+----
+version: 1
+rules:
+  - id: no-secret-logging
+    title: No Secrets in Logs
+    type: rule
+    severity: never
+    priority: 1
+    scope:
+      languages: []
+      frameworks: []
+      tools: []
+      tasks: []
+      tags: [security, logging]
+    content: |
+      Do not log credentials, tokens, API keys, signed URLs, or full
+      request/response bodies that may carry them. Apply redaction at the
+      logger level for sensitive fields.
+    rationale: |
+      A leaked log file is a credential leak. Logs are easier to exfiltrate
+      than databases.
+    check:
+      kind: forbid-pattern
+      pattern: '(?i)log\.\w+\([^)]*\b(password|secret|apiKey|api_key|access_?token|refresh_?token|private_?key|client_?secret|bearer)\b'
+      includes:
+        - "**/*.java"
+      excludes:
+        - "**/test/**"
+        - "**/*Test.java"
+----
+
+[cols="1,1,3", options="header"]
+|===
+| Field | Required | Purpose
+
+| `type`         | yes | Always `rule`.
+| `severity`     | yes | How firmly the rule applies. `never` = hard prohibition. `must` = required behavior. `should` = strong default; deviating needs justification. `avoid` = pattern to steer clear of. Severity drives how the renderer phrases the rule to the agent.
+| `content`      | yes | The directive itself, written as guidance the AI can act on.
+| `rationale`    | yes | Why the rule exists. This is the most important field for _agent_ compliance: without the why, the AI can't judge edge cases and either over-applies or quietly ignores the rule.
+| `bad_examples` | no  | Concrete anti-patterns. Pattern-match fuel for the agent.
+| `check`        | no  | Machine-checkable enforcement: `kind: forbid-pattern` with a regex, plus `includes`/`excludes` globs. Useful when a rule has a clear textual signature and you want grep-style verification on top of the AI nudge.
+|===
+
+=== 4.3 Checklists
+
+*Intent:* make "done" objective. A checklist is the list of items a human
+or AI reviewer ticks off at a specific workflow stage. Same idea as a PR
+template, but versioned in the pack and travelling with every project.
+
+[source,yaml]
+----
+version: 1
+checklists:
+  - id: pull-request
+    title: Pull Request Checklist
+    type: checklist
+    priority: 1
+    scope:
+      languages: []
+      frameworks: []
+      tools: []
+      tasks: [review]
+      tags: [workflow, review]
+    items:
+      - id: scope-matches-intent
+        text: The diff matches the stated scope of the PR. No drive-by edits.
+        required: true
+      - id: tests-cover-behavior
+        text: New or changed behavior has a test that would fail without the change.
+        required: true
+      - id: commits-readable
+        text: Each commit is a logical step. Messages explain why, not what.
+        required: true
+----
+
+[cols="1,1,3", options="header"]
+|===
+| Field | Required | Purpose
+
+| `type`        | yes | Always `checklist`.
+| `scope.tasks` | yes (recommended) | Anchors the checklist to a workflow stage. Common values: `review`, `release`.
+| `items`       | yes | The list itself. Each item has an `id` (stable handle), `text` (the question the reviewer asks), and `required` (whether unticked items block the gate). Keep items binary and reviewable in seconds.
+|===
+
+=== 4.4 Prompts
+
+*Intent:* reusable AI request templates, parameterised over the task and
+the project. A prompt is what a developer (or an automation) hands to the
+AI when they want a consistent output shape - implementation plans, code
+review summaries, handoff briefs.
+
+[source,yaml]
+----
+version: 1
+prompts:
+  - id: implementation-plan
+    title: Implementation Plan Request
+    type: prompt
+    priority: 1
+    scope:
+      languages: []
+      frameworks: []
+      tools: []
+      tasks: [planning]
+      tags: [planning, ai]
+    template: |
+      You are preparing an implementation plan for {{project_name}}.
+      Stack: {{stack_summary}}
+
+      ## Task
+      {{task_description}}
+
+      Produce: Context, Approach, Files to change, Tradeoffs, Verification.
+----
+
+[cols="1,1,3", options="header"]
+|===
+| Field | Required | Purpose
+
+| `type`     | yes | Always `prompt`.
+| `template` | yes | The prompt body, with handlebars-style variables (`{{project_name}}`, `{{stack_summary}}`, `{{task_description}}`). The variable set is intentionally small and project-derived.
+|===
+
+[NOTE]
+====
+*Status:* Prompts can be authored in the pack today, but Launchpad's
+renderer does not yet consume them. They're a forward-looking content
+type; file them now, expect them to surface in a future projection. The
+current reference pack ships three prompt files as a working example.
+====
+
+=== 4.5 Adapters
+
+*Intent:* declare where rendered content lands and what goes into it. The
+adapter is the bridge between "your pack content" and "files on disk in a
+consuming project." The default `agents` adapter writes the vendor-neutral
+`AGENTS.md` that almost every AI coding tool reads. You'll rarely add new
+adapters.
+
+[source,yaml]
+----
+version: 1
+adapter:
+  id: agents
+  target: AI coding agents (vendor-neutral)
+  description: |
+    Rendering target for the AGENTS.md primary file.
+  outputs:
+    - path: AGENTS.md
+      kind: context
+      includes: [rules, skills, checklists, prompts]
+----
+
+[cols="1,1,3", options="header"]
+|===
+| Field | Required | Purpose
+
+| `id`      | yes | Matches the key in `standards-pack.yml`'s `adapters:` map. `agents` is the default Launchpad expects.
+| `target`  | yes | Human-readable description of who consumes the output.
+| `outputs` | yes | List of `{path, kind, includes}`. `path` is the file written into the consuming project. `kind: context` means it's an instruction file (vs a config or script). `includes` lists which content kinds feed it.
+|===
+
+Agent-native discovery files (`.claude/skills/...`, `.cursor/rules/...`,
+`.windsurf/rules/...`) are *not* declared here. They're produced by
+projection beans in Launchpad, selected by the developer (see §6).
+
+=== Naming and structure
+
+Across all content types:
+
+* *Filenames:* kebab-case, ending in `.yml` (e.g. `pull-request.yml`).
+* *Ids:* kebab-case, unique within the content type. Last id wins on collision.
+* *Top of file:* always `version: 1` followed by the collection key
+  (`rules:`, `skills:`, `checklists:`, `prompts:`).
+
+== 5. Worked example: adding a new skill
+
+You want to add a skill called "Add a feature flag." Walk through the full
+loop:
+
+. *Create the file* at `skills/feature-flags.yml`:
++
+[source,yaml]
+----
+version: 1
+skills:
+  - id: add-feature-flag
+    title: Add a Feature Flag
+    type: skill
+    priority: 2
+    trigger: |
+      When introducing a new feature flag.
+    scope:
+      languages: [java]
+      frameworks: [spring-boot]
+      tools: []
+      tasks: [feature]
+      tags: [delivery, flags]
+    steps:
+      - Add the flag key to the central flags registry with a documented default.
+      - Read the flag through the existing FlagService, not directly from properties.
+      - Add a test that exercises both flag states.
+    output_expectations:
+      - One typed accessor for the flag.
+      - Default keeps existing behavior unchanged.
+----
+
+. *Register it* in `standards-pack.yml`:
++
+[source,yaml]
+----
+includes:
+  skills:
+    - skills/delivery.yml
+    - skills/feature-flags.yml   # <- new line
+----
+
+. *Commit and push* (if consumed via the remote URL).
+
+. *Force a cache refresh* in any project that uses the pack:
++
+[source,sh]
+----
+rm -rf ~/.launchpad/standards-cache
+----
+
+. *Run Launchpad* against the target project (`/scan` then `/render`).
+
+. *Confirm the output:* the new skill should appear in `AGENTS.md`, in
+  `.claude/skills/add-feature-flag/SKILL.md` (if `claude` projection
+  enabled), in `.cursor/rules/add-feature-flag.mdc` (if `cursor`), and in
+  `.windsurf/rules/add-feature-flag.md` (if `windsurf`).
+
+The same loop works for new rules and checklists, just under the matching
+folder and `includes:` key.
+
+== 6. Choosing which AI tools receive your pack
+
+*Why projections exist.* `AGENTS.md` is the lowest-common-denominator
+context file most AI tools read, but the leading tools each have their own
+_discovery_ convention for surfacing skills and rules in their UI: Claude
+Code looks under `.claude/skills/`, Cursor under `.cursor/rules/`,
+Windsurf under `.windsurf/rules/`. A projection is Launchpad's
+tool-specific renderer for that discovery convention. One canonical pack;
+many projected shapes.
+
+Three projections are wired today: `claude`, `cursor`, `windsurf`. There
+are two places they can be configured:
+
+[cols="1,2", options="header"]
+|===
+| Where | Intent
+
+| *Per developer (preferred)*
+| The TUI Settings screen has an AI-tool picker. The selection persists to `launchpad.projections` in `~/.launchpad/config.properties`. This is right because which AI tools a developer uses is a personal/local concern.
+
+| *Per pack (default)*
+| Set `projections: [...]` in `standards-pack.yml`. This is the pack's _fallback opinion_ for developers who haven't picked. Useful when the team has a single standard tool.
+|===
+
+The developer's choice always wins. An empty user list means "no
+projections, just `AGENTS.md` and `.ai/*` files." Manifest opinion is the
+fallback when the user has never picked.
+
+== 7. Verifying a change
+
+Two ways to confirm a new file is wired correctly:
+
+. *Render check.* Run Launchpad against any consuming project and inspect:
++
+* `AGENTS.md` (vendor-neutral context).
+* `.ai/engineering-rules.md`, `.ai/stack.md`, `.ai/checklists.md`, `.ai/index.md`.
+* `.claude/skills/<id>/SKILL.md` (if `claude` projection enabled).
+* `.cursor/rules/*.mdc` (if `cursor`).
+* `.windsurf/rules/*.md` (if `windsurf`).
+
+. *MCP check.* If a Claude Code (or other) MCP client is connected to
+  Launchpad, call `mcp__launchpad__get_standards` and confirm the new
+  entry appears in the returned `skills` / `rules` / `checklists` array.
+
+== 8. Common pitfalls
+
+* *Forgot to register the file in `standards-pack.yml`.* Launchpad throws
+  with the exact missing path. Add it to `includes:`.
+* *Wrong top-level key.* A file under `skills/` must start with `skills:`
+  (not `rules:`). Unknown keys are silently ignored, so the file loads to
+  zero entries.
+* *Stale cache.* After pushing to the pack repo, delete
+  `~/.launchpad/standards-cache/` or wait for the 1-hour TTL.
+* *Duplicate ids.* Two entries with the same `id` in the same content
+  type: the last loaded wins. Keep ids unique across the whole pack.
+* *Hard-coded local pack paths.* There's no `path:` setting. Use the git
+  remote URL, or drop the pack into `<project-root>/.launchpad/standards/`.
+* *Rule with no rationale.* The agent can follow the letter but not the
+  spirit. Edge cases get either over-applied or silently ignored. Always
+  fill `rationale:`.
+* *Skill priority `1` everywhere.* If everything is always-on, nothing
+  stands out. Reserve `1` for skills every developer on every task should
+  see; default new skills to `2`.

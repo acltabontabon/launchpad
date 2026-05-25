@@ -7,38 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Standards-pack authoring guide:** New guide (`docs/standards-pack.adoc`) for tech leads on layout, schema, and skill creation.
 - **Fuzzy project picker:** Filterable list for recent and auto-discovered Spring Boot projects with background search.
 - **Enhanced Scan screen:** Real-time activity log, scan statistics, and detailed progress tracking.
-- **Interactive log navigation:** Support for scrolling and keyboard navigation (j/k, PageUp/Down) in the scan log.
-- **Legacy primary-file detector:** Surfaces a Review-screen warning (and WARN log line) when older agent-instruction files are found alongside a fresh generation, without injecting migration notes into the emitted content.
-- **`AgentProjection` extension point:** Agent-specific output files are now produced by projection beans that consume the canonical `Rule` / `Skill` / `Checklist` model. The Claude slash-command discovery files (`.claude/skills/<id>/SKILL.md`) are the first such projection (shipped default); future agent integrations follow the same pattern instead of branching the engine.
-- **AI tool picker (first-run + Settings):** The developer is asked once which AI tools they use; the selection drives which projections emit files. Pre-ticked based on detected installs of Claude Desktop / Claude Code / Cursor under `~/.claude/`, `~/.cursor/` etc. Persists to `launchpad.projections` in `~/.launchpad/config.properties`. Re-editable from the Settings screen.
-- **Cursor projection:** Opt-in `cursor` projection emits `.cursor/rules/engineering.mdc` (always-applied rules bundle), per-skill `.cursor/rules/<skill-id>.mdc` files (description-attached based on the canonical trigger), and `.cursor/rules/checklists.mdc` when checklists exist.
-- **Windsurf projection:** Opt-in `windsurf` projection emits `.windsurf/rules/engineering.md` (always-on rules bundle), per-skill `.windsurf/rules/<skill-id>.md` files (`model_decision` triggered), and `.windsurf/rules/checklists.md` when checklists exist.
+- **Interactive log navigation:** Support for keyboard navigation (j/k, PageUp/Down) in the scan log.
+- **Legacy file detector:** Surfaces a warning when older agent-instruction files are found alongside fresh generation.
+- **Agent Projections:** Modular extension point for agent-specific output files (e.g., Claude, Cursor, Windsurf).
+- **AI tool picker:** First-run and settings selection to drive which agent projections are emitted.
+- **New projections:** Opt-in support for Cursor (`.mdc`) and Windsurf (`.rules`) specific formats.
 
 ### Changed
-- **Vendor-neutral primary file:** The primary agent-instructions file is now `AGENTS.md`, read natively by Claude Code (with fallback), Cursor, Codex CLI, Aider, Continue, Zed, Jules, and Amp.
-- **Standards adapter id:** Renamed the default adapter id from `claude` to `agents`. Legacy `claude` adapter blocks in `standards-pack.yml` are accepted with a deprecation warning so existing packs keep working.
-- **Standards-pack projections:** `standards-pack.yml` accepts an optional `projections: [...]` list to enable agent projections explicitly. Absent or null preserves the default (`claude` only); empty list disables all projections; explicit list opts into named projection ids.
-- **Projection precedence:** The developer's persisted user preference (chosen in the TUI picker) overrides the standards-pack manifest's `projections:` field. Manifest opinion is only the fallback for users who have never picked.
-- **Rich Markdown preview:** Styled rendering for headings and code blocks in the Review screen with raw diff toggle.
-- **Brand positioning:** Refined tagline and messaging to focus on local-first repository context for AI agents.
-- **Single output shape:** Collapsed the per-target rendering split; the engine now emits one vendor-neutral output set on every run. `.claude/skills/<id>/SKILL.md` is preserved as a discovery shim so slash-command invocation keeps working.
-- **Streamlined TUI flow:** Removed the pre-scan target-selection screen. The flow is now Welcome -> ProjectSelect -> Scanning -> Review.
-- **Documentation alignment:** Architecture diagrams, USAGE walkthrough, MCP tool descriptions, and inline code comments now describe the single vendor-neutral output set and the new TUI flow.
+- **Vendor-neutral primary file:** The primary agent-instructions file is now `AGENTS.md`, supported by most AI tools.
+- **Unified adapter ID:** Renamed default adapter from `claude` to `agents` (with legacy fallback).
+- **Standards-pack control:** Explicit projection opting via `standards-pack.yml` with user-preference overrides.
+- **Rich Markdown preview:** Styled rendering for headings and code blocks in the Review screen.
+- **Brand positioning:** Refined messaging focusing on local-first repository context for AI agents.
+- **Single output shape:** Collapsed per-target splits into a single vendor-neutral output set on every run.
+- **Streamlined TUI flow:** Simplified navigation (Welcome -> ProjectSelect -> Scanning -> Review).
+- **Settings redesign:** Grouped configuration into cards with focus-rail navigation and live status indicators.
+- **Improved system checks:** Sanitized and simplified service health cards on the Welcome screen.
 
 ### Fixed
-- **Legacy `claude` adapter path is overridden to AGENTS.md.** When a `standards-pack.yml` still ships a `claude` adapter declaring `path: CLAUDE.md`, the deprecation alias now forces the primary file to land at `AGENTS.md`, matching what "treating as agents" actually means. The adapter's `includes` and frontmatter still apply.
-- **Primary file H1 is now the project name.** Previously the body title was hardcoded to "AGENTS.md", which mismatched the filename when a legacy adapter pointed elsewhere. The H1 now reads the project name and the filename is purely metadata.
-- **Dynamic versioning:** Header version badge now syncs automatically with Maven `pom.xml`.
-- **JDK 25 compatibility:** Resolved native-access warnings when running via `spring-boot:run`.
-- **Shutdown reliability:** Background processes now use daemon threads to ensure clean JVM exit after quitting.
+- **Primary file normalization:** Legacy `CLAUDE.md` adapter paths are now automatically normalized to `AGENTS.md`.
+- **Project-aware headers:** Primary file H1 and version badge now sync automatically with project metadata.
+- **JDK 25 compatibility:** Resolved native-access warnings when running via Maven.
+- **Shutdown reliability:** Background processes now use daemon threads for clean JVM exits.
 
 ### Removed
 - **Redundant UI:** Removed the Scan screen stepper and unnecessary project-info footer.
-- **Non-deterministic outputs:** Dropped AI-generated prompts and project notes to ensure a fully deterministic context layer.
-- **Legacy schemas:** Removed obsolete prompt and notes fields from standards and YAML bindings.
-- **Dedicated Cursor target:** Removed the baked-in `.cursorrules` + `.cursor/rules/*.mdc` rendering path. Cursor reads `AGENTS.md` natively; teams who want Cursor's per-rule `.mdc` format can declare an opt-in adapter in `standards-pack.yml`. Legacy `cursor` adapter blocks are ignored with a deprecation warning.
+- **Non-deterministic outputs:** Dropped AI-generated prompts and project notes to ensure a context-only layer.
+- **Legacy schemas:** Removed obsolete fields from standards and YAML bindings.
+- **Dedicated Cursor target:** Removed hardcoded Cursor paths in favor of the vendor-neutral `AGENTS.md` and opt-in projections.
 
 ## [0.4.0] - 2026-05-25
 ### Changed

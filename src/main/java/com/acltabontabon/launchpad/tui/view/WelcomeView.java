@@ -114,32 +114,14 @@ public class WelcomeView implements View {
         var ollama = state.ollamaStatus.get();
         var standards = state.remoteStandardsStatus.get();
 
-        var lines = new java.util.ArrayList<Line>();
-        lines.add(blank());
+        int cardWidth = Math.min(area.width() - 4, 80);
+        var rows = new java.util.ArrayList<Line>();
+        rows.add(blank());
+        rows.add(serviceRow("Ollama", ollamaDot(ollama), ollamaLabel(ollama), ollamaDetail(ollama, snap), cardWidth));
+        rows.add(blank());
+        rows.add(serviceRow("Standards", standardsDot(standards), standardsLabelText(standards), standardsDetail(standards), cardWidth));
 
-        // Ollama row
-        lines.add(ollamaLine(ollama));
-        lines.add(detailLine(snap.baseUrl() + "  " + Icons.SEP + "  " + snap.model()));
-        if (ollama.hint() != null && !ollama.hint().isBlank()) {
-            lines.add(detailLine(ollama.hint()));
-        }
-        var modelTip = modelTip(snap.model());
-        if (modelTip != null) {
-            lines.add(tipLine(modelTip));
-        }
-        lines.add(blank());
-
-        // Standards row
-        lines.add(standardsLine(standards));
-        var standardsDetail = standardsDetail(standards);
-        if (standardsDetail != null) {
-            lines.add(detailLine(standardsDetail));
-        }
-
-        // Size the card to fit its actual content (+2 for top/bottom border,
-        // +1 trailing breathing row) but never exceed the available area.
-        int cardWidth = Math.min(area.width() - 4, 64);
-        int cardHeight = Math.min(area.height(), lines.size() + 3);
+        int cardHeight = Math.min(area.height(), rows.size() + 2);
         int leftPad = Math.max(0, (area.width() - cardWidth) / 2);
         var cardArea = new Rect(area.x() + leftPad, area.y(), cardWidth, cardHeight);
 
@@ -147,57 +129,89 @@ public class WelcomeView implements View {
         var inner = card.inner(cardArea);
         frame.renderWidget(card, cardArea);
 
-        var body = Paragraph.builder()
-            .text(Text.from(lines.toArray(new Line[0])))
-            .build();
-        frame.renderWidget(body, inner);
+        for (int i = 0; i < rows.size() && i < inner.height(); i++) {
+            var rowRect = new Rect(inner.x(), inner.y() + i, inner.width(), 1);
+            frame.renderWidget(
+                Paragraph.builder().text(Text.from(rows.get(i))).build(),
+                rowRect);
+        }
     }
 
-    private Line ollamaLine(LlmProviderStatus s) {
-        var state = switch (s.state()) {
+    /**
+     * Single-row entry: "  ● Name        label  ·  detail (truncated)".
+     * Everything lives on one line so a long detail string can never bleed
+     * into adjacent rows under any rendering quirk.
+     */
+    private static Line serviceRow(String name, StatusDot.State dot, String label, String detail, int cardWidth) {
+        // 2 borders + 2 horizontal padding = 4 chrome cells; reserve a 1-cell margin so the
+        // text never butts against the right border.
+        int budget = Math.max(20, cardWidth - 5);
+        Style labelStyle = Style.create().fg(dot.color).bold();
+        int prefixWidth = 2 + 1 + 2 + 10 + label.length(); // "  ●  Name(10)label"
+        if (detail == null || detail.isBlank()) {
+            return Line.from(
+                Span.styled("  ", Style.create()),
+                Span.styled(dot.glyph, Style.create().fg(dot.color).bold()),
+                Span.styled("  ", Style.create()),
+                Span.styled(String.format("%-10s", name), Style.create().fg(Theme.text).bold()),
+                Span.styled(label, labelStyle)
+            );
+        }
+        String cleanedDetail = fitDetail(detail, Math.max(8, budget - prefixWidth - 5));
+        return Line.from(
+            Span.styled("  ", Style.create()),
+            Span.styled(dot.glyph, Style.create().fg(dot.color).bold()),
+            Span.styled("  ", Style.create()),
+            Span.styled(String.format("%-10s", name), Style.create().fg(Theme.text).bold()),
+            Span.styled(label, labelStyle),
+            Span.styled("  " + Icons.SEP + "  ", Styles.muted()),
+            Span.styled(cleanedDetail, Styles.caption())
+        );
+    }
+
+    private static StatusDot.State ollamaDot(LlmProviderStatus s) {
+        return switch (s.state()) {
             case READY -> StatusDot.State.OK;
             case CHECKING -> StatusDot.State.WORKING;
             case DAEMON_DOWN, MODEL_MISSING -> StatusDot.State.ERROR;
         };
-        var label = switch (s.state()) {
+    }
+
+    private String ollamaLabel(LlmProviderStatus s) {
+        return switch (s.state()) {
             case READY -> "ready";
             case CHECKING -> "checking " + Spinner.frame(tick / 4);
             case DAEMON_DOWN -> "unreachable";
             case MODEL_MISSING -> "model missing";
         };
-        // Show the resolved provider name once known; until then call it "Local AI".
-        var providerLabel = s.resolvedProvider() == null
-            ? "Local AI    "
-            : String.format("%-12s", s.resolvedProvider().displayName());
-        return Line.from(
-            Span.styled("  ", Style.create()),
-            Span.styled(state.glyph, Style.create().fg(state.color).bold()),
-            Span.styled("  " + providerLabel + " ", Style.create().fg(Theme.text).bold()),
-            Span.styled(label, Style.create().fg(state.color))
-        );
     }
 
-    private Line standardsLine(RemoteStandardsStatus s) {
-        var st = switch (s.state()) {
+    private static String ollamaDetail(LlmProviderStatus s, LaunchpadSettings.Snapshot snap) {
+        var primary = snap.baseUrl() + "  " + Icons.SEP + "  " + snap.model();
+        if (s.hint() != null && !s.hint().isBlank()) {
+            return primary + "  " + Icons.SEP + "  " + s.hint();
+        }
+        return primary;
+    }
+
+    private static StatusDot.State standardsDot(RemoteStandardsStatus s) {
+        return switch (s.state()) {
             case SYNCED -> StatusDot.State.OK;
             case CHECKING -> StatusDot.State.WORKING;
             case STALE_CACHE -> StatusDot.State.WARN;
             case NOT_CONFIGURED -> StatusDot.State.IDLE;
             case ERROR -> StatusDot.State.ERROR;
         };
-        var label = switch (s.state()) {
+    }
+
+    private String standardsLabelText(RemoteStandardsStatus s) {
+        return switch (s.state()) {
             case SYNCED -> "synced";
             case CHECKING -> "checking " + Spinner.frame(tick / 4);
             case STALE_CACHE -> "offline cache";
             case NOT_CONFIGURED -> "not configured";
             case ERROR -> "fetch failed";
         };
-        return Line.from(
-            Span.styled("  ", Style.create()),
-            Span.styled(st.glyph, Style.create().fg(st.color).bold()),
-            Span.styled("  Standards    ", Style.create().fg(Theme.text).bold()),
-            Span.styled(label, Style.create().fg(st.color))
-        );
     }
 
     private static String standardsDetail(RemoteStandardsStatus s) {
@@ -211,11 +225,22 @@ public class WelcomeView implements View {
         };
     }
 
-    private static Line detailLine(String text) {
-        return Line.from(
-            Span.styled("       ", Style.create()),
-            Span.styled(text, Styles.caption())
-        );
+    /**
+     * Detail strings can come from external processes (git stderr, model
+     * health checks) carrying ANSI escapes, embedded newlines, and arbitrary
+     * length. Strip controls, collapse whitespace, clip with an ellipsis.
+     */
+    static String fitDetail(String text, int budget) {
+        if (text == null) return "";
+        var clean = text
+            .replaceAll("\\[[0-?]*[ -/]*[@-~]", " ")
+            .replaceAll("[ -]", " ")
+            .replaceAll("\\s+", " ")
+            .trim();
+        if (clean.isEmpty()) return "";
+        if (clean.length() <= budget) return clean;
+        if (budget <= 1) return "…";
+        return clean.substring(0, budget - 1) + "…";
     }
 
     /**
@@ -236,10 +261,10 @@ public class WelcomeView implements View {
         return "tip: " + Icons.WARN + " this model hallucinates file names · try qwen2.5-coder or llama3.1:8b";
     }
 
-    private static Line tipLine(String text) {
+    private static Line tipLine(String text, int budget) {
         return Line.from(
             Span.styled("       ", Style.create()),
-            Span.styled(text, Style.create().fg(Theme.caution).italic())
+            Span.styled(fitDetail(text, budget), Style.create().fg(Theme.caution).italic())
         );
     }
 
