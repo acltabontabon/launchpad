@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * One classified JVM source file: its primary type, kind, leaf package, and
  * (best-effort) cross-file relationships. Drives the deep `## Architecture`
- * tree in the generated CLAUDE.md.
+ * tree in the generated AGENTS.md.
  *
  * @param name          The simple class / record / enum / interface name.
  * @param relativePath  Source-file path relative to project root.

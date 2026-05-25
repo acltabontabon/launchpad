@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 
 /**
  * Cheap regex pass over Spring controller sources to extract HTTP routes.
- * Drives the `## Endpoints` table in the generated CLAUDE.md.
+ * Drives the `## Endpoints` table in the generated AGENTS.md.
  * <p>
  * Misses dynamic registration (functional WebFlux routes, controller-advice
  * catch-alls). That's acceptable: the goal is to enrich the prompt with

@@ -4,7 +4,7 @@ import java.util.Set;
 import java.util.function.Supplier;
 
 /**
- * One bounded local-AI call that fills a specific section of CLAUDE.md.
+ * One bounded local-AI call that fills a specific section of AGENTS.md.
  * The structure of the document is owned by the template engine; this job
  * provides at most a short body fragment, validated against
  * {@link SynthesisValidator.Shape}. Failed synthesis falls back to the

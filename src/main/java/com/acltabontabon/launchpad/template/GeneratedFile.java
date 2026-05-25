@@ -7,7 +7,7 @@ public record GeneratedFile(
 ) {
 
     public enum FileKind {
-        CONTEXT,    // CLAUDE.md, .cursorrules
+        CONTEXT,    // AGENTS.md (the primary agent-instructions file)
         RULES,      // engineering rules files
         SKILL,      // skill / command definitions
         INDEX       // .ai/index.md, directory indexes

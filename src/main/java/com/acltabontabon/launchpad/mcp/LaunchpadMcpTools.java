@@ -168,8 +168,8 @@ public class LaunchpadMcpTools {
     @McpTool(
         name = "get_standards",
         description = "Return the engineering rules, skills, and checklists from the standards pack that "
-            + "applies to a project. These are the same standards Launchpad embeds in CLAUDE.md / "
-            + ".cursorrules, but as structured data so MCP clients can reason about them "
+            + "applies to a project. These are the same standards Launchpad embeds in AGENTS.md and the "
+            + "`.ai/` companion tree, but as structured data so MCP clients can reason about them "
             + "programmatically. The `project` argument accepts either a short name from the registry "
             + "(see list_projects) or an absolute path."
     )

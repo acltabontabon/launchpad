@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 
 /**
  * Shared rejection rules for body fragments synthesised by the local model.
- * The fragments are assembled into a deterministic CLAUDE.md skeleton by
+ * The fragments are assembled into a deterministic AGENTS.md skeleton by
  * {@code ContextTemplateEngine}; anything the validator rejects falls back
  * to the deterministic body the caller supplied.
  * <p>

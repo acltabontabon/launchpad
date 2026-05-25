@@ -14,7 +14,7 @@ import java.util.Map;
  * profiles, and a README intro paragraph when one is available.
  * <p>
  * `toPromptString` renders a compact view of these facts for any LLM call
- * that needs broad context (rules / skills paths). The CLAUDE.md primary
+ * that needs broad context (rules / skills paths). The AGENTS.md primary
  * file no longer goes through that single mega-prompt - it is assembled
  * deterministically with bounded per-section synthesis instead.
  */
@@ -29,7 +29,7 @@ public record ProjectContext(
     List<Dependency> dependencies,
     Map<String, String> fileSnippets,    // key build / config file → first N lines
     List<PackageSummary> packageSummaries,
-    String existingContextSummary,       // first ~800 chars of existing CLAUDE.md / .cursorrules, or null
+    String existingContextSummary,       // first ~800 chars of existing AGENTS.md / CLAUDE.md / .cursorrules, or null
     DocumentationIndex documentation,    // discovered Markdown + AsciiDoc pages, each tagged with a Purpose
     List<Endpoint> endpoints,            // HTTP routes detected from controller sources
     String readmeIntro,                  // first prose paragraph of README.md after the title, or ""

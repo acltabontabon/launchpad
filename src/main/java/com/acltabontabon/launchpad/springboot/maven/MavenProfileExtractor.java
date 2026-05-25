@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
  * For each profile we capture the `<id>`, a short activation label, and a
  * handful of distinctive flags (argLine / jvmArgs tokens, native-image
  * buildArgs, PGO flags, skip flags). The output is the input for the
- * deterministic build-profiles table in the generated CLAUDE.md.
+ * deterministic build-profiles table in the generated AGENTS.md.
  */
 public final class MavenProfileExtractor {
 

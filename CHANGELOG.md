@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Brand positioning:** Refined tagline and messaging to focus on local-first repository context for AI agents.
 - **Single output shape:** Collapsed the per-target rendering split; the engine now emits one vendor-neutral output set on every run. `.claude/skills/<id>/SKILL.md` is preserved as a discovery shim so slash-command invocation keeps working.
 - **Streamlined TUI flow:** Removed the pre-scan target-selection screen. The flow is now Welcome -> ProjectSelect -> Scanning -> Review.
+- **Documentation alignment:** Architecture diagrams, USAGE walkthrough, MCP tool descriptions, and inline code comments now describe the single vendor-neutral output set and the new TUI flow.
 
 ### Fixed
 - **Dynamic versioning:** Header version badge now syncs automatically with Maven `pom.xml`.

@@ -5,7 +5,7 @@ import java.util.List;
 
 /**
  * A Maven build profile detected from `pom.xml`. Used to render a `## Build
- * profiles` section in the generated CLAUDE.md when a project ships multiple
+ * profiles` section in the generated AGENTS.md when a project ships multiple
  * profiles (PGO variants, native-image flavours, environment overrides, ...).
  *
  * @param id          The profile `<id>`. Always non-blank.

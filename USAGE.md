@@ -53,7 +53,7 @@ target/launchpad                       # the native binary
 
 ## 2. First run: generate context for a project
 
-This is the "/init" flow. End state: your project has a `CLAUDE.md` (or `.cursorrules`) tailored to it, and the project is enrolled in Launchpad's registry so MCP clients can address it by name later.
+This is the "/init" flow. End state: your project has an `AGENTS.md` tailored to it, and the project is enrolled in Launchpad's registry so MCP clients can address it by name later.
 
 ### Start the TUI
 
@@ -179,7 +179,7 @@ This is the payoff. Once your projects are enrolled (see step 2) and your AI too
 
 > "Pull the engineering rules for Launchpad and tell me which ones the current diff in front of me might violate."
 >
-> -> the agent calls `get_standards(project="Launchpad")` and reasons over the structured output. No cloud tokens spent re-reading your `CLAUDE.md`.
+> -> the agent calls `get_standards(project="Launchpad")` and reasons over the structured output. No cloud tokens spent re-reading your `AGENTS.md`.
 
 ### Why this saves tokens
 
@@ -244,7 +244,7 @@ The registry is plain JSON at `~/.launchpad/projects.json`. You can edit it dire
 
 ## 6. Audit a project against your standards
 
-If your standards pack carries `check:` blocks (see [Standards in CLAUDE.md](CLAUDE.md#engineering-standards-rules-skills-checklists-prompts-adapters)), Launchpad will audit the project on every scan.
+If your standards pack carries `check:` blocks (see [Standards in AGENTS.md](AGENTS.md#engineering-standards-rules-skills-checklists-prompts-adapters)), Launchpad will audit the project on every scan.
 
 ### Where the findings land
 
@@ -372,13 +372,13 @@ JVM startup is sub-second on a warm system, so the practical impact is small.
 
 ```
 <project>/
-├── CLAUDE.md                          # generated (Claude target)
-├── .ai/                               # generated supporting notes (Claude)
+├── AGENTS.md                          # primary agent-instructions file (vendor-neutral)
+├── .ai/                               # generated supporting notes
 │   ├── engineering-rules.md
 │   ├── stack.md
+│   ├── checklists.md
 │   └── index.md
-├── .cursorrules                       # generated (Cursor target)
-├── .cursor/rules/                     # generated rule files (Cursor)
+├── .claude/skills/<id>/SKILL.md       # per-skill discovery shim (Claude Code slash commands)
 ├── .launchpad/
 │   ├── scan.json                      # cached scan output, read by audit + MCP
 │   ├── audit.md                       # human audit report
@@ -407,4 +407,4 @@ Nothing is ever sent off your machine. Everything Launchpad knows lives in those
 
 - The [README](README.md) explains the project's intent and design.
 - [CHANGELOG.md](CHANGELOG.md) tracks every behavior change.
-- [CLAUDE.md](CLAUDE.md) is the AI-assistant context file for working on Launchpad itself - it documents the codebase architecture in detail.
+- [AGENTS.md](AGENTS.md) is the AI-assistant context file for working on Launchpad itself - it documents the codebase architecture in detail.

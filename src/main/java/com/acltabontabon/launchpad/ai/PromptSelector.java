@@ -22,11 +22,9 @@ import org.springframework.stereotype.Component;
  * tie-breaking is ever needed.
  * <p>
  * Kinds are deliberately named after the output <em>format</em>
- * (SKILLS / RULES) rather than the consuming vendor. A bulleted-rules
- * format can be emitted into Cursor's {@code .cursorrules}, an Aider
- * {@code CONVENTIONS.md}, or any other tool's equivalent without rewriting the
- * prompt - the vendor-specific decision lives at the output-adapter layer,
- * not in the prompt content.
+ * (SKILLS / RULES) rather than the consuming vendor. Today the canonical
+ * primary file is the vendor-neutral {@code AGENTS.md}; any vendor-specific
+ * adaptation lives at the output-adapter layer, not in the prompt content.
  */
 @Component
 public class PromptSelector {

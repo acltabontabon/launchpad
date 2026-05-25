@@ -8,9 +8,9 @@
 :imagesdir: images
 
 [abstract]
-Launchpad is a local-AI-powered terminal UI that scans a target codebase, asks a locally-running Ollama model to summarise it, and emits AI-assistant context files (`CLAUDE.md` + `.ai/` for Claude Code, `.cursorrules` + `.cursor/rules/` for Cursor). It is a Spring Boot application with no web server: the process owns the terminal, runs the scan/AI pipeline on a background thread, and exits when the user quits.
+Launchpad is a local-AI-powered terminal UI that scans a target codebase, asks a locally-running Ollama model to summarise it, and emits a single vendor-neutral output set: `AGENTS.md` (the primary agent-instructions file, read natively by Claude Code via fallback, Cursor, Codex CLI, Aider, Continue, Zed, Jules, and Amp) plus the `.ai/` companion tree and per-skill `.claude/skills/<id>/SKILL.md` discovery shims. It is a Spring Boot application with no web server: the process owns the terminal, runs the scan/AI pipeline on a background thread, and exits when the user quits.
 
-This document explains how the pieces fit together, the data that flows between them, and the extension points if you want to add a new target or a new scan rule.
+This document explains how the pieces fit together, the data that flows between them, and the extension points if you want to add a vendor-discovery shim or a new scan rule.
 
 == At a glance
 
@@ -20,7 +20,7 @@ This document explains how the pieces fit together, the data that flows between 
 | AI client         | Spring AI 2.0.0-M6 (`spring-ai-starter-model-ollama`)
 | TUI library       | TamboUI 0.3.0 (Ratatui-inspired Java TUI, Panama backend)
 | External services | One: an Ollama daemon on `http://localhost:11434`
-| Output            | Files written to the scanned project root (CLAUDE.md, .ai/+, or .cursorrules, .cursor/rules/+)
+| Output            | Files written to the scanned project root: `AGENTS.md`, `.ai/*`, `.claude/skills/<id>/SKILL.md`
 | Source size       | ~1.6k lines of Java across 16 files in 5 packages
 |===
 
@@ -61,7 +61,6 @@ package "LaunchpadApplication\n(Spring Boot, no web)" {
     package "tui.view" {
       [WelcomeView] as W
       [ProjectSelectView] as P
-      [TargetSelectView] as T
       [ScanProgressView] as S
       [ReviewView] as R
     }
@@ -78,7 +77,7 @@ package "LaunchpadApplication\n(Spring Boot, no web)" {
 
   package "template" as TPL #E8F8F5 {
     [ContextTemplateEngine] as Engine
-    [ContextTarget\n(enum)] as Target
+    [AgentsPrimaryFileBuilder] as Primary
     [GeneratedFile\n(record)] as File
   }
 
@@ -95,12 +94,11 @@ U -down-> TUI : keypresses
 Runner -right-> State : reads/writes
 Runner -down-> W
 Runner -down-> P
-Runner -down-> T
 Runner -down-> S
 Runner -down-> R
 Runner -right-> Scanner : scan(path)
 Runner -right-> Gen : generate*(ctx)
-Runner -right-> Engine : buildFiles(ctx, target, ...)
+Runner -right-> Engine : buildFiles(ctx)
 
 Scanner -down-> FS : walkFileTree
 Scanner -right-> Ctx : produces
@@ -137,7 +135,7 @@ participant "ContextGeneratorService" as G
 database "Ollama" as O
 participant "ContextTemplateEngine" as E
 
-User -> V : Enter (from TARGET_SELECT)
+User -> V : Enter (from PROJECT_SELECT)
 V -> S : currentScreen = SCANNING
 
 == Background pipeline (CompletableFuture.runAsync) ==
@@ -154,14 +152,14 @@ G -> O : ChatClient prompt #1\n(PROJECT_SUMMARY_PROMPT)
 O --> G : summary (markdown)
 G --> R : summary
 
-R -> S : scanProgress = 60\nmessage = "Generating <target> content..."
-R -> G : generateTargetSpecificContent(ctx, target)
-G -> O : ChatClient prompt #2\n(SKILLS_PROMPT or CURSOR_RULES_PROMPT)
-O --> G : targetContent
-G --> R : targetContent
+R -> S : scanProgress = 60\nmessage = "Synthesising sections..."
+R -> G : synthesize(ctx)
+G -> O : ChatClient bounded\n  per-section synthesis
+O --> G : section bodies
+G --> R : synthesis outputs
 
 R -> S : scanProgress = 85\nmessage = "Assembling output files..."
-R -> E : buildFiles(ctx, target, summary, targetContent)
+R -> E : buildFiles(ctx)
 E --> R : List<GeneratedFile>
 R -> S : generatedFiles = files\nscanProgress = 100\nscanComplete = true
 
@@ -203,18 +201,13 @@ WELCOME --> [*] : q
 
 PROJECT_SELECT : Path input + live validation
 PROJECT_SELECT --> WELCOME : Esc
-PROJECT_SELECT --> TARGET_SELECT : Enter (path valid)
+PROJECT_SELECT --> SCANNING : Enter (path valid)
 note right of PROJECT_SELECT
   Path is validated each render:
   exists + isDirectory.
   'q' is ignored here so users
   can type 'q' in paths.
 end note
-
-TARGET_SELECT : Two cards: Claude / Cursor
-TARGET_SELECT --> PROJECT_SELECT : Esc
-TARGET_SELECT --> SCANNING : Enter
-TARGET_SELECT --> TARGET_SELECT : Left/Right or h/l
 
 SCANNING : Gauge + phase list + spinner
 SCANNING --> REVIEW : Enter (scanComplete &&\n!scanError)
@@ -263,7 +256,7 @@ note over T
 end note
 
 T -> S : read currentScreen,\n  scanProgress, scanMessage,\n  generatedFiles, etc.
-T -> S : write currentScreen,\n  projectPath (char input),\n  targetCursorIndex
+T -> S : write currentScreen,\n  projectPath (char input)
 
 note over W
   Spawned once when SCANNING
@@ -300,7 +293,7 @@ Adding plain mutable fields to `AppState` is a bug waiting to happen. The class'
 
 | `com.acltabontabon.launchpad.tui.view`
 | One class per screen. All implement `View`.
-| `WelcomeView`, `ProjectSelectView`, `TargetSelectView`, `ScanProgressView`, `ReviewView`
+| `WelcomeView`, `ProjectSelectView`, `ScanProgressView`, `ReviewView`
 
 | `com.acltabontabon.launchpad.scanner`
 | Walks the project, detects stack/deps/entry points.
@@ -312,7 +305,7 @@ Adding plain mutable fields to `AppState` is a bug waiting to happen. The class'
 
 | `com.acltabontabon.launchpad.template`
 | Assembles `List<GeneratedFile>` from AI output + rules.
-| `ContextTemplateEngine`, `ContextTarget`, `GeneratedFile`
+| `ContextTemplateEngine`, `AgentsPrimaryFileBuilder`, `GeneratedFile`
 
 | `com.acltabontabon.launchpad.rules`
 | Static, target-agnostic engineering principles.
@@ -393,13 +386,9 @@ Three prompt constants, one `ChatClient`, three public methods. The class is int
 | `generateProjectSummary` (always called)
 | Overview + patterns + module list + conventions + gotchas, in markdown.
 
-| `SKILLS_PROMPT`
-| `generateTargetSpecificContent` when target = CLAUDE
-| 5-8 skill blocks (`## Skill: name` + Trigger/Steps/Notes).
-
-| `CURSOR_RULES_PROMPT`
-| `generateTargetSpecificContent` when target = CURSOR
-| Project-specific, ordered Cursor rules.
+| `SKILLS` synthesis (composable)
+| `SectionSynthesizer` per-section calls
+| Bounded body fragments for the primary file's sections. The primary file's headings and structure are owned by Java; the model only fills the bodies.
 |===
 
 `ChatClient` is built once in the constructor from the Spring-AI-provided `ChatClient.Builder`. The Ollama base URL and model come from `application.properties`. Swapping providers is a dependency-swap on the starter, not a code change here.
@@ -410,7 +399,7 @@ A small `@Component` that bypasses Spring AI and talks to Ollama's HTTP API dire
 
 === ContextTemplateEngine
 
-The engine has one public method, `buildFiles`, that branches on `ContextTarget`:
+The engine has one public method, `buildFiles`, that always emits the same vendor-neutral output set:
 
 [plantuml,template-output,svg]
 ----
@@ -419,32 +408,30 @@ skinparam backgroundColor #FFFFFF
 skinparam shadowing false
 skinparam defaultFontName Helvetica
 
-object "ProjectContext\n+ summary\n+ targetContent\n+ ContextTarget" as Input
+object "ProjectContext\n+ synthesis outputs" as Input
 
-package "CLAUDE branch" #E8F4FD {
-  object "CLAUDE.md\nkind = CONTEXT" as C1
-  object ".ai/index.md\nkind = INDEX" as C2
-  object ".ai/engineering-rules.md\nkind = RULES" as C3
-  object ".ai/stack.md\nkind = CONTEXT" as C4
+package "Vendor-neutral output" #E8F4FD {
+  object "AGENTS.md\nkind = CONTEXT" as A1
+  object ".ai/index.md\nkind = INDEX" as A2
+  object ".ai/engineering-rules.md\nkind = RULES" as A3
+  object ".ai/stack.md\nkind = CONTEXT" as A4
+  object ".ai/checklists.md\nkind = RULES" as A5
 }
 
-package "CURSOR branch" #FDF6E3 {
-  object ".cursorrules\nkind = CONTEXT" as U1
-  object ".cursor/rules/engineering.mdc\nkind = RULES" as U2
-  object ".cursor/rules/stack.mdc\nkind = CONTEXT" as U3
+package "Vendor-discovery shim" #FDF6E3 {
+  object ".claude/skills/<id>/SKILL.md\nkind = SKILL" as S1
 }
 
-Input --> C1 : if CLAUDE
-Input --> C2
-Input --> C3
-Input --> C4
-Input --> U1 : if CURSOR
-Input --> U2
-Input --> U3
+Input --> A1
+Input --> A2
+Input --> A3
+Input --> A4
+Input --> A5
+Input --> S1 : one per Skill
 @enduml
 ----
 
-The engineering rules are pulled from the `EngineeringRule` enum and formatted differently for each target (markdown headings for CLAUDE, MDC frontmatter + bullet list for CURSOR). The summary and target-specific content are inlined verbatim; the engine does no post-processing of the AI output.
+The primary file's headings and section ordering are owned by `AgentsPrimaryFileBuilder`; only bounded body fragments come from the model. Standards rules and skills are pulled from `StandardsLoader` and rendered into the companion files. The per-skill `.claude/skills/<id>/SKILL.md` files are vendor-discovery shims that preserve Claude Code's `/<skill-id>` slash-command invocation; they do not duplicate the primary file's content.
 
 === Views
 
@@ -503,12 +490,13 @@ The convention is that `render` reads `AppState` and never mutates it, while `ha
 
 == Extending Launchpad
 
-=== Adding a new target (e.g. Aider, Continue, Cline)
+=== Adding a vendor-discovery shim (e.g. .github/copilot-instructions.md, .cursor/rules/*.mdc)
 
-1. Add a constant to `ContextTarget` with a `displayName`, `description`, and unique `profileKey`.
-2. Add a `buildXxxFiles(...)` branch in `ContextTemplateEngine.buildFiles` returning the desired `GeneratedFile` list.
-3. Add a prompt constant + a branch in `ContextGeneratorService.generateTargetSpecificContent`.
-4. The `TargetSelectView` reads `ContextTarget.values()`, so the new card appears automatically; only update `outputFileList` to spell out the new file paths.
+Vendor-specific files exist only when a vendor's _discovery mechanism_ requires a specific path or shape - never to restate the same content under a different name. They are not parallel primaries; the primary is always `AGENTS.md`.
+
+1. Decide whether the shim can be expressed declaratively via the adapter system (`standards-pack.yml` adapter pointing at a path with a frontmatter map). If yes, no Java change is needed - drop the adapter block in.
+2. If the shim genuinely needs a per-vendor renderer (because it has structural requirements the generic adapter cannot express), add a small dedicated builder in `template/` that consumes the same `ProjectContext` + standards and returns one or more `GeneratedFile` entries. Wire it into `CompanionFileBuilder.build` so it runs after the standard companions.
+3. Document the new path in CHANGELOG and USAGE so users can opt into it.
 
 === Adding a scan signal (e.g. detect React, Spring Boot version)
 
@@ -516,7 +504,7 @@ Most additions live inside `ProjectScanner.scan`. Add a field to `ProjectContext
 
 === Adding an engineering rule
 
-Add a constant to `EngineeringRule`. Both the CLAUDE and CURSOR generators iterate the enum, so the new rule is included in both output styles without further work.
+Add a rule entry to the relevant `standards-pack.yml` (or to the bundled defaults if you're shipping them). Rules are project-agnostic principles; the engine renders them into `.ai/engineering-rules.md` and links to that file from `AGENTS.md`.
 
 === Swapping the LLM provider
 
@@ -528,10 +516,10 @@ The only file that touches Spring AI is `ContextGeneratorService`. Swap `spring-
 |===
 | Term | Meaning
 
-| Pipeline      | The end-to-end flow that turns a project path into `List<GeneratedFile>`: scan -> summary -> target content -> assemble.
-| Target        | An AI assistant family Launchpad knows how to generate files for. Today: Claude Code, Cursor.
-| Context file  | The top-level file an AI assistant reads at session start (`CLAUDE.md`, `.cursorrules`).
-| Engineering rule | A project-agnostic principle from `EngineeringRule`, injected into every target's rules file.
+| Pipeline      | The end-to-end flow that turns a project path into `List<GeneratedFile>`: scan -> synthesis -> assemble.
+| Primary file  | The top-level file an AI assistant reads at session start. Always `AGENTS.md` - the cross-vendor convention read natively by Claude Code (fallback), Cursor, Codex CLI, Aider, Continue, Zed, Jules, and Amp.
+| Vendor-discovery shim | A vendor-specific file emitted only when a vendor's discovery mechanism (slash commands, rule scoping, etc.) requires a specific path - never a parallel primary. Today: `.claude/skills/<id>/SKILL.md` for Claude Code's slash-command invocation.
+| Engineering rule | A project-agnostic principle declared in `standards-pack.yml`, rendered into `.ai/engineering-rules.md`.
 | Skill         | A short procedure (Trigger / Steps / Notes) the AI should follow for a common task in the scanned project.
 | Phase         | One of the six display-only milestones in `ScanProgressView` (driven by `scanProgress` thresholds, not by code structure).
 |===

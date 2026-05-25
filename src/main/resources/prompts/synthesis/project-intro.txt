@@ -1,4 +1,4 @@
-Write a 3-5 sentence opening paragraph for this project's CLAUDE.md.
+Write a 3-5 sentence opening paragraph for this project's AGENTS.md.
 
 Rules:
 - Plain prose only.

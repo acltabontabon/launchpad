@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * Renders the project's top packages as a bounded, fenced markdown tree
  * block. Used inside the deterministic `## Project map` section of the
- * generated CLAUDE.md.
+ * generated AGENTS.md.
  * <p>
  * Bounded to {@link #MAX_LINES} entries so it stays readable on large
  * projects; sample symbols (already truncated by `StructureSummarizer`) are
