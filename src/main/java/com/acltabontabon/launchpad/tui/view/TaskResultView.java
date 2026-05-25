@@ -7,10 +7,10 @@ import com.acltabontabon.launchpad.tui.components.Spinner;
 import com.acltabontabon.launchpad.tui.components.StatusDot;
 import com.acltabontabon.launchpad.tui.theme.Icons;
 import com.acltabontabon.launchpad.tui.theme.Styles;
-import com.acltabontabon.launchpad.tui.theme.Theme;
 import dev.tamboui.layout.Constraint;
 import dev.tamboui.layout.Layout;
 import dev.tamboui.layout.Rect;
+import dev.tamboui.markdown.MarkdownView;
 import dev.tamboui.style.Overflow;
 import dev.tamboui.style.Style;
 import dev.tamboui.terminal.Frame;
@@ -21,6 +21,8 @@ import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
+import dev.tamboui.tui.event.MouseEvent;
+import dev.tamboui.tui.event.MouseEventKind;
 import dev.tamboui.widgets.paragraph.Paragraph;
 import org.springframework.stereotype.Component;
 
@@ -94,38 +96,54 @@ public class TaskResultView implements View {
         frame.renderWidget(card, area);
 
         var content = state.taskFinalPrompt;
-        var lines = new ArrayList<Line>();
 
+        // Error and empty/thinking states are simple status lines, not Markdown -
+        // keep the line-based Paragraph for those. Once the final prompt is in,
+        // hand off to MarkdownView for proper headings / lists / code fences.
         if (state.taskError) {
+            var lines = new ArrayList<Line>();
             lines.add(blank());
             lines.add(Line.from(Span.styled("  " + state.taskStatus.get(), Styles.error())));
             lines.add(blank());
             lines.add(Line.from(Span.styled("  Press q to return to Welcome, then try again.",
                 Styles.caption())));
-        } else if (content.isEmpty()) {
+            renderStatusLines(frame, inner, lines);
+            return;
+        }
+        if (content.isEmpty()) {
+            var lines = new ArrayList<Line>();
             lines.add(blank());
             lines.add(Line.from(
                 Span.styled("  " + Spinner.frame(tick / 3) + "  ", Styles.focus()),
                 Span.styled("waiting for the local model to synthesise the final prompt..."
                     + elapsedSuffix(state), Styles.caption())
             ));
-        } else {
-            for (var raw : content.split("\n", -1)) {
-                lines.add(Line.from(Span.styled(raw, styleForMarkdownLine(raw))));
-            }
+            renderStatusLines(frame, inner, lines);
+            return;
         }
 
+        // Clamp scrollOffset against the rendered markdown height. computeHeight
+        // wraps the source against the available width, so this matches what the
+        // user actually sees on screen.
+        var probe = MarkdownView.builder().source(content).overflow(Overflow.WRAP_WORD).build();
+        int total = probe.computeHeight(inner.width());
         int viewportRows = Math.max(1, inner.height());
-        int maxScroll = Math.max(0, lines.size() - viewportRows);
+        int maxScroll = Math.max(0, total - viewportRows);
         if (state.taskThinking) scrollOffset = maxScroll;
         if (scrollOffset > maxScroll) scrollOffset = maxScroll;
+        if (scrollOffset < 0) scrollOffset = 0;
 
-        var visible = new ArrayList<Line>();
-        int end = Math.min(lines.size(), scrollOffset + viewportRows);
-        for (int i = scrollOffset; i < end; i++) visible.add(lines.get(i));
+        var widget = MarkdownView.builder()
+            .source(content)
+            .overflow(Overflow.WRAP_WORD)
+            .scroll(scrollOffset)
+            .build();
+        frame.renderWidget(widget, inner);
+    }
 
+    private void renderStatusLines(Frame frame, Rect inner, List<Line> lines) {
         var widget = Paragraph.builder()
-            .text(Text.from(visible.toArray(new Line[0])))
+            .text(Text.from(lines.toArray(new Line[0])))
             .overflow(Overflow.WRAP_WORD)
             .build();
         frame.renderWidget(widget, inner);
@@ -133,15 +151,6 @@ public class TaskResultView implements View {
 
     private static Line blank() {
         return Line.from(Span.styled("", Style.create()));
-    }
-
-    private static Style styleForMarkdownLine(String line) {
-        var trimmed = line.stripLeading();
-        if (trimmed.startsWith("# ")) return Style.create().fg(Theme.brand).bold();
-        if (trimmed.startsWith("## ")) return Style.create().fg(Theme.fuel).bold();
-        if (trimmed.startsWith("### ")) return Style.create().fg(Theme.brand).bold();
-        if (trimmed.startsWith("_Why:_")) return Styles.caption();
-        return Styles.body();
     }
 
     @Override
@@ -157,6 +166,17 @@ public class TaskResultView implements View {
 
     @Override
     public boolean handleEvent(Event event, TuiRunner runner, AppState state) {
+        if (event instanceof MouseEvent mouse) {
+            if (mouse.kind() == MouseEventKind.SCROLL_DOWN) {
+                scrollOffset += 3;
+                return true;
+            }
+            if (mouse.kind() == MouseEventKind.SCROLL_UP) {
+                scrollOffset = Math.max(0, scrollOffset - 3);
+                return true;
+            }
+            return false;
+        }
         if (!(event instanceof KeyEvent key)) return false;
 
         if (key.isKey(KeyCode.UP)) {
