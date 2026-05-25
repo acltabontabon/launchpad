@@ -7,21 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- **Fuzzy project picker:** Replaced path input with a filterable list of recent and auto-discovered Spring Boot projects. Supports live background search for projects outside common dev roots.
-- **Enhanced Scan screen:** Added a live activity log, real-time scan statistics (files, dependencies, rules), and a detailed progress line showing the current item being processed.
-- **Interactive activity log:** Support for scrolling and navigation (j/k, PageUp/Down) within the Scan screen's activity log.
+- **Fuzzy project picker:** Filterable list for recent and auto-discovered Spring Boot projects with background search.
+- **Enhanced Scan screen:** Real-time activity log, scan statistics, and detailed progress tracking.
+- **Interactive log navigation:** Support for scrolling and keyboard navigation (j/k, PageUp/Down) in the scan log.
 
 ### Changed
-- **Rich Markdown preview:** Generated `.md` files now render with full styling (headings, code blocks) in the Review screen, with a toggle for raw diffs.
-- **Positioning update:** Refined branding and tagline to focus on local-first repository context for AI coding agents.
+- **Rich Markdown preview:** Styled rendering for headings and code blocks in the Review screen with raw diff toggle.
+- **Brand positioning:** Refined tagline and messaging to focus on local-first repository context for AI agents.
 
 ### Fixed
-- **Dynamic versioning:** The header version badge now stays in sync with the Maven `pom.xml` version.
+- **Dynamic versioning:** Header version badge now syncs automatically with Maven `pom.xml`.
+- **JDK 25 compatibility:** Resolved native-access warnings when running via `spring-boot:run`.
+- **Shutdown reliability:** Background processes now use daemon threads to ensure clean JVM exit after quitting.
 
 ### Removed
-- **Redundant UI elements:** Removed the top stepper from the Scan screen to reduce visual clutter.
-- **Non-deterministic outputs:** Dropped prompts and project-notes generation to ensure a fully deterministic, context-only generation layer.
-- **Obsolete schemas:** Removed legacy prompt and project-notes fields from standards and YAML bindings.
+- **Redundant UI:** Removed the Scan screen stepper and unnecessary project-info footer.
+- **Non-deterministic outputs:** Dropped AI-generated prompts and project notes to ensure a fully deterministic context layer.
+- **Legacy schemas:** Removed obsolete prompt and notes fields from standards and YAML bindings.
 
 ## [0.4.0] - 2026-05-25
 ### Changed

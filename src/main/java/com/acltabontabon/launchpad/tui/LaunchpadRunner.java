@@ -88,8 +88,13 @@ public class LaunchpadRunner implements ApplicationRunner {
 
     // Single pool for all background scan / task futures. Using a cached pool
     // (unbounded, but tasks are short-lived and serialised in practice) so each
-    // submit returns a real Future we can cancel on ESC.
-    private final ExecutorService backgroundExecutor = Executors.newCachedThreadPool();
+    // submit returns a real Future we can cancel on ESC. Daemon threads so a
+    // blocked HTTP call (e.g. Ollama) cannot keep the JVM alive after quit.
+    private final ExecutorService backgroundExecutor = Executors.newCachedThreadPool(r -> {
+        var t = new Thread(r, "launchpad-background");
+        t.setDaemon(true);
+        return t;
+    });
 
     @PreDestroy
     void shutdownExecutor() {

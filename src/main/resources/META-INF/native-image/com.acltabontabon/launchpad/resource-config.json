@@ -1,7 +1,8 @@
 {
   "resources": {
     "includes": [
-      { "pattern": "^prompts/.*\\.txt$" }
+      { "pattern": "^prompts/.*\\.txt$" },
+      { "pattern": "^META-INF/build-info\\.properties$" }
     ]
   }
 }

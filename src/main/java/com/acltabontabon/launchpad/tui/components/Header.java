@@ -13,8 +13,11 @@ import dev.tamboui.text.Span;
 import dev.tamboui.text.Text;
 import dev.tamboui.widgets.paragraph.Paragraph;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
 /**
  * Persistent single-row header rendered above every view. Composes the
@@ -149,8 +152,23 @@ public final class Header {
     }
 
     private static String readVersion() {
-        var pkg = Header.class.getPackage();
-        var v = pkg == null ? null : pkg.getImplementationVersion();
-        return "v" + (v == null ? "0.2.0" : v);
+        var v = readBuildInfoVersion();
+        if (v == null) {
+            var pkg = Header.class.getPackage();
+            v = pkg == null ? null : pkg.getImplementationVersion();
+        }
+        return "v" + (v == null ? "dev" : v);
+    }
+
+    private static String readBuildInfoVersion() {
+        try (InputStream in = Header.class.getResourceAsStream("/META-INF/build-info.properties")) {
+            if (in == null) return null;
+            var props = new Properties();
+            props.load(in);
+            var v = props.getProperty("build.version");
+            return (v == null || v.isBlank()) ? null : v;
+        } catch (IOException e) {
+            return null;
+        }
     }
 }

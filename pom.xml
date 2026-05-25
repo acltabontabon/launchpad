@@ -108,6 +108,18 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- TamboUI's Panama FFI calls hit JDK 25 restricted methods; grant native access at run time. -->
+                    <jvmArguments>--enable-native-access=ALL-UNNAMED</jvmArguments>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>build-info</id>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <!-- GraalVM native image - critical for fast CLI startup -->
             <!-- Build with: mvn -Pnative native:compile -->
