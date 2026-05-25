@@ -76,7 +76,8 @@ class Round4Verification {
         Mockito.when(loader.loadSkills(Mockito.any())).thenReturn(java.util.List.of());
         Mockito.when(loader.loadChecklists(Mockito.any())).thenReturn(java.util.List.of());
         Mockito.when(loader.loadAdapter(Mockito.any(), Mockito.any())).thenReturn(java.util.Optional.empty());
-        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(generator), new com.acltabontabon.launchpad.template.companion.CompanionFileBuilder(), new AgentsPrimaryFileBuilder());
+        Mockito.when(loader.loadProjectionIds(Mockito.any())).thenReturn(java.util.Set.of("claude"));
+        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(generator), new com.acltabontabon.launchpad.template.companion.CompanionFileBuilder(), new AgentsPrimaryFileBuilder(), java.util.List.of(new com.acltabontabon.launchpad.template.projection.claude.ClaudeSkillsProjection()));
 
         var files = engine.buildFiles(ctx);
         var primary = files.stream()

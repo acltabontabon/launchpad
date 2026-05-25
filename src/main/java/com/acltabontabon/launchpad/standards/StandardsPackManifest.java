@@ -17,7 +17,8 @@ record StandardsPackManifest(
     String description,
     List<String> maintainers,
     Includes includes,
-    Map<String, String> adapters
+    Map<String, String> adapters,
+    List<String> projections
 ) {
 
     @JsonIgnoreProperties(ignoreUnknown = true)

@@ -23,9 +23,6 @@ public final class PointerBlocks {
             entries.add("- `.ai/engineering-rules.md` - team coding rules");
         if (companionPaths.contains(".ai/checklists.md"))
             entries.add("- `.ai/checklists.md` - verification checklists");
-        boolean hasSkillFile = companionPaths.stream().anyMatch(p -> p.startsWith(".claude/skills/"));
-        if (hasSkillFile)
-            entries.add("- `.claude/skills/<skill-id>/SKILL.md` - invoke via `/<skill-id>`");
 
         if (entries.isEmpty()) return "";
         var sb = new StringBuilder();

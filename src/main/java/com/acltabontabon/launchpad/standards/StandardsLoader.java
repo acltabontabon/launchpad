@@ -8,9 +8,13 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,10 +33,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class StandardsLoader {
 
+    private static final Logger log = LoggerFactory.getLogger(StandardsLoader.class);
     private static final String OVERRIDE_DIR = ".launchpad/standards";
     private static final String MANIFEST = "standards-pack.yml";
     private static final String RULES_FILENAME = "rules.yml";
     private static final String SKILLS_FILENAME = "skills.yml";
+    private static final String DEFAULT_PROJECTION_ID = "claude";
 
     private final ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
     private final RemoteStandardsFetcher remoteFetcher;
@@ -56,6 +62,36 @@ public class StandardsLoader {
     public List<Checklist> loadChecklists(Path projectRoot) {
         return resolvePackOnly(projectRoot,
             dir -> loadPackEntries(dir, inc -> inc.checklists(), ChecklistsFile.class, ChecklistsFile::checklists));
+    }
+
+    /**
+     * Resolves which {@code AgentProjection} ids are enabled for this project.
+     *
+     * <p>Reads {@code standards-pack.yml}'s {@code projections:} field from the
+     * first source dir whose manifest exists. If no manifest exists, or the
+     * field is absent / null, returns the back-compat default
+     * {@code Set.of("claude")} so existing projects keep emitting
+     * {@code .claude/skills/<id>/SKILL.md}. An explicit empty list disables
+     * all projections.
+     *
+     * <p>Parse failures (e.g. a non-list value) log a WARN and fall back to
+     * the default so a malformed manifest cannot break generation.
+     */
+    public Set<String> loadProjectionIds(Path projectRoot) {
+        for (Path dir : sourceDirs(projectRoot)) {
+            Path manifestFile = dir.resolve(MANIFEST);
+            if (!Files.isRegularFile(manifestFile)) continue;
+            try {
+                var manifest = readYaml(manifestFile, StandardsPackManifest.class);
+                if (manifest.projections() == null) return Set.of(DEFAULT_PROJECTION_ID);
+                return new LinkedHashSet<>(manifest.projections());
+            } catch (Exception e) {
+                log.warn("Failed to parse 'projections' from {}; using default {}: {}",
+                    manifestFile, Set.of(DEFAULT_PROJECTION_ID), e.getMessage());
+                return Set.of(DEFAULT_PROJECTION_ID);
+            }
+        }
+        return Set.of(DEFAULT_PROJECTION_ID);
     }
 
     public Optional<Adapter> loadAdapter(Path projectRoot, String adapterId) {

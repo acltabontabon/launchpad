@@ -35,37 +35,6 @@ public final class StandardsRendering {
         return sb.toString();
     }
 
-    public static String buildClaudeSkillFile(Skill skill) {
-        var sb = new StringBuilder();
-        sb.append("---\n");
-        sb.append("name: ").append(skill.id()).append("\n");
-        if (skill.trigger() != null && !skill.trigger().isBlank()) {
-            sb.append("description: ").append(skill.trigger()).append("\n");
-        }
-        sb.append("---\n\n");
-        sb.append("# ").append(skillTitle(skill)).append("\n\n");
-        if (skill.trigger() != null && !skill.trigger().isBlank()) {
-            sb.append("**Trigger:** ").append(skill.trigger()).append("\n\n");
-        }
-        if (skill.steps() != null && !skill.steps().isEmpty()) {
-            sb.append("## Steps\n\n");
-            int i = 1;
-            for (var step : skill.steps()) {
-                sb.append(i++).append(". ").append(step).append("\n");
-            }
-            sb.append("\n");
-        }
-        if (skill.outputExpectations() != null && !skill.outputExpectations().isEmpty()) {
-            sb.append("## Expected Output\n\n");
-            skill.outputExpectations().forEach(o -> sb.append("- ").append(o).append("\n"));
-            sb.append("\n");
-        }
-        if (skill.notes() != null && !skill.notes().isBlank()) {
-            sb.append("## Notes\n\n").append(skill.notes()).append("\n");
-        }
-        return sb.toString();
-    }
-
     public static String buildAiIndex(ProjectContext ctx, List<Skill> skills, boolean hasChecklists) {
         var sb = new StringBuilder();
         sb.append("# Project Index - ").append(ctx.name()).append("\n\n");
@@ -75,10 +44,9 @@ public final class StandardsRendering {
         sb.append("| `.ai/engineering-rules.md` | Engineering rules for this project |\n");
         sb.append("| `.ai/stack.md` | Stack details and dependency notes |\n");
         if (hasChecklists) sb.append("| `.ai/checklists.md` | Verification checklists |\n");
-        sb.append("| `.claude/skills/` | Curated workflow skills (invocable via `/<skill-id>`) |\n");
         if (!skills.isEmpty()) {
             sb.append("\n## Available Skills\n\n");
-            skills.forEach(s -> sb.append("- `/").append(s.id()).append("` - ").append(
+            skills.forEach(s -> sb.append("- `").append(s.id()).append("` - ").append(
                 s.trigger() == null ? "" : s.trigger()
             ).append("\n"));
         }

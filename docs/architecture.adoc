@@ -410,7 +410,7 @@ skinparam defaultFontName Helvetica
 
 object "ProjectContext\n+ synthesis outputs" as Input
 
-package "Vendor-neutral output" #E8F4FD {
+package "Canonical readable views" #E8F4FD {
   object "AGENTS.md\nkind = CONTEXT" as A1
   object ".ai/index.md\nkind = INDEX" as A2
   object ".ai/engineering-rules.md\nkind = RULES" as A3
@@ -418,8 +418,8 @@ package "Vendor-neutral output" #E8F4FD {
   object ".ai/checklists.md\nkind = RULES" as A5
 }
 
-package "Vendor-discovery shim" #FDF6E3 {
-  object ".claude/skills/<id>/SKILL.md\nkind = SKILL" as S1
+package "Agent projections (opt-in)" #FDF6E3 {
+  object ".claude/skills/<id>/SKILL.md\nkind = SKILL\n(ClaudeSkillsProjection)" as S1
 }
 
 Input --> A1
@@ -427,11 +427,33 @@ Input --> A2
 Input --> A3
 Input --> A4
 Input --> A5
-Input --> S1 : one per Skill
+Input --> S1 : one per Skill\n(when 'claude' id is enabled)
 @enduml
 ----
 
-The primary file's headings and section ordering are owned by `AgentsPrimaryFileBuilder`; only bounded body fragments come from the model. Standards rules and skills are pulled from `StandardsLoader` and rendered into the companion files. The per-skill `.claude/skills/<id>/SKILL.md` files are vendor-discovery shims that preserve Claude Code's `/<skill-id>` slash-command invocation; they do not duplicate the primary file's content.
+The primary file's headings and section ordering are owned by `AgentsPrimaryFileBuilder`; only bounded body fragments come from the model. Canonical rules, skills, and checklists are pulled from `StandardsLoader` and rendered into the `.ai/*.md` views, which are always emitted. The `.claude/skills/<id>/SKILL.md` files are produced by the `ClaudeSkillsProjection` bean (the shipped default `AgentProjection`); they preserve Claude Code's `/<skill-id>` slash-command invocation and do not duplicate canonical content.
+
+=== Agent projections - the consumer pattern
+
+Agent-specific output files are produced by `AgentProjection` beans that consume the canonical `Rule` / `Skill` / `Checklist` records and emit vendor-shaped `GeneratedFile` entries. The core engine does not know vendor file formats - it only resolves enabled projection ids from `standards-pack.yml`'s `projections:` field (defaulting to `["claude"]` for back-compat) and dispatches to the matching bean.
+
+```
+Canonical model:
+  Rule / Skill / Checklist
+
+Canonical readable views (always emitted):
+  AGENTS.md
+  .ai/*.md
+
+Agent projections (opt-in via projections: [...] in standards-pack.yml):
+  .claude/skills/<id>/SKILL.md     (claude - shipped default)
+  .cursor/rules/*.mdc              (future, opt-in)
+  .github/copilot-instructions.md  (future, opt-in)
+```
+
+Projection outputs are **generated artifacts** - consumption surfaces and discovery / ergonomics layers. They are never canonical storage, canonical authoring, or the source of truth. The source of truth remains the standards-pack YAML + canonical records + canonical `.ai/*` readable views.
+
+> New AI tool integrations must be implemented as `AgentProjection` extensions. Do not introduce provider-specific branches into `ContextTemplateEngine`, `CompanionFileBuilder`, canonical renderers, or canonical model classes.
 
 === Views
 
@@ -490,13 +512,17 @@ The convention is that `render` reads `AppState` and never mutates it, while `ha
 
 == Extending Launchpad
 
-=== Adding a vendor-discovery shim (e.g. .github/copilot-instructions.md, .cursor/rules/*.mdc)
+=== Adding a new agent projection (e.g. .github/copilot-instructions.md, .cursor/rules/*.mdc)
 
-Vendor-specific files exist only when a vendor's _discovery mechanism_ requires a specific path or shape - never to restate the same content under a different name. They are not parallel primaries; the primary is always `AGENTS.md`.
+Agent-specific files are added by implementing `AgentProjection` - never by branching the engine, the companion builder, the canonical renderers, or the canonical model.
 
-1. Decide whether the shim can be expressed declaratively via the adapter system (`standards-pack.yml` adapter pointing at a path with a frontmatter map). If yes, no Java change is needed - drop the adapter block in.
-2. If the shim genuinely needs a per-vendor renderer (because it has structural requirements the generic adapter cannot express), add a small dedicated builder in `template/` that consumes the same `ProjectContext` + standards and returns one or more `GeneratedFile` entries. Wire it into `CompanionFileBuilder.build` so it runs after the standard companions.
-3. Document the new path in CHANGELOG and USAGE so users can opt into it.
+1. Create a package under `template/projection/<agent>/`.
+2. Add a renderer (`<Agent>...Renderer.java`) - package-private utility - that takes canonical records and returns the agent-shaped file body.
+3. Add a `@Component` projection (`<Agent>...Projection.java`) implementing `AgentProjection`. Pick a stable `id()` (`"copilot"`, `"cursor"`, ...) and emit one or more `GeneratedFile` entries with vendor-native paths.
+4. Light up via `standards-pack.yml`: `projections: ["claude", "copilot"]`. The id ships disabled until a project opts in.
+5. Document the new id in CHANGELOG and USAGE so users know how to enable it.
+
+No engine, companion-builder, or canonical-renderer change is required - if any of those need to change to support the projection, the abstraction is leaking and the change is wrong.
 
 === Adding a scan signal (e.g. detect React, Spring Boot version)
 

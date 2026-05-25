@@ -33,11 +33,6 @@ public class CompanionFileBuilder {
                 StandardsRendering.buildChecklistsMd(checklists),
                 GeneratedFile.FileKind.RULES));
         }
-        skills.forEach(s -> out.add(new GeneratedFile(
-            ".claude/skills/" + s.id() + "/SKILL.md",
-            StandardsRendering.buildClaudeSkillFile(s),
-            GeneratedFile.FileKind.SKILL
-        )));
         return out;
     }
 }

@@ -16,6 +16,7 @@ import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import com.acltabontabon.launchpad.template.companion.CompanionFileBuilder;
+import com.acltabontabon.launchpad.template.projection.claude.ClaudeSkillsProjection;
 import com.acltabontabon.launchpad.template.synthesis.SectionSynthesizer;
 import java.nio.file.Path;
 import java.util.List;
@@ -180,9 +181,11 @@ class ContextTemplateEngineTest {
         when(loader.loadSkills(any())).thenReturn(List.of(SAMPLE_SKILL));
         when(loader.loadChecklists(any())).thenReturn(List.of());
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.empty());
+        when(loader.loadProjectionIds(any())).thenReturn(java.util.Set.of("claude"));
         var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader),
             new SectionSynthesizer(null), new CompanionFileBuilder(),
-            new AgentsPrimaryFileBuilder());
+            new AgentsPrimaryFileBuilder(),
+            List.of(new ClaudeSkillsProjection()));
 
         var files = engine.buildFiles(sampleContext());
 
@@ -190,6 +193,26 @@ class ContextTemplateEngineTest {
         assertThat(primary).contains("# AGENTS.md");
         assertThat(primary).contains("## What this project is");
         assertThat(primary).contains("## Boundaries for AI agents");
+    }
+
+    @Test
+    void noClaudeSkillFilesEmittedWhenProjectionsDisabled() {
+        var loader = mock(StandardsLoader.class);
+        when(loader.loadRules(any())).thenReturn(List.of(SAMPLE_RULE));
+        when(loader.loadSkills(any())).thenReturn(List.of(SAMPLE_SKILL));
+        when(loader.loadChecklists(any())).thenReturn(List.of(SAMPLE_CHECKLIST));
+        when(loader.loadAdapter(any(), any())).thenReturn(Optional.empty());
+        when(loader.loadProjectionIds(any())).thenReturn(java.util.Set.of());
+        var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader),
+            new SectionSynthesizer(null), new CompanionFileBuilder(),
+            new AgentsPrimaryFileBuilder(),
+            List.of(new ClaudeSkillsProjection()));
+
+        var files = engine.buildFiles(sampleContext());
+
+        assertThat(pathsOf(files)).noneMatch(p -> p.startsWith(".claude/skills/"));
+        // Canonical companions and AGENTS.md still ship.
+        assertThat(pathsOf(files)).contains("AGENTS.md", ".ai/index.md", ".ai/stack.md");
     }
 
     private static ContextTemplateEngine engineWith(
@@ -201,10 +224,12 @@ class ContextTemplateEngineTest {
         when(loader.loadSkills(any())).thenReturn(skills);
         when(loader.loadChecklists(any())).thenReturn(checklists);
         when(loader.loadAdapter(any(), any())).thenReturn(Optional.of(adapter));
+        when(loader.loadProjectionIds(any())).thenReturn(java.util.Set.of("claude"));
 
         return new ContextTemplateEngine(loader, new AdapterResolver(loader),
             new SectionSynthesizer(null), new CompanionFileBuilder(),
-            new AgentsPrimaryFileBuilder());
+            new AgentsPrimaryFileBuilder(),
+            List.of(new ClaudeSkillsProjection()));
     }
 
     private static Adapter agentsAdapterIncluding(String... includes) {
