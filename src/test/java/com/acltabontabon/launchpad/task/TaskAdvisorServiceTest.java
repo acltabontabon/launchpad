@@ -812,6 +812,84 @@ class TaskAdvisorServiceTest {
         }
     }
 
+    // === interpretCritiqueResponse ===
+
+    @Nested
+    class InterpretCritiqueResponse {
+
+        @Test
+        void readyTokenMeansReady() {
+            assertThat(TaskAdvisorService.interpretCritiqueResponse("__OK__", List.of()))
+                .isEqualTo("__OK__");
+        }
+
+        @Test
+        void readyTokenAmidPreambleStillMeansReady() {
+            // Small local models bury the verdict in preamble; we only need
+            // to see the token anywhere in the raw response.
+            assertThat(TaskAdvisorService.interpretCritiqueResponse(
+                "Looks good to me. __OK__", List.of())).isEqualTo("__OK__");
+        }
+
+        @Test
+        void emptyOrNullResponseMeansReady() {
+            // Defensive: if the critic returned nothing useful we proceed,
+            // we don't trap the user in a loop chasing a phantom gap.
+            assertThat(TaskAdvisorService.interpretCritiqueResponse(null, List.of()))
+                .isEqualTo("__OK__");
+            assertThat(TaskAdvisorService.interpretCritiqueResponse("", List.of()))
+                .isEqualTo("__OK__");
+            assertThat(TaskAdvisorService.interpretCritiqueResponse("  \n\n", List.of()))
+                .isEqualTo("__OK__");
+        }
+
+        @Test
+        void doneTokenAlsoTreatedAsReady() {
+            // A confused model might emit the interview's DONE token instead
+            // of the critic's READY token. Same meaning: proceed.
+            assertThat(TaskAdvisorService.interpretCritiqueResponse("__DONE__", List.of()))
+                .isEqualTo("__OK__");
+        }
+
+        @Test
+        void followUpQuestionPassesThrough() {
+            var picked = TaskAdvisorService.interpretCritiqueResponse(
+                "What should the endpoint return for unknown product IDs?", List.of());
+            assertThat(picked).isEqualTo("What should the endpoint return for unknown product IDs?");
+        }
+
+        @Test
+        void questionWithPreambleIsStillExtracted() {
+            // Reuses extractQuestion: preamble drops away, question survives.
+            var picked = TaskAdvisorService.interpretCritiqueResponse(
+                "After reviewing the transcript, one gap remains.\n"
+                    + "What should the endpoint return for unknown product IDs?",
+                List.of());
+            assertThat(picked).isEqualTo("What should the endpoint return for unknown product IDs?");
+        }
+
+        @Test
+        void nearDuplicateOfPriorQuestionCollapsesToReady() {
+            // If the critic's question is just a paraphrase of something the
+            // interview already covered, treat it as ready - don't re-ask.
+            var history = List.of(
+                new TaskTurn("What type of authentication is required for this new API?", "no auth"));
+            var picked = TaskAdvisorService.interpretCritiqueResponse(
+                "What type of authentication is required for this new API, specifically which method?",
+                history);
+            assertThat(picked).isEqualTo("__OK__");
+        }
+
+        @Test
+        void numberedPrefixIsStripped() {
+            // Inherits the Q-numbering strip from extractQuestion.
+            var picked = TaskAdvisorService.interpretCritiqueResponse(
+                "Q1: What should the endpoint return for unknown product IDs?",
+                List.of());
+            assertThat(picked).isEqualTo("What should the endpoint return for unknown product IDs?");
+        }
+    }
+
     // === PromptParts ===
 
     @Nested

@@ -265,6 +265,11 @@ public class AppState {
     // True once the interview has reached __DONE__ or the user pressed `f` - the next
     // tick should transition to TASK_RESULT and kick off finalize().
     public volatile boolean taskReadyToFinalize = false;
+    // Number of critic-driven follow-up questions injected so far. Incremented
+    // each time the readiness critic decides the brief is still thin and pushes
+    // a follow-up question back into the interview. Bounded in LaunchpadRunner
+    // so the critic cannot loop indefinitely.
+    public volatile int taskCritiqueCount = 0;
     // True when the last LLM call failed. Views render this distinctly (red, no
     // spinner) and surface taskStatus as the error message.
     public volatile boolean taskError = false;
@@ -383,6 +388,7 @@ public class AppState {
         taskReadyToFinalize = false;
         taskError = false;
         taskOpStartedAtMs = 0L;
+        taskCritiqueCount = 0;
         taskRelevantRules = null;
         taskRelevantSkills = null;
         taskRelevantChecklists = null;
@@ -405,6 +411,7 @@ public class AppState {
         taskReadyToFinalize = false;
         taskError = false;
         taskOpStartedAtMs = 0L;
+        taskCritiqueCount = 0;
         taskRelevantRules = null;
         taskRelevantSkills = null;
         taskRelevantChecklists = null;

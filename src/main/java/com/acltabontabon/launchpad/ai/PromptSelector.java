@@ -33,6 +33,7 @@ public class PromptSelector {
         SKILLS("skills"),
         RULES("rules"),
         TASK_INTERVIEW("task/interview"),
+        TASK_CRITIQUE("task/critique"),
         TASK_FINALIZE("task/finalize");
 
         final String dir;

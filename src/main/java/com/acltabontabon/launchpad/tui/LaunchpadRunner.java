@@ -128,6 +128,17 @@ public class LaunchpadRunner implements ApplicationRunner {
     // Cap on interview rounds. Real interviews converge in 3-5 rounds; 8 leaves
     // headroom for stack-specific paths while still cutting off runaway models.
     private static final int TASK_RUNAWAY_CAP = 8;
+    // Maximum critic-driven follow-ups per task. The readiness critic runs only
+    // when the interview model emits __DONE__; if it disagrees we inject ONE
+    // follow-up question and let the interview continue. Bounded so the critic
+    // cannot reject __DONE__ forever - in practice a model that disagrees twice
+    // is unlikely to surface a useful third question.
+    private static final int CRITIC_CAP = 2;
+    // Critic only activates once the interview has produced a baseline of turns.
+    // Below this, the existing pickNextUncoveredMustRule override (for the first
+    // 3 rounds when [must] rules are uncovered) is the right safety net, not a
+    // free-form critic call.
+    private static final int MIN_ROUNDS_BEFORE_CRITIC = 2;
 
     public LaunchpadRunner(
         WelcomeView welcomeView,
@@ -484,6 +495,30 @@ public class LaunchpadRunner implements ApplicationRunner {
                 if (state.cancelRequested) return;
                 if (response.equals(TaskAdvisorService.DONE_TOKEN)
                         || response.contains(TaskAdvisorService.DONE_TOKEN)) {
+                    // The interview model declared the brief done. Before we
+                    // accept that and synthesise, run a second local-AI pass
+                    // that looks at the transcript and asks "is this actually
+                    // substantial?". If the critic finds a gap, we inject its
+                    // follow-up question as the next interview turn. Bounded
+                    // by CRITIC_CAP so a stubborn critic can't loop forever,
+                    // and skipped below MIN_ROUNDS_BEFORE_CRITIC since the
+                    // existing must-rule override handles the early-DONE case.
+                    if (state.taskCritiqueCount < CRITIC_CAP
+                            && state.taskTurns.get().size() >= MIN_ROUNDS_BEFORE_CRITIC) {
+                        state.taskStatus.set("checking whether the local model has enough context...");
+                        var verdict = taskAdvisor.critiqueReadiness(
+                            state.taskProjectContext.stack(),
+                            state.taskDescription,
+                            state.taskTurns.get(),
+                            rules, skills, checklists);
+                        if (state.cancelRequested) return;
+                        if (!verdict.equals(TaskAdvisorService.READY_TOKEN)) {
+                            state.taskCritiqueCount++;
+                            state.taskCurrentQuestion.set(verdict);
+                            state.taskStatus.set("");
+                            return;
+                        }
+                    }
                     state.taskReadyToFinalize = true;
                     state.currentScreen = AppState.Screen.TASK_RESULT;
                 } else {

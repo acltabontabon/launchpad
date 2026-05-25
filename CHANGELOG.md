@@ -7,37 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **`/new-task` quality critic:** Added a second local-AI pass to ensure interview depth and inject follow-up questions if needed.
+- **Task substance heuristics:** New validation rules to flag shallow goals or filler acceptance criteria in generated tasks.
 - **Standards-pack authoring guide:** New guide (`docs/standards-pack.adoc`) for tech leads on layout, schema, and skill creation.
-- **Fuzzy project picker:** Filterable list for recent and auto-discovered Spring Boot projects with background search.
-- **Enhanced Scan screen:** Real-time activity log, scan statistics, and detailed progress tracking.
-- **Interactive log navigation:** Support for keyboard navigation (j/k, PageUp/Down) in the scan log.
-- **Legacy file detector:** Surfaces a warning when older agent-instruction files are found alongside fresh generation.
-- **Agent Projections:** Modular extension point for agent-specific output files (e.g., Claude, Cursor, Windsurf).
-- **AI tool picker:** First-run and settings selection to drive which agent projections are emitted.
-- **New projections:** Opt-in support for Cursor (`.mdc`) and Windsurf (`.rules`) specific formats.
+- **Fuzzy project picker:** Filterable list for recent and discovered projects with background search.
+- **Enhanced Scan screen:** Real-time activity log, statistics, and detailed progress tracking.
+- **Interactive log navigation:** Keyboard support (j/k, PageUp/Down) for the scan log.
+- **Legacy file detector:** Shows a warning when older agent-instruction files are found.
+- **Agent Projections:** Modular extension point for agent-specific output files (Claude, Cursor, Windsurf).
+- **AI tool picker:** Settings selection to drive which agent projections are emitted.
+- **New projections:** Opt-in support for Cursor (`.mdc`) and Windsurf (`.rules`) formats.
 
 ### Changed
-- **Vendor-neutral primary file:** The primary agent-instructions file is now `AGENTS.md`, supported by most AI tools.
-- **Unified adapter ID:** Renamed default adapter from `claude` to `agents` (with legacy fallback).
-- **Standards-pack control:** Explicit projection opting via `standards-pack.yml` with user-preference overrides.
+- **Vendor-neutral primary file:** The primary agent-instructions file is now `AGENTS.md`.
+- **Unified adapter ID:** Renamed default adapter to `agents` with legacy fallback support.
+- **Standards-pack control:** Explicit projection opting via `standards-pack.yml`.
 - **Rich Markdown preview:** Styled rendering for headings and code blocks in the Review screen.
-- **Brand positioning:** Refined messaging focusing on local-first repository context for AI agents.
-- **Single output shape:** Collapsed per-target splits into a single vendor-neutral output set on every run.
+- **Brand positioning:** Refined messaging focusing on local-first repository context.
+- **Single output shape:** Simplified to a vendor-neutral output set on every run.
 - **Streamlined TUI flow:** Simplified navigation (Welcome -> ProjectSelect -> Scanning -> Review).
-- **Settings redesign:** Grouped configuration into cards with focus-rail navigation and live status indicators.
-- **Improved system checks:** Sanitized and simplified service health cards on the Welcome screen.
+- **Settings redesign:** Grouped configuration with focus-rail navigation and status indicators.
+- **Improved system checks:** Sanitized and simplified service health cards.
 
 ### Fixed
-- **Primary file normalization:** Legacy `CLAUDE.md` adapter paths are now automatically normalized to `AGENTS.md`.
-- **Project-aware headers:** Primary file H1 and version badge now sync automatically with project metadata.
+- **Primary file normalization:** Automatically normalizes legacy paths to `AGENTS.md`.
+- **Project-aware headers:** File headers and version badges now sync with project metadata.
 - **JDK 25 compatibility:** Resolved native-access warnings when running via Maven.
-- **Shutdown reliability:** Background processes now use daemon threads for clean JVM exits.
+- **Shutdown reliability:** Improved background process cleanup for clean JVM exits.
 
 ### Removed
-- **Redundant UI:** Removed the Scan screen stepper and unnecessary project-info footer.
-- **Non-deterministic outputs:** Dropped AI-generated prompts and project notes to ensure a context-only layer.
+- **Redundant UI:** Removed the Scan screen stepper and project-info footer.
+- **Non-deterministic outputs:** Dropped AI-generated prompts and notes for a context-only layer.
 - **Legacy schemas:** Removed obsolete fields from standards and YAML bindings.
-- **Dedicated Cursor target:** Removed hardcoded Cursor paths in favor of the vendor-neutral `AGENTS.md` and opt-in projections.
+- **Dedicated Cursor target:** Replaced hardcoded paths with vendor-neutral `AGENTS.md` and projections.
 
 ## [0.4.0] - 2026-05-25
 ### Changed

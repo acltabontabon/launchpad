@@ -42,6 +42,10 @@ import org.springframework.stereotype.Service;
 public class TaskAdvisorService {
 
     public static final String DONE_TOKEN = "__DONE__";
+    /** Critic verdict that means "the brief is substantial enough; proceed to
+     *  synthesise". Returned by {@link #critiqueReadiness} when no follow-up is
+     *  warranted. Any other return value is the critic's follow-up question. */
+    public static final String READY_TOKEN = "__OK__";
     /** Cap on rules embedded in the Constraints section. Higher counts overwhelm
      *  the implementing agent and the prompt context window. Overflow rules are
      *  cited by id in a footer line so they remain discoverable. */
@@ -187,6 +191,64 @@ public class TaskAdvisorService {
         // model having nothing new to ask and finalize.
         if (isNearDuplicateOfPrior(extracted, history)) return DONE_TOKEN;
         return extracted;
+    }
+
+    /**
+     * Second-opinion critic over the Q&amp;A transcript. Runs after the interview
+     * model emits {@link #DONE_TOKEN} to judge whether the brief is actually
+     * substantial enough to synthesise, or whether one more follow-up would
+     * meaningfully improve it.
+     * <p>
+     * Returns {@link #READY_TOKEN} when the critic agrees the brief is ready;
+     * otherwise returns one focused follow-up question (one sentence ending in
+     * `?`). Near-duplicate questions of anything already in history collapse to
+     * {@code READY_TOKEN} so the loop cannot oscillate on the same gap.
+     * <p>
+     * Same compact standards menus as {@link #askNextQuestion} - the critic
+     * needs to see what is already covered. Uses the interview timeout (the
+     * call is the same scale).
+     */
+    public String critiqueReadiness(
+        StackProfile stack,
+        String taskDescription,
+        List<TaskTurn> history,
+        List<Rule> rules,
+        List<Skill> skills,
+        List<Checklist> checklists
+    ) {
+        var template = promptSelector.load(PromptSelector.Kind.TASK_CRITIQUE, stack);
+        var parts = PromptParts.split(template);
+        var response = chatClient.prompt()
+            .system(parts.system())
+            .user(u -> u.text(parts.user())
+                .param("stack", formatStack(stack))
+                .param("task", taskDescription)
+                .param("history", formatHistory(history))
+                .param("rules", formatRulesCompact(rules))
+                .param("skills", formatSkillsCompact(skills))
+                .param("checklists", formatChecklistsCompact(checklists)))
+            .call()
+            .content();
+        return interpretCritiqueResponse(response, history);
+    }
+
+    /**
+     * Pure decision function for the critic's raw output. Visible for testing
+     * without mocking the chat client. Treats empty / {@code __OK__} / a
+     * {@link #DONE_TOKEN} mention / a near-duplicate of any prior question all
+     * as "ready". Anything else is interpreted as a follow-up question via the
+     * same {@link #extractQuestion} parse used by the interview path.
+     */
+    static String interpretCritiqueResponse(String raw, List<TaskTurn> history) {
+        if (raw == null) return READY_TOKEN;
+        var stripped = raw.strip();
+        if (stripped.isEmpty()) return READY_TOKEN;
+        if (stripped.contains(READY_TOKEN)) return READY_TOKEN;
+        if (stripped.contains(DONE_TOKEN)) return READY_TOKEN;
+        var question = extractQuestion(raw);
+        if (question.equals(DONE_TOKEN)) return READY_TOKEN;
+        if (isNearDuplicateOfPrior(question, history)) return READY_TOKEN;
+        return question;
     }
 
     /**
@@ -427,6 +489,11 @@ public class TaskAdvisorService {
         for (var w : warnings) {
             if (w.startsWith("missing required section")) return true;
             if (w.contains("empty")) return true;
+            // Goal-too-short is a substance failure the retry can plausibly
+            // fix: the FINALIZE_RETRY_REMINDER pushes the model toward emitting
+            // the marker sections cleanly, which is the path that produces a
+            // meaningful Goal paragraph.
+            if (w.contains("too short to be actionable")) return true;
         }
         return false;
     }

@@ -133,4 +133,86 @@ class TaskOutputValidatorTest {
         var md = "## Goal\nbody\n";
         assertThat(TaskOutputValidator.sectionBody(md, "## Acceptance criteria")).isEmpty();
     }
+
+    @Test
+    void shortGoalIsFlaggedAsTooShortToBeActionable() {
+        var md = """
+            ## Goal
+            Build the feature.
+
+            ## Constraints
+            - [must] something.
+            ## Acceptance criteria
+            - The endpoint responds with the expected payload.
+            """;
+        var warnings = validator.validate(md);
+        assertThat(warnings).contains("Goal section is too short to be actionable");
+        assertThat(warnings).doesNotContain("Goal section is empty");
+    }
+
+    @Test
+    void goalAtOrAboveWordFloorIsAccepted() {
+        var md = """
+            ## Goal
+            Create a greeting API that returns a name.
+
+            ## Constraints
+            - [must] something.
+            ## Acceptance criteria
+            - The endpoint responds with the expected payload.
+            """;
+        assertThat(validator.validate(md))
+            .doesNotContain("Goal section is too short to be actionable");
+    }
+
+    @Test
+    void fillerAcceptanceBulletsAreFlagged() {
+        var md = """
+            ## Goal
+            Create a greeting API that returns a name.
+
+            ## Constraints
+            - [must] something.
+            ## Acceptance criteria
+            - Works correctly.
+            - The response contains a name field.
+            """;
+        assertThat(validator.validate(md))
+            .contains("Acceptance criteria contains vague filler bullets");
+    }
+
+    @Test
+    void deterministicFallbackBulletStandingAloneIsNotFlagged() {
+        // The assembler emits this exact line as a safety net when the model
+        // produces no usable acceptance criteria. It is intentional, not LLM
+        // filler, and must not trip the filler / short-bullet checks.
+        var md = """
+            ## Goal
+            Create a greeting API that returns a name.
+
+            ## Constraints
+            - [must] something.
+            ## Acceptance criteria
+            - Behaviour described in the Goal section is implemented.
+            """;
+        var warnings = validator.validate(md);
+        assertThat(warnings).doesNotContain("Acceptance criteria contains vague filler bullets");
+        assertThat(warnings).doesNotContain("Acceptance criteria has bullets shorter than 3 words");
+    }
+
+    @Test
+    void shortAcceptanceBulletsAreFlagged() {
+        var md = """
+            ## Goal
+            Create a greeting API that returns a name.
+
+            ## Constraints
+            - [must] something.
+            ## Acceptance criteria
+            - Done.
+            - The response contains a name field.
+            """;
+        assertThat(validator.validate(md))
+            .contains("Acceptance criteria has bullets shorter than 3 words");
+    }
 }
