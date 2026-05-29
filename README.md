@@ -12,7 +12,7 @@ Standards-first, not standards-after.
 
 ## How it works
 
-<img src="docs/resources/launchpad-overview.drawio.png" width="800" alt="Launchpad Overview">
+![Launchpad Overview](docs/resources/launchpad-overview.drawio.png)
 
 ---
 
