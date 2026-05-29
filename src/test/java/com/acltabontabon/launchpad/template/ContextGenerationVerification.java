@@ -20,27 +20,28 @@ import org.springframework.ai.ollama.api.OllamaApi;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
 
 /**
- * Round-4 end-to-end verification. Not part of the default test suite -
+ * End-to-end generation verification. Not part of the default test suite -
  * class name doesn't match `*Test.java`. Run explicitly:
  *
- *   ./mvnw test -Dtest=Round4Verification
+ *   ./mvnw test -Dtest=ContextGenerationVerification -DLAUNCHPAD_VERIFY_PROJECT=/path/to/project
  *
  * Requires:
- *   - `/Users/aclt/Workspace/nativeimage-demo` exists
+ *   - LAUNCHPAD_VERIFY_PROJECT env var pointing at a Spring Boot Maven project
  *   - Ollama running at http://localhost:11434
  *   - the configured model is pulled
  *
  * Prints the generated AGENTS.md to stdout and writes it to
- * `target/round4-claude.md` for inspection.
+ * `target/verification-agents.md` for inspection.
  */
-class Round4Verification {
+class ContextGenerationVerification {
 
-    private static final String TARGET_PROJECT = "/Users/aclt/Workspace/nativeimage-demo";
+    private static final String TARGET_PROJECT = System.getenv().getOrDefault(
+        "LAUNCHPAD_VERIFY_PROJECT", System.getProperty("user.home") + "/spring-boot-demo");
     private static final String OLLAMA_URL = "http://localhost:11434";
     private static final String OLLAMA_MODEL = "qwen2.5-coder:7b-instruct";
 
     @Test
-    void buildClaudeMdForNativeImageDemo() throws Exception {
+    void verifyAgentsMdGeneration() throws Exception {
         var projectRoot = Path.of(TARGET_PROJECT);
         if (!Files.isDirectory(projectRoot)) {
             System.err.println("[skip] target project not found: " + TARGET_PROJECT);
@@ -85,7 +86,7 @@ class Round4Verification {
             .findFirst()
             .orElseThrow();
 
-        var outPath = Path.of("target/round4-claude.md");
+        var outPath = Path.of("target/verification-agents.md");
         Files.createDirectories(outPath.getParent());
         Files.writeString(outPath, primary.content());
 
