@@ -1,551 +1,79 @@
-= Launchpad - Technical Architecture
+= Architecture
 :toc: left
-:toclevels: 3
-:sectnums:
-:sectanchors:
-:source-highlighter: rouge
+:toclevels: 2
 :icons: font
-:imagesdir: images
+:source-highlighter: highlight.js
 
-[abstract]
-Launchpad is a local-AI-powered terminal UI that scans a target codebase, asks a locally-running Ollama model to summarise it, and emits a single vendor-neutral output set: `AGENTS.md` (the primary agent-instructions file, read natively by Claude Code via fallback, Cursor, Codex CLI, Aider, Continue, Zed, Jules, and Amp) plus the `.ai/` companion tree and per-skill `.claude/skills/<id>/SKILL.md` discovery shims. It is a Spring Boot application with no web server: the process owns the terminal, runs the scan/AI pipeline on a background thread, and exits when the user quits.
+image::resources/launchpad-overview.drawio.png[Launchpad architecture overview]
 
-This document explains how the pieces fit together, the data that flows between them, and the extension points if you want to add a vendor-discovery shim or a new scan rule.
+== Core principles
 
-== At a glance
+=== Local-first
 
-[cols="1,3"]
-|===
-| Runtime           | Spring Boot 4.0.6 (non-web), Java 25, optional GraalVM native image
-| AI client         | Spring AI 2.0.0-M6 (`spring-ai-starter-model-ollama`)
-| TUI library       | TamboUI 0.3.0 (Ratatui-inspired Java TUI, Panama backend)
-| External services | One: an Ollama daemon on `http://localhost:11434`
-| Output            | Files written to the scanned project root: `AGENTS.md`, `.ai/*`, `.claude/skills/<id>/SKILL.md`
-| Source size       | ~1.6k lines of Java across 16 files in 5 packages
-|===
+Launchpad runs entirely on your machine. Source code, scan results, and generated context never leave the local filesystem. The local AI model runs through Ollama or a compatible local endpoint -- no cloud API calls are made during analysis or synthesis.
 
-== Running it
+=== Deterministic-first
 
-[source,bash]
+Repository structure, dependencies, endpoints, and documentation are extracted through structured, deterministic analysis. The local AI model is only used for bounded synthesis -- writing short narrative sections from data the deterministic phase already produced.
+
+This ordering is deliberate. Deterministic analysis is fast, repeatable, and does not hallucinate. AI synthesis fills in the parts that benefit from natural language -- project overview, architectural notes -- but it operates on structured inputs, not raw source code.
+
+=== Vendor-neutral output
+
+Generated context files use a standard shape (`AGENTS.md` + `.ai/`) that any AI assistant can read. Agent-specific formats (Claude Code skills, Cursor rules, Windsurf rules) are produced as optional projections on top of the canonical output, not as replacements for it.
+
+== Pipeline
+
+[source]
 ----
-# 1. Start Ollama and make the configured model available
-ollama serve
-ollama pull llama3.2
+Your Project
+        │
+        ▼
+┌───────────────────┐
+│  Support check    │  Verifies the project is a supported stack.
+│                   │  Nothing runs past this point if it is not.
+└────────┬──────────┘
+         │
+         ▼
+┌───────────────────┐
+│  Deterministic    │  Walks the file tree, parses build metadata,
+│  analysis         │  and extracts structured data: dependencies,
+│                   │  entry points, endpoints, packages, docs.
+└────────┬──────────┘
+         │
+         ▼
+┌───────────────────┐
+│  Standards audit  │  Runs check-enabled rules from your standards
+│  (optional)       │  pack. Writes findings to audit.md and
+│                   │  audit.sarif.json.
+└────────┬──────────┘
+         │
+         ▼
+┌───────────────────┐
+│  Local AI         │  Synthesizes short narrative sections from the
+│  synthesis        │  structured data above. One bounded call per
+│                   │  section. Falls back to deterministic output
+│                   │  if the model returns invalid content.
+└────────┬──────────┘
+         │
+         ▼
+┌───────────────────┐
+│  Context assembly │  Combines deterministic renders + synthesized
+│                   │  sections + standards content into the output
+│                   │  file set. Computes a write action per file.
+└────────┬──────────┘
+         │
+         ▼
+┌───────────────────┐
+│  Review + write   │  User reviews plans in the TUI and confirms.
+│                   │  Backs up any file it changes before writing.
+└────────┬──────────┘
+         │
+         ▼
 
-# 2. Launch the TUI
-./mvnw spring-boot:run
-
-# 3. Or build a fast-starting native binary
-./mvnw -Pnative native:compile
-----
-
-Everything else (model name, Ollama URL, scan limits) is in `src/main/resources/application.properties`.
-
-== High-level architecture
-
-The application is a thin Spring Boot shell around three responsibilities: render a TUI, walk a file tree, and talk to Ollama. The five Java packages map 1-to-1 to those concerns plus shared types.
-
-[plantuml,architecture-overview,svg]
-----
-@startuml
-skinparam backgroundColor #FFFFFF
-skinparam componentStyle rectangle
-skinparam shadowing false
-skinparam defaultFontName Helvetica
-
-package "LaunchpadApplication\n(Spring Boot, no web)" {
-
-  package "tui" as TUI #E8F4FD {
-    [LaunchpadRunner\n(ApplicationRunner)] as Runner
-    [AppState\n(shared mutable state)] as State
-    package "tui.view" {
-      [WelcomeView] as W
-      [ProjectSelectView] as P
-      [ScanProgressView] as S
-      [ReviewView] as R
-    }
-  }
-
-  package "scanner" as SCAN #FDF6E3 {
-    [ProjectScanner\n(@Service)] as Scanner
-    [ProjectContext\n(record)] as Ctx
-  }
-
-  package "ai" as AI #F4ECF7 {
-    [ContextGeneratorService\n(@Service)] as Gen
-  }
-
-  package "template" as TPL #E8F8F5 {
-    [ContextTemplateEngine] as Engine
-    [AgentsPrimaryFileBuilder] as Primary
-    [GeneratedFile\n(record)] as File
-  }
-
-  package "rules" as RULES #FDEDEC {
-    [EngineeringRule\n(enum)] as Rule
-  }
-}
-
-cloud "Ollama daemon\nlocalhost:11434" as Ollama
-database "Filesystem\n(target project)" as FS
-actor "User" as U
-
-U -down-> TUI : keypresses
-Runner -right-> State : reads/writes
-Runner -down-> W
-Runner -down-> P
-Runner -down-> S
-Runner -down-> R
-Runner -right-> Scanner : scan(path)
-Runner -right-> Gen : generate*(ctx)
-Runner -right-> Engine : buildFiles(ctx)
-
-Scanner -down-> FS : walkFileTree
-Scanner -right-> Ctx : produces
-Gen -down-> Ollama : ChatClient.prompt()
-Gen -up-> Ctx : reads.toPromptString()
-Engine -up-> Rule : enumerates
-Engine -right-> File : produces
-
-R -down-> FS : writeString (on 's')
-
-@enduml
+  AGENTS.md  +  .ai/*  +  agent projections
 ----
 
-The arrows show data flow, not call frequency. Every render tick (~12 fps) `LaunchpadRunner` reads `AppState` to know what to draw, but the heavy work (file walk + two LLM calls) runs once on a background thread and writes its progress back into `AppState`.
+== MCP Server
 
-== The pipeline
-
-The end-to-end flow has six observable phases. All of them are driven from `LaunchpadRunner.triggerScanIfNeeded()` (`src/main/java/com/acltabontabon/launchpad/tui/LaunchpadRunner.java:159`) and run inside a single `CompletableFuture.runAsync`.
-
-[plantuml,pipeline-sequence,svg]
-----
-@startuml
-skinparam backgroundColor #FFFFFF
-skinparam shadowing false
-skinparam defaultFontName Helvetica
-skinparam sequenceMessageAlign center
-
-actor User
-participant "ScanProgressView\n(render thread)" as V
-participant "LaunchpadRunner" as R
-participant "AppState" as S
-participant "ProjectScanner" as PS
-participant "ContextGeneratorService" as G
-database "Ollama" as O
-participant "ContextTemplateEngine" as E
-
-User -> V : Enter (from PROJECT_SELECT)
-V -> S : currentScreen = SCANNING
-
-== Background pipeline (CompletableFuture.runAsync) ==
-
-R -> S : scanProgress = 5\nmessage = "Scanning project files..."
-R -> PS : scan(projectPath, progressCb)
-PS -> PS : walkFileTree (skip dirs,\n  max-file-size filter)
-PS -> PS : detectStack +\n  extractDependencies +\n  detectEntryPoints
-PS --> R : ProjectContext
-
-R -> S : scanProgress = 30\nmessage = "Generating project summary..."
-R -> G : generateProjectSummary(ctx)
-G -> O : ChatClient prompt #1\n(PROJECT_SUMMARY_PROMPT)
-O --> G : summary (markdown)
-G --> R : summary
-
-R -> S : scanProgress = 60\nmessage = "Synthesising sections..."
-R -> G : synthesize(ctx)
-G -> O : ChatClient bounded\n  per-section synthesis
-O --> G : section bodies
-G --> R : synthesis outputs
-
-R -> S : scanProgress = 85\nmessage = "Assembling output files..."
-R -> E : buildFiles(ctx)
-E --> R : List<GeneratedFile>
-R -> S : generatedFiles = files\nscanProgress = 100\nscanComplete = true
-
-== Back on the render thread ==
-
-V -> S : reads scanComplete, shows\n"Press Enter to review"
-User -> V : Enter
-V -> S : currentScreen = REVIEW
-@enduml
-----
-
-A few details that are not obvious from the picture:
-
-* The `progressCb` passed to `ProjectScanner.scan` is a `Consumer<String>` that simply writes to `state.scanMessage`. This is how the file-walk phase animates its sub-status ("Reading pom.xml...") inside the broader "Scanning project files..." phase.
-* `ScanProgressView` does not subscribe to anything. It just re-reads `state.scanProgress` and `state.scanMessage` on every render tick. The spinner advances by incrementing `spinnerFrame` in the render method, which is the only mutable state that lives on a view.
-* If the background task throws, the catch block sets `state.scanError = true` and `state.scanComplete = true` so the gauge stops animating and the user sees a red message. The view never transitions to REVIEW on error.
-
-== TUI state machine
-
-`AppState.Screen` (5 enum values) plus the boolean `scanComplete` flag are the entire navigation model. Each `View` returns `true` from `handleEvent` to consume the key and (often) sets `state.currentScreen` to advance.
-
-[plantuml,state-machine,svg]
-----
-@startuml
-skinparam backgroundColor #FFFFFF
-skinparam shadowing false
-skinparam defaultFontName Helvetica
-skinparam state {
-  BackgroundColor #E8F4FD
-  BorderColor #2C3E50
-}
-
-[*] --> WELCOME
-
-WELCOME : ASCII logo + Ollama readiness badge
-WELCOME --> PROJECT_SELECT : Enter (only if ollamaStatus.isReady())
-WELCOME --> WELCOME : r (re-run readiness check)
-WELCOME --> [*] : q
-
-PROJECT_SELECT : Path input + live validation
-PROJECT_SELECT --> WELCOME : Esc
-PROJECT_SELECT --> SCANNING : Enter (path valid)
-note right of PROJECT_SELECT
-  Path is validated each render:
-  exists + isDirectory.
-  'q' is ignored here so users
-  can type 'q' in paths.
-end note
-
-SCANNING : Gauge + phase list + spinner
-SCANNING --> REVIEW : Enter (scanComplete &&\n!scanError)
-note right of SCANNING
-  Pipeline runs once on first
-  entry (scanStarted guard in
-  LaunchpadRunner). On error,
-  this state is terminal except
-  for 'q'.
-end note
-
-REVIEW : Left: file list. Right: preview
-REVIEW --> REVIEW : Up/Down or j/k (cycle files)
-REVIEW --> REVIEW : s (write all to disk)
-REVIEW --> [*] : q
-
-@enduml
-----
-
-Two subtleties:
-
-. The global `q`-to-quit handler in `LaunchpadRunner.handleEvent` is suppressed when `currentScreen == PROJECT_SELECT`. That is so a user can type the letter `q` as part of a path. Every other screen treats `q` as quit before the per-view handler runs.
-. `scanStarted` is a field on `LaunchpadRunner` (not on `AppState`) because it is a one-shot latch that should never reset. Once the user has triggered a scan, even if they navigate back, the pipeline does not re-run. There is no "rescan" path today; that would require resetting `scanStarted` and clearing the progress/error fields together.
-
-== Threading model
-
-There are exactly two threads that matter.
-
-[plantuml,threading,svg]
-----
-@startuml
-skinparam backgroundColor #FFFFFF
-skinparam shadowing false
-skinparam defaultFontName Helvetica
-
-participant "TUI thread\n(TuiRunner.run loop)" as T
-participant "AppState\n(volatile + atomic fields)" as S
-participant "ForkJoinPool worker\n(CompletableFuture.runAsync)" as W
-
-note over T
-  Tick every 80ms (~12 fps):
-   1. drain input events
-   2. dispatch to current view's
-      handleEvent
-   3. render the frame
-end note
-
-T -> S : read currentScreen,\n  scanProgress, scanMessage,\n  generatedFiles, etc.
-T -> S : write currentScreen,\n  projectPath (char input)
-
-note over W
-  Spawned once when SCANNING
-  is entered. Lives for the
-  duration of the pipeline.
-end note
-
-W -> S : write scanProgress,\n  scanMessage,\n  generatedFiles,\n  scanComplete, scanError
-@enduml
-----
-
-Anything mutated from the background side is `volatile` or wrapped in `AtomicInteger`/`AtomicReference`. The visibility guarantee is per-field, not snapshot-consistent: a render tick can observe `scanProgress=100` before `generatedFiles` is non-empty, which is why `ScanProgressView` only checks `scanComplete` (the last flag flipped) before allowing the transition to REVIEW.
-
-A second short-lived `CompletableFuture.runAsync` runs the Ollama readiness check. It is kicked off on the first render tick (`AppState.healthCheckRequested` starts `true`) and again whenever the user presses `r` on the Welcome screen. The worker writes the result into `AppState.ollamaStatus` (an `AtomicReference<OllamaStatus>`). The same threading rules apply.
-
-[WARNING]
-====
-Adding plain mutable fields to `AppState` is a bug waiting to happen. The class's javadoc spells this out, but it is easy to miss. Use `volatile` for references and primitives, or `Atomic*` for compound updates.
-====
-
-== Package map
-
-[cols="1,2,3"]
-|===
-| Package | Role | Notable types
-
-| `com.acltabontabon.launchpad`
-| Spring Boot entry point.
-| `LaunchpadApplication` (`@SpringBootApplication`, `@EnableAsync`)
-
-| `com.acltabontabon.launchpad.tui`
-| Render loop, shared state, screen dispatch.
-| `LaunchpadRunner` (`ApplicationRunner`), `AppState`
-
-| `com.acltabontabon.launchpad.tui.view`
-| One class per screen. All implement `View`.
-| `WelcomeView`, `ProjectSelectView`, `ScanProgressView`, `ReviewView`
-
-| `com.acltabontabon.launchpad.scanner`
-| Walks the project, detects stack/deps/entry points.
-| `ProjectScanner` (`@Service`), `ProjectContext` (record)
-
-| `com.acltabontabon.launchpad.ai`
-| Spring AI `ChatClient` wrapper with three prompt templates, plus an Ollama readiness check.
-| `ContextGeneratorService` (`@Service`), `OllamaHealthChecker` (`@Component`), `OllamaStatus` (record)
-
-| `com.acltabontabon.launchpad.template`
-| Assembles `List<GeneratedFile>` from AI output + rules.
-| `ContextTemplateEngine`, `AgentsPrimaryFileBuilder`, `GeneratedFile`
-
-| `com.acltabontabon.launchpad.rules`
-| Static, target-agnostic engineering principles.
-| `EngineeringRule` (enum, 10 constants)
-|===
-
-== Component deep dives
-
-=== ProjectScanner
-
-`ProjectScanner.scan` (`src/main/java/com/acltabontabon/launchpad/scanner/ProjectScanner.java:34`) is a single pass over the file tree that fills four collections, then runs three quick post-processors.
-
-[plantuml,scanner-internal,svg]
-----
-@startuml
-skinparam backgroundColor #FFFFFF
-skinparam shadowing false
-skinparam defaultFontName Helvetica
-
-start
-:scan(rootPath, progressCb);
-
-partition "Files.walkFileTree" {
-  if (dir name in SKIP_DIRS?) then (yes)
-    :SKIP_SUBTREE;
-  else (no)
-    if (file size > maxFileSizeKb?) then (yes)
-      :skip file;
-    else (no)
-      if (path contains test/tests/spec/specs?) then (yes)
-        if (includeTestNames\n  && isSourceFile?) then (yes)
-          :testClassNames.add;
-        endif
-      else (no)
-        if (isSourceFile?) then (yes)
-          :sourceFiles.add;
-        endif
-        if (filename in KEY_FILE_NAMES?) then (yes)
-          :read first 60 lines\n-> fileSnippets;
-        endif
-      endif
-    endif
-  endif
-}
-
-:detectStack(keyFiles)
-  -> "Java / Maven", "Node.js", etc.;
-:extractDependencies(fileSnippets)
-  -> regex over pom.xml /
-     package.json, capped at 50;
-:detectEntryPoints(sourceFiles)
-  -> Application.java, main.py, *Config.java;
-
-:new ProjectContext(...);
-stop
-@enduml
-----
-
-Important behaviour to know about:
-
-* `SKIP_DIRS` is hardcoded. The `launchpad.scan.skip-patterns` property in `application.properties` is *not* read by the scanner today. If you need to add a skip directory, edit `ProjectScanner.SKIP_DIRS`.
-* Test files are identified purely by path segment (`test`, `tests`, `spec`, `specs`). A file named `MyServiceTest.java` outside such a directory will still be classified as a source file.
-* `extractDependencies` only knows about `pom.xml` (regex on `<artifactId>`) and `package.json` (regex on quoted keys). Gradle, Cargo, Go modules, and Python `pyproject.toml` give a non-empty `detectedStack` but an empty `dependencies` list.
-
-=== ProjectContext.toPromptString
-
-The scan result is converted to a single string with `ProjectContext.toPromptString()` and pasted verbatim into every prompt. The format is deliberately summary-style (file names, not file contents) to keep token counts predictable even for large projects. Only `KEY_FILE_NAMES` get their first 60 lines included.
-
-=== ContextGeneratorService
-
-Three prompt constants, one `ChatClient`, three public methods. The class is intentionally small.
-
-[cols="1,2,2"]
-|===
-| Prompt | Used by | Output
-
-| `PROJECT_SUMMARY_PROMPT`
-| `generateProjectSummary` (always called)
-| Overview + patterns + module list + conventions + gotchas, in markdown.
-
-| `SKILLS` synthesis (composable)
-| `SectionSynthesizer` per-section calls
-| Bounded body fragments for the primary file's sections. The primary file's headings and structure are owned by Java; the model only fills the bodies.
-|===
-
-`ChatClient` is built once in the constructor from the Spring-AI-provided `ChatClient.Builder`. The Ollama base URL and model come from `application.properties`. Swapping providers is a dependency-swap on the starter, not a code change here.
-
-=== OllamaHealthChecker
-
-A small `@Component` that bypasses Spring AI and talks to Ollama's HTTP API directly. It exposes one method, `check()`, which GETs `<base-url>/api/tags` with a 2-second timeout, then scans the JSON body for model `name` entries. The configured model matches if it equals an installed name exactly or matches the prefix before `:` (Ollama returns `llama3.2:latest` for a `llama3.2` pull). The result is an immutable `OllamaStatus` record with one of four states: `CHECKING`, `READY`, `DAEMON_DOWN`, `MODEL_MISSING`. Any failure - connection refused, non-200 response, malformed body - collapses to `DAEMON_DOWN`. Used only by `LaunchpadRunner.triggerHealthCheckIfNeeded` to feed `AppState.ollamaStatus`, which `WelcomeView` renders as a colored badge.
-
-=== ContextTemplateEngine
-
-The engine has one public method, `buildFiles`, that always emits the same vendor-neutral output set:
-
-[plantuml,template-output,svg]
-----
-@startuml
-skinparam backgroundColor #FFFFFF
-skinparam shadowing false
-skinparam defaultFontName Helvetica
-
-object "ProjectContext\n+ synthesis outputs" as Input
-
-package "Canonical readable views" #E8F4FD {
-  object "AGENTS.md\nkind = CONTEXT" as A1
-  object ".ai/index.md\nkind = INDEX" as A2
-  object ".ai/engineering-rules.md\nkind = RULES" as A3
-  object ".ai/stack.md\nkind = CONTEXT" as A4
-  object ".ai/checklists.md\nkind = RULES" as A5
-}
-
-package "Agent projections (opt-in)" #FDF6E3 {
-  object ".claude/skills/<id>/SKILL.md\nkind = SKILL\n(ClaudeSkillsProjection)" as S1
-}
-
-Input --> A1
-Input --> A2
-Input --> A3
-Input --> A4
-Input --> A5
-Input --> S1 : one per Skill\n(when 'claude' id is enabled)
-@enduml
-----
-
-The primary file's headings and section ordering are owned by `AgentsPrimaryFileBuilder`; only bounded body fragments come from the model. Canonical rules, skills, and checklists are pulled from `StandardsLoader` and rendered into the `.ai/*.md` views, which are always emitted. The `.claude/skills/<id>/SKILL.md` files are produced by the `ClaudeSkillsProjection` bean (the shipped default `AgentProjection`); they preserve Claude Code's `/<skill-id>` slash-command invocation and do not duplicate canonical content.
-
-=== Agent projections - the consumer pattern
-
-Agent-specific output files are produced by `AgentProjection` beans that consume the canonical `Rule` / `Skill` / `Checklist` records and emit vendor-shaped `GeneratedFile` entries. The core engine does not know vendor file formats - it only resolves enabled projection ids from `standards-pack.yml`'s `projections:` field (defaulting to `["claude"]` for back-compat) and dispatches to the matching bean.
-
-```
-Canonical model:
-  Rule / Skill / Checklist
-
-Canonical readable views (always emitted):
-  AGENTS.md
-  .ai/*.md
-
-Agent projections (opt-in via projections: [...] in standards-pack.yml):
-  .claude/skills/<id>/SKILL.md     (claude - shipped default)
-  .cursor/rules/*.mdc              (future, opt-in)
-  .github/copilot-instructions.md  (future, opt-in)
-```
-
-Projection outputs are **generated artifacts** - consumption surfaces and discovery / ergonomics layers. They are never canonical storage, canonical authoring, or the source of truth. The source of truth remains the standards-pack YAML + canonical records + canonical `.ai/*` readable views.
-
-> New AI tool integrations must be implemented as `AgentProjection` extensions. Do not introduce provider-specific branches into `ContextTemplateEngine`, `CompanionFileBuilder`, canonical renderers, or canonical model classes.
-
-=== Views
-
-Each `View` is `@Component` (so Spring constructs them) and implements two methods:
-
-[source,java]
-----
-void render(Frame frame, Rect area, AppState state);          // pure, called every tick
-boolean handleEvent(Event event, TuiRunner runner, AppState state);
-----
-
-The convention is that `render` reads `AppState` and never mutates it, while `handleEvent` may mutate `AppState.currentScreen` or domain fields to drive navigation. The only deliberate exception is the spinner counter in `ScanProgressView`, which lives on the view itself rather than `AppState` because it is purely cosmetic.
-
-`LaunchpadRunner.currentView()` (`src/main/java/com/acltabontabon/launchpad/tui/LaunchpadRunner.java:201`) is a `switch` over `AppState.Screen` that returns the right view instance. This is the entire "router" of the TUI.
-
-== Configuration
-
-`src/main/resources/application.properties`:
-
-[cols="3,1,3"]
-|===
-| Key | Default | Effect
-
-| `spring.main.web-application-type`
-| `none`
-| Disables the embedded servlet container. Without this, the JVM keeps a server thread alive and the TUI does not own stdin/stdout cleanly.
-
-| `spring.main.banner-mode`
-| `off`
-| Stops Spring printing its banner before the TUI takes over the terminal.
-
-| `logging.level.root`
-| `OFF`
-| Same idea: any stray log line would corrupt the rendered frame.
-
-| `spring.ai.ollama.base-url`
-| `http://localhost:11434`
-| The Ollama daemon endpoint.
-
-| `spring.ai.ollama.chat.options.model`
-| `llama3.2`
-| Model tag. Must be pulled (`ollama pull <name>`) before launch.
-
-| `launchpad.scan.max-file-size-kb`
-| `512`
-| Files larger than this are skipped during scan (used by `ProjectScanner.visitFile`).
-
-| `launchpad.scan.skip-patterns`
-| (set)
-| *Currently unused.* Reserved; skipping is done via `ProjectScanner.SKIP_DIRS`.
-
-| `launchpad.scan.include-test-names`
-| `true`
-| Whether to collect test-file relative paths into `ProjectContext.testClassNames`.
-|===
-
-== Extending Launchpad
-
-=== Adding a new agent projection (e.g. .github/copilot-instructions.md, .cursor/rules/*.mdc)
-
-Agent-specific files are added by implementing `AgentProjection` - never by branching the engine, the companion builder, the canonical renderers, or the canonical model.
-
-1. Create a package under `template/projection/<agent>/`.
-2. Add a renderer (`<Agent>...Renderer.java`) - package-private utility - that takes canonical records and returns the agent-shaped file body.
-3. Add a `@Component` projection (`<Agent>...Projection.java`) implementing `AgentProjection`. Pick a stable `id()` (`"copilot"`, `"cursor"`, ...) and emit one or more `GeneratedFile` entries with vendor-native paths.
-4. Light up via `standards-pack.yml`: `projections: ["claude", "copilot"]`. The id ships disabled until a project opts in.
-5. Document the new id in CHANGELOG and USAGE so users know how to enable it.
-
-No engine, companion-builder, or canonical-renderer change is required - if any of those need to change to support the projection, the abstraction is leaking and the change is wrong.
-
-=== Adding a scan signal (e.g. detect React, Spring Boot version)
-
-Most additions live inside `ProjectScanner.scan`. Add a field to `ProjectContext`, populate it during or after the file walk, and surface it in `ProjectContext.toPromptString` so the AI sees it. Downstream code does not need to change unless you want the engine to use the new field directly.
-
-=== Adding an engineering rule
-
-Add a rule entry to the relevant `standards-pack.yml` (or to the bundled defaults if you're shipping them). Rules are project-agnostic principles; the engine renders them into `.ai/engineering-rules.md` and links to that file from `AGENTS.md`.
-
-=== Swapping the LLM provider
-
-The only file that touches Spring AI is `ContextGeneratorService`. Swap `spring-ai-starter-model-ollama` for another starter in `pom.xml` and the matching `spring.ai.*` properties; the `ChatClient` interface absorbs the change.
-
-== Glossary
-
-[cols="1,3"]
-|===
-| Term | Meaning
-
-| Pipeline      | The end-to-end flow that turns a project path into `List<GeneratedFile>`: scan -> synthesis -> assemble.
-| Primary file  | The top-level file an AI assistant reads at session start. Always `AGENTS.md` - the cross-vendor convention read natively by Claude Code (fallback), Cursor, Codex CLI, Aider, Continue, Zed, Jules, and Amp.
-| Vendor-discovery shim | A vendor-specific file emitted only when a vendor's discovery mechanism (slash commands, rule scoping, etc.) requires a specific path - never a parallel primary. Today: `.claude/skills/<id>/SKILL.md` for Claude Code's slash-command invocation.
-| Engineering rule | A project-agnostic principle declared in `standards-pack.yml`, rendered into `.ai/engineering-rules.md`.
-| Skill         | A short procedure (Trigger / Steps / Notes) the AI should follow for a common task in the scanned project.
-| Phase         | One of the six display-only milestones in `ScanProgressView` (driven by `scanProgress` thresholds, not by code structure).
-|===
+TBA
