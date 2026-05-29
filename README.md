@@ -1,67 +1,43 @@
 # Launchpad
 
-![Launchpad Demo](docs/resources/launchpad.gif)
+Cloud AI burns tokens re-reading your project on every task. Launchpad front-loads that work -- scans locally, resolves your engineering standards, and hands the agent a grounded brief before the first prompt runs.
 
-Launchpad is a local-first desktop tool that prepares repository context for AI coding assistants like Claude Code and Cursor.
+Standards-first, not standards-after.
 
-It currently focuses on Spring Boot + Maven repositories and helps reduce ambiguity, improve consistency, and avoid wasting paid-model tokens on repetitive repository discovery.
+<img src="docs/resources/launchpad.gif" width="800" alt="Launchpad Demo">
 
-Launchpad is designed to complement AI assistants - not replace them.
-
----
-
-## 🚀 How it works
-
-![Launchpad Overview](docs/resources/launchpad-overview.drawio.png)
+<img src="docs/resources/launchpad-commands.png" width="800" alt="Launchpad Commands">
 
 ---
 
-## ✨ What Launchpad focuses on
+## How it works
 
-- **Repository Grounding**  
-  Extracts project structure, Maven metadata, Spring Boot signals, architectural hints, and documentation references into reusable context files.
-
-- **Local-First Context Preparation**  
-  Runs locally using Ollama or OpenAI-compatible local endpoints. Your source code stays on your machine.
-
-- **Reduce Paid Token Waste**  
-  Helps AI assistants spend less time rediscovering repository structure, conventions, and dependencies.
-
-- **Cross-Project Context Awareness**  
-  Useful for active multi-repository development where related projects, shared libraries, or internal starters evolve together.
-
-- **Assistant-Agnostic Standards**  
-  Define engineering standards once in YAML and generate assistant-specific outputs.
-
-- **Deterministic-First Design**  
-  Prefer structured extraction and repository evidence first. Local AI is used for bounded summarization and synthesis - not autonomous reasoning.
+<img src="docs/resources/launchpad-overview.drawio.png" width="800" alt="Launchpad Overview">
 
 ---
 
-## 🛠 Supported Local AI Providers
+## What it does
 
-Launchpad uses local AI models for summarization and synthesis. Currently supported:
-
-- **Ollama** (default: `http://localhost:11434`)
-- OpenAI-compatible endpoints:
-    - LM Studio
-    - llama.cpp
-    - vLLM
+- **Scans your project deterministically** -- extracts structure, dependencies, endpoints, and documentation without guessing
+- **Resolves your engineering standards** -- rules, skills, and checklists from a YAML pack you control
+- **Generates grounded context files** -- `AGENTS.md` + `.ai/*` ready before the agent starts
+- **Runs entirely locally** -- Ollama or any OpenAI-compatible endpoint; your code never leaves your machine
+- **Works with any AI tool** -- Claude Code, Cursor, Windsurf, or anything that reads `AGENTS.md`
 
 ---
 
-## ⚠️ Current Scope
+## Local AI providers
 
-Launchpad is in **early development** and intentionally opinionated.
-
-Current support is focused on:
-
-- Spring Boot
-- Java 21+
-- Maven repositories
-
-Additional stacks may be added later, but the current priority is building a strong deterministic foundation for Spring Boot projects first.
+Ollama, LM Studio, llama.cpp, vLLM -- anything with an OpenAI-compatible endpoint works.
+Default: Ollama at `http://localhost:11434`.
 
 ---
 
-[MIT License](LICENSE) | [Share Feedback](https://github.com/acltabontabon/launchpad/issues)
+## Current scope
+
+Early development. Currently supports **Spring Boot + Maven** projects only.
+Other stacks are on the roadmap.
+
+---
+
+[Docs](docs/index.adoc) | [Getting Started](docs/getting-started.adoc) | [MIT License](LICENSE) | [Issues](https://github.com/acltabontabon/launchpad/issues)
