@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+
+## [0.5.0] - 2026-05-30
 ### Added
 - **`/new-task` quality critic:** Added a second local-AI pass to ensure interview depth and inject follow-up questions if needed.
 - **Task substance heuristics:** New validation rules to flag shallow goals or filler acceptance criteria in generated tasks.
@@ -17,7 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent Projections:** Modular extension point for agent-specific output files (Claude, Cursor, Windsurf).
 - **AI tool picker:** Settings selection to drive which agent projections are emitted.
 - **New projections:** Opt-in support for Cursor (`.mdc`) and Windsurf (`.rules`) formats.
-
 ### Changed
 - **Vendor-neutral primary file:** The primary agent-instructions file is now `AGENTS.md`.
 - **Unified adapter ID:** Renamed default adapter to `agents` with legacy fallback support.
@@ -28,7 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Streamlined TUI flow:** Simplified navigation (Welcome -> ProjectSelect -> Scanning -> Review).
 - **Settings redesign:** Grouped configuration with focus-rail navigation and status indicators.
 - **Improved system checks:** Sanitized and simplified service health cards.
-
 ### Fixed
 - **Primary file normalization:** Automatically normalizes legacy paths to `AGENTS.md`.
 - **Project-aware headers:** File headers and version badges now sync with project metadata.
