@@ -4,6 +4,11 @@ Cloud AI burns tokens re-reading your project on every task. Launchpad front-loa
 
 Standards-first, not standards-after.
 
+> **Note:**
+> Launchpad is still in its early stages and currently supports **Spring Boot + Maven + Java** projects only.
+>
+> This release focuses on validating the core experience around local-first context generation, standards packs, and AI-assisted development workflows. Expect rough edges and breaking changes as the project evolves.
+
 <img src="docs/resources/launchpad.gif" width="800" alt="Launchpad Demo">
 
 <img src="docs/resources/launchpad-commands.png" width="800" alt="Launchpad Commands">
@@ -30,13 +35,6 @@ Standards-first, not standards-after.
 
 Ollama, LM Studio, llama.cpp, vLLM -- anything with an OpenAI-compatible endpoint works.
 Default: Ollama at `http://localhost:11434`.
-
----
-
-## Current scope
-
-Early development. Currently supports **Spring Boot + Maven** projects only.
-Other stacks are on the roadmap.
 
 ---
 
