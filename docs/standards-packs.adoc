@@ -1,0 +1,272 @@
+= Standards Packs
+:toc: left
+:toclevels: 2
+:icons: font
+:source-highlighter: highlight.js
+
+A standards pack is a git repository containing your team's engineering rules, skills, and checklists in YAML.
+When Launchpad scans a project, it fetches the pack and embeds its content directly into `AGENTS.md` and the `.ai/` companion files.
+The AI assistant working on that project then has your team's standards alongside the project context in a single document.
+
+TIP: A working example is available at https://github.com/acltabontabon/ai-standards-pack. Fork it to get started quickly.
+
+== Why use one
+
+Context files without standards describe *what* a project is but not *how* the team expects it to be built.
+An AI assistant working without that knowledge may produce code that is correct in isolation but wrong for the project -- different naming patterns, wrong abstraction levels, missing required checks.
+
+Standards packs make team conventions machine-readable and portable.
+The same YAML that documents a rule can also drive the audit engine to detect violations.
+
+== Connecting a pack to Launchpad
+
+Launchpad resolves standards from one of two sources, checked in this order:
+
+. **Remote git repository** -- set *Standards repo URL* in `/settings`. Launchpad clones the repo into `~/.launchpad/standards-cache/` and refreshes it with a 1-hour TTL. Falls back to the cached copy if the remote is unreachable.
+. **Per-project directory** -- `.launchpad/standards/` inside the scanned project. Useful as a project-level override or when no remote is configured.
+
+If neither is set, context is generated without standards and a placeholder is emitted in `AGENTS.md` explaining how to add one.
+
+== Pack structure
+
+[source]
+----
+my-standards/
+├── standards-pack.yml       # manifest — declares what to include
+├── rules/
+│   ├── engineering.yml
+│   ├── architecture.yml
+│   └── testing.yml
+├── skills/
+│   ├── delivery.yml
+│   └── review.yml
+├── checklists/
+│   └── pull-request.yml
+└── adapters/
+    └── agents.yml           # optional — controls the primary output file
+----
+
+== The manifest
+
+`standards-pack.yml` declares the pack identity and lists every file to include:
+
+[source,yaml]
+----
+id: my-team-standards
+version: 1.0.0
+name: My Team Standards
+
+includes:
+  rules:
+    - rules/engineering.yml
+    - rules/architecture.yml
+    - rules/testing.yml
+  skills:
+    - skills/delivery.yml
+    - skills/review.yml
+  checklists:
+    - checklists/pull-request.yml
+
+projections:
+  - claude
+  - cursor
+----
+
+The `projections` field controls which agent-native formats are emitted alongside `AGENTS.md`:
+
+* `claude` -- `.claude/skills/<id>/SKILL.md` for Claude Code slash-command discovery
+* `cursor` -- `.cursor/rules/<id>.mdc`
+* `windsurf` -- `.windsurfrules`
+
+Omit `projections` to use the default (`claude` only). Set it to `[]` to disable all projections.
+
+== Rules
+
+Rules encode how the team expects code to be written. Each rule has a severity:
+
+[cols="1,3"]
+|===
+|`must` |Non-negotiable. Violations should be fixed before merge.
+|`should` |Strong recommendation. Deviation needs a reason.
+|`avoid` |Discouraged but not always wrong.
+|`never` |Hard prohibition.
+|===
+
+A rule file looks like this (from https://github.com/acltabontabon/ai-standards-pack/blob/main/rules/java.yml[rules/java.yml]):
+
+[source,yaml]
+----
+- id: prefer-records
+  title: Prefer Records for Value Types
+  severity: must
+  content: |
+    Use records for immutable data carriers like DTOs and value objects.
+    Records give you immutability, equals/hashCode, and toString without ceremony.
+
+- id: constructor-injection
+  title: Constructor Injection
+  severity: must
+  content: |
+    Accept dependencies through constructors as final fields.
+    Avoid field or setter injection. Makes dependencies explicit and testable without a container.
+
+- id: no-util-classes
+  title: Avoid Static Utility Dumping Grounds
+  severity: avoid
+  content: |
+    Don't create generic Utils or Helpers classes that accumulate unrelated static methods.
+    Util grab-bags grow without review and hide domain concepts.
+  rationale: Static methods with no owner are a symptom of missing domain objects.
+----
+
+The `content` field is embedded in `AGENTS.md`. The optional `rationale` renders as an italic _Why:_ note below the rule.
+
+=== Automated checks
+
+Rules can carry a `check:` block to enable enforcement by the audit engine.
+Rules without one are documentation-only -- they appear in `AGENTS.md` but produce no findings.
+
+Three check types are available:
+
+[cols="1,3"]
+|===
+|`forbid-pattern` |Regex matched against file contents. Fast and deterministic.
+|`forbid-import` |Detects forbidden imports in source files. Fast and deterministic.
+|`llm` |Asks the local model a yes/no question. Use for conventions that cannot be expressed as a pattern.
+|===
+
+[source,yaml]
+----
+# Pattern check
+- id: no-field-injection
+  title: Constructor Injection
+  severity: must
+  content: Inject dependencies through the constructor, not field injection.
+  check:
+    kind: forbid-pattern
+    pattern: "@Autowired\\s*\\n\\s*(private|protected)"
+    includes: ["**/*.java"]
+
+# Import check
+- id: domain-no-infra
+  title: Domain Must Not Depend on Infrastructure
+  severity: never
+  content: Domain packages must not import Spring or persistence frameworks.
+  check:
+    kind: forbid-import
+    in_packages: ["**/domain/**"]
+    imports: ["org.springframework.**", "jakarta.persistence.**"]
+
+# LLM check
+- id: thin-controllers
+  title: Controllers Should Be Thin
+  severity: should
+  content: Controllers parse input and delegate to a service. No business logic.
+  check:
+    kind: llm
+    targets: controllers
+    question: |
+      Does this controller contain business logic, data transformation,
+      or persistence calls beyond parsing input and calling one service?
+----
+
+NOTE: `forbid-pattern` and `forbid-import` use no AI. `llm` calls the local model -- no cloud tokens.
+
+== Skills
+
+Skills describe repeatable workflows.
+They are embedded in `AGENTS.md` and, when the Claude projection is enabled, emitted as `.claude/skills/<id>/SKILL.md` so Claude Code can discover them as slash commands.
+
+From https://github.com/acltabontabon/ai-standards-pack/blob/main/skills/delivery.yml[skills/delivery.yml]:
+
+[source,yaml]
+----
+- id: add-endpoint
+  title: Add an HTTP Endpoint
+  trigger: When adding a new HTTP route or extending the API surface.
+  steps:
+    - Define a request record and a response record co-located with the controller.
+    - Add a controller method that validates input, calls one service, and shapes the response.
+    - Implement or extend the application service so the controller stays thin.
+    - Add a test covering at least one validation failure and one happy path.
+    - Update the API description if the project uses one.
+  output_expectations:
+    - Controller method under 20 lines.
+    - Application service does not expose web or framework types.
+    - Test covers at least one input validation failure.
+  notes: |
+    If the new endpoint is a small variation on an existing one,
+    prefer extending the existing service over forking a parallel implementation.
+----
+
+The `trigger` field tells the AI assistant when to apply the skill.
+The `steps` field provides the expected sequence.
+`output_expectations` gives the AI a concrete definition of done.
+
+== Checklists
+
+Checklists define items to verify before a pull request is merged.
+They are embedded in `AGENTS.md` and the `.ai/checklists.md` companion file.
+
+From https://github.com/acltabontabon/ai-standards-pack/blob/main/checklists/pull-request.yml[checklists/pull-request.yml]:
+
+[source,yaml]
+----
+- id: pull-request
+  title: Pull Request Checklist
+  items:
+    - id: scope-matches-intent
+      text: The diff matches the stated scope of the PR. No drive-by edits.
+      required: true
+    - id: tests-cover-behavior
+      text: New or changed behavior has a test that would fail without the change.
+      required: true
+    - id: no-drive-by-changes
+      text: Refactor and behavior change are not mixed in the same commit.
+      required: true
+    - id: commits-readable
+      text: Each commit is a logical step. Messages explain why, not what.
+      required: true
+----
+
+Required items are marked with `*` in the rendered output.
+
+== What gets generated
+
+The standards content is embedded in `AGENTS.md` under an `## Engineering Standards` section, structured like this:
+
+[source,markdown]
+----
+## Engineering Standards
+
+### Rules
+
+#### Constructor Injection `[must]`
+
+Accept dependencies through constructors as final fields.
+Avoid field or setter injection. Makes dependencies explicit and testable without a container.
+
+---
+
+#### Avoid Static Utility Dumping Grounds `[avoid]`
+
+Don't create generic Utils or Helpers classes that accumulate unrelated static methods.
+
+_Why:_ Static methods with no owner are a symptom of missing domain objects.
+
+---
+
+### Skills
+
+#### Add an HTTP Endpoint
+
+**Trigger:** When adding a new HTTP route or extending the API surface.
+
+**Steps:**
+1. Define a request record and a response record co-located with the controller.
+2. Add a controller method that validates input, calls one service, and shapes the response.
+...
+----
+
+The same content is split into `.ai/engineering-rules.md` and `.ai/checklists.md` for tools that prefer smaller focused files.
+Agent projections (`.claude/skills/`, `.cursor/rules/`) are generated from the same source -- editing the YAML updates all outputs on the next scan.
