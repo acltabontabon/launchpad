@@ -7,7 +7,7 @@ Standards-first, not standards-after.
 > **Note:**
 > Launchpad is still in its early stages and currently supports **Spring Boot + Maven + Java** projects only.
 >
-> This release focuses on validating the core experience around local-first context generation, standards packs, and AI-assisted development workflows. Expect rough edges and breaking changes as the project evolves.
+> The scope is intentionally narrow while the core experience around local-first context generation, standards packs, and AI-assisted development workflows continues to mature.
 
 <img src="docs/resources/launchpad.gif" width="800" alt="Launchpad Demo">
 
