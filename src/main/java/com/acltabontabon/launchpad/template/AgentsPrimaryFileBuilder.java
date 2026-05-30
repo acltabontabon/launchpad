@@ -1,5 +1,7 @@
 package com.acltabontabon.launchpad.template;
 
+import com.acltabontabon.launchpad.model.Operations;
+import com.acltabontabon.launchpad.model.VirtualProjectContext;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.template.rendering.PointerBlocks;
 import com.acltabontabon.launchpad.template.synthesis.SynthesisOutputs;
@@ -16,7 +18,7 @@ import org.springframework.stereotype.Component;
 class AgentsPrimaryFileBuilder implements PrimaryFileBuilder {
 
     @Override
-    public String build(ProjectContext ctx, AssemblyPlan plan,
+    public String build(ProjectContext ctx, VirtualProjectContext model, AssemblyPlan plan,
                         AdapterResolver.ResolvedAdapter resolved,
                         SynthesisOutputs synthesis, Set<String> companionPaths) {
         var sb = new StringBuilder();
@@ -61,15 +63,7 @@ class AgentsPrimaryFileBuilder implements PrimaryFileBuilder {
                     }
                 }
 
-                case BUILD_PROFILES -> {
-                    if (!ctx.mavenProfiles().isEmpty()) {
-                        sb.append("## Build profiles\n\n");
-                        sb.append(BuildProfilesRenderer.render(ctx.mavenProfiles())).append("\n");
-                        if (!synthesis.buildProfileBullets().isEmpty())
-                            sb.append(synthesis.buildProfileBullets()).append("\n");
-                        sb.append("\n");
-                    }
-                }
+                case OPERATIONS -> appendOperations(sb, model);
 
                 case COMPANION_POINTERS -> {
                     var block = PointerBlocks.renderGeneratedContextBlock(companionPaths);
@@ -87,5 +81,35 @@ class AgentsPrimaryFileBuilder implements PrimaryFileBuilder {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Projects operational facts from the virtualized model: build profiles and
+     * health endpoints (Spring Actuator routes). Build/run commands live under
+     * {@code ## Commands}, so they are not repeated here. Rendered only when
+     * there is something to show, so naked projects stay clean.
+     */
+    private void appendOperations(StringBuilder sb, VirtualProjectContext model) {
+        if (model == null || model.operations() == null) return;
+        Operations ops = model.operations();
+        boolean hasProfiles = !ops.runProfiles().isEmpty();
+        boolean hasHealth = !ops.healthEndpoints().isEmpty();
+        if (!hasProfiles && !hasHealth) return;
+
+        sb.append("## Operations\n\n");
+        if (hasProfiles) {
+            sb.append("Build profiles:\n");
+            for (var profile : ops.runProfiles()) {
+                sb.append("- `").append(profile).append("`\n");
+            }
+            sb.append("\n");
+        }
+        if (hasHealth) {
+            sb.append("Health endpoints:\n");
+            for (var endpoint : ops.healthEndpoints()) {
+                sb.append("- `").append(endpoint).append("`\n");
+            }
+            sb.append("\n");
+        }
     }
 }

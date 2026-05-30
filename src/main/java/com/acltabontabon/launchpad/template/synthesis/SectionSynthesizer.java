@@ -7,7 +7,6 @@ import com.acltabontabon.launchpad.scanner.ClassFact;
 import com.acltabontabon.launchpad.scanner.PackageSummary;
 import com.acltabontabon.launchpad.scanner.ProjectClassFacts;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
-import com.acltabontabon.launchpad.springboot.maven.MavenProfile;
 import com.acltabontabon.launchpad.springboot.runtime.Endpoint;
 import com.acltabontabon.launchpad.template.ArchitectureTreeRenderer;
 import com.acltabontabon.launchpad.template.EndpointsTableRenderer;
@@ -48,8 +47,7 @@ public class SectionSynthesizer {
             architectureNarrative(ctx, classFacts),
             classFacts,
             allEndpoints,
-            notes,
-            buildProfilesBullets(ctx)
+            notes
         );
     }
 
@@ -167,19 +165,6 @@ public class SectionSynthesizer {
         return notes;
     }
 
-    private String buildProfilesBullets(ProjectContext ctx) {
-        if (ctx.mavenProfiles().isEmpty()) return "";
-        var template = synthesisPrompts.load("build-profiles")
-            .replace("{profiles}", renderProfilesForPrompt(ctx.mavenProfiles()))
-            .replace("{profileXml}", renderProfileRawXmlForPrompt(ctx));
-        var job = new SynthesisJob(
-            "build-profiles", template, SynthesisValidator.Shape.BULLETS,
-            10000, 700,
-            () -> "",
-            profileAllowlistWithXml(ctx));
-        return runSynthesis(job);
-    }
-
     // ── Allowlist builders ──────────────────────────────────────────────────
 
     private static Set<String> packageAllowlist(ProjectContext ctx) {
@@ -193,15 +178,6 @@ public class SectionSynthesizer {
                 out.add(segs[segs.length - 1]);
             }
             for (var sym : pkg.sampleSymbols()) out.add(sym);
-        }
-        return out;
-    }
-
-    private static Set<String> profileAllowlist(ProjectContext ctx) {
-        var out = new LinkedHashSet<String>();
-        for (var p : ctx.mavenProfiles()) {
-            out.add(p.id());
-            out.addAll(p.keyFlags());
         }
         return out;
     }
@@ -238,12 +214,6 @@ public class SectionSynthesizer {
     private static Set<String> packageAllowlistWithSources(ProjectContext ctx) {
         var out = packageAllowlist(ctx);
         ctx.packageRepresentatives().values().forEach(body -> addIdentifierTokens(out, body));
-        return out;
-    }
-
-    private static Set<String> profileAllowlistWithXml(ProjectContext ctx) {
-        var out = profileAllowlist(ctx);
-        ctx.profileRawXml().values().forEach(body -> addIdentifierTokens(out, body));
         return out;
     }
 
@@ -328,33 +298,11 @@ public class SectionSynthesizer {
         return sb.toString().strip();
     }
 
-    private static String renderProfilesForPrompt(List<MavenProfile> profiles) {
-        var sb = new StringBuilder();
-        for (var p : profiles) {
-            sb.append(p.id());
-            if (!p.activation().isBlank()) sb.append(" (").append(p.activation()).append(")");
-            if (!p.keyFlags().isEmpty()) sb.append(" ").append(String.join(" ", p.keyFlags()));
-            sb.append("\n");
-        }
-        return sb.toString().strip();
-    }
-
     private static String renderControllerSourcesForPrompt(ProjectContext ctx) {
         var sources = ctx.controllerSources();
         if (sources.isEmpty()) return "(none)";
         var sb = new StringBuilder();
         for (var entry : sources.entrySet()) {
-            sb.append("\n--- ").append(entry.getKey()).append(" ---\n");
-            sb.append(entry.getValue()).append("\n");
-        }
-        return sb.toString().strip();
-    }
-
-    private static String renderProfileRawXmlForPrompt(ProjectContext ctx) {
-        var raw = ctx.profileRawXml();
-        if (raw.isEmpty()) return "(none)";
-        var sb = new StringBuilder();
-        for (var entry : raw.entrySet()) {
             sb.append("\n--- ").append(entry.getKey()).append(" ---\n");
             sb.append(entry.getValue()).append("\n");
         }

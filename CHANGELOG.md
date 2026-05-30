@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **Project Virtualization roadmap:** New `docs/roadmap.adoc` setting the direction toward a Project Virtualization Engine (canonical project model, workflow discovery, standards inference, model-grounded `/new-task`, ninety-day plan).
+- **Virtualized project model:** New `com.acltabontabon.launchpad.model` package with a synthesized `ProjectContext` aggregate (identity, architecture, systems, workflows, standards, operations, documentation, risks) carrying per-field provenance and confidence, built over the deterministic scan.
+- **Model persistence:** Each scan now assembles the virtualized model and writes it to `.launchpad/project-context.json`, so out-of-process consumers can read the synthesized understanding without re-deriving it.
+- **Model-projected `## Operations`:** The primary `AGENTS.md` now projects operational facts (build profiles and health endpoints) from the virtualized model.
+
+### Changed
+- **Context engine projects from the model:** `ContextTemplateEngine` and the primary-file builder now receive the virtualized model and project its synthesized sections into the output, rather than rendering solely from the raw scan.
+- **Build profiles fold into `## Operations`:** The standalone `## Build profiles` section is now projected from the model's operations alongside health endpoints, instead of from a dedicated renderer.
+
+### Removed
+- **`BuildProfilesRenderer` and the duplicate build-profile synthesis path:** Build profiles are now projected from the virtualized model, so the standalone renderer and the redundant `SynthesisOutputs.buildProfileBullets` field were removed.
 
 
 ## [0.5.0] - 2026-05-30
