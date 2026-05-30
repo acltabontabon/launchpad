@@ -290,6 +290,29 @@ class ContextTemplateEngineTest {
             base.endpoints(), intro, base.pomDescription(), base.mavenProfiles());
     }
 
+    @Test
+    void primaryProjectsDiscoveredWorkflows() {
+        var engine = engineWith(List.of(), List.of(), List.of(),
+            agentsAdapterIncluding("rules", "skills"));
+
+        var base = sampleContext();
+        var ctx = new ProjectContext(
+            base.name(), base.rootPath(), base.stack(),
+            base.sourceFiles(), base.testClassNames(), base.entryPoints(),
+            base.dependencies(), base.fileSnippets(), base.packageSummaries(),
+            base.existingContextSummary(),
+            com.acltabontabon.launchpad.scanner.doc.DocumentationIndex.empty(),
+            List.of(new com.acltabontabon.launchpad.springboot.runtime.Endpoint(
+                "POST", "/loans", "LoanController.apply")),
+            "", "", List.of());
+
+        var primary = contentAt(engine.buildFiles(ctx, modelFor(ctx)), "AGENTS.md");
+
+        assertThat(primary).contains("## Workflows");
+        assertThat(primary).contains("**Loan**");
+        assertThat(primary).contains("`POST /loans`");
+    }
+
     private static VirtualProjectContext modelFor(ProjectContext ctx) {
         return new ProjectContextAssembler().assemble(ctx, "", "2026-05-31T00:00:00Z");
     }

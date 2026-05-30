@@ -2,6 +2,7 @@ package com.acltabontabon.launchpad.template;
 
 import com.acltabontabon.launchpad.model.Operations;
 import com.acltabontabon.launchpad.model.VirtualProjectContext;
+import com.acltabontabon.launchpad.model.Workflow;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.template.rendering.PointerBlocks;
 import com.acltabontabon.launchpad.template.synthesis.SynthesisOutputs;
@@ -63,6 +64,8 @@ class AgentsPrimaryFileBuilder implements PrimaryFileBuilder {
                     }
                 }
 
+                case WORKFLOWS -> appendWorkflows(sb, model);
+
                 case OPERATIONS -> appendOperations(sb, model);
 
                 case COMPANION_POINTERS -> {
@@ -81,6 +84,45 @@ class AgentsPrimaryFileBuilder implements PrimaryFileBuilder {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Projects the discovered workflows from the virtualized model - what the
+     * service actually does, grouped by resource. Each workflow lists its
+     * trigger and the routes that make it up. Rendered only when workflows were
+     * discovered, so naked projects stay clean.
+     */
+    private void appendWorkflows(StringBuilder sb, VirtualProjectContext model) {
+        if (model == null || model.workflows() == null || model.workflows().isEmpty()) return;
+
+        sb.append("## Workflows\n\n");
+        for (Workflow workflow : model.workflows()) {
+            sb.append("- **").append(workflow.name()).append("** (")
+                .append(workflow.type().name().toLowerCase().replace('_', ' '))
+                .append(")");
+            if (workflow.trigger() != null && !workflow.trigger().isBlank()) {
+                sb.append(" - trigger: `").append(workflow.trigger()).append("`");
+            }
+            sb.append("\n");
+            for (var step : workflow.steps()) {
+                sb.append("  - `").append(step).append("`\n");
+            }
+            appendTouches(sb, "touches", workflow.touchedSystems());
+            appendTouches(sb, "external", workflow.externalCalls());
+            appendTouches(sb, "data", workflow.dataEffects());
+        }
+        sb.append("\n");
+    }
+
+    /** Renders one correlation line (e.g. "touches: `OrderService`, `Pricing`") when non-empty. */
+    private void appendTouches(StringBuilder sb, String label, java.util.List<String> values) {
+        if (values == null || values.isEmpty()) return;
+        sb.append("  - ").append(label).append(": ");
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append("`").append(values.get(i)).append("`");
+        }
+        sb.append("\n");
     }
 
     /**

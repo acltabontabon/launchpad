@@ -148,6 +148,9 @@ Restart the AI tool after connecting. The MCP server exposes the following tools
 |`get_audit_findings`
 |Return rule violations from the last audit. Each finding includes rule ID, severity, file path, line number, and message.
 
+|`get_workflows`
+|Return the discovered workflows -- name, type, trigger, steps, and the systems, external calls, and data stores each touches.
+
 |`compare_standards`
 |Diff the standards between two projects -- shows what is common, divergent, or unique to each side.
 

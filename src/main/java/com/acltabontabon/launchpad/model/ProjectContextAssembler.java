@@ -5,6 +5,7 @@ import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationPage;
 import com.acltabontabon.launchpad.springboot.maven.MavenProfile;
 import com.acltabontabon.launchpad.springboot.runtime.Endpoint;
+import com.acltabontabon.launchpad.workflow.WorkflowDiscoverer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -17,9 +18,11 @@ import org.springframework.stereotype.Component;
  * Builds a {@link VirtualProjectContext} from the deterministic scan
  * ({@link ProjectContext}). This is the Phase 1 foundation of the Project
  * Virtualization Engine: it maps the structural facts of a scan into the
- * synthesized model shape, attaching provenance and confidence. Inference-heavy
- * fields (workflows, detected patterns, risks) are left empty here and filled
- * in by later phases; their containers are present so the model shape is stable.
+ * synthesized model shape, attaching provenance and confidence. Architecture,
+ * systems, operations, documentation, and workflows (via
+ * {@link WorkflowDiscoverer}) are populated here; the remaining inference-heavy
+ * fields (detected patterns, risks) are left empty and filled in by later
+ * phases, their containers present so the model shape is stable.
  * <p>
  * Everything this assembler produces is {@link Confidence#DETERMINISTIC} - no
  * model is involved. The local model only enriches narrative and inference
@@ -33,6 +36,8 @@ public class ProjectContextAssembler {
         List.of("controller", "service", "repository", "domain", "config", "model");
 
     private static final int MAX_SYSTEMS = 12;
+
+    private final WorkflowDiscoverer workflowDiscoverer = new WorkflowDiscoverer();
 
     /**
      * Assemble the virtualized model. {@code packVersion} is the resolved
@@ -58,7 +63,7 @@ public class ProjectContextAssembler {
             identity,
             architecture(scan),
             systems(scan),
-            List.of(),                 // workflows - Phase 2
+            workflowDiscoverer.discover(scan),
             StandardsProfile.empty(),  // detected patterns / inferred standards - Phase 3
             operations(scan),
             documentation(scan),

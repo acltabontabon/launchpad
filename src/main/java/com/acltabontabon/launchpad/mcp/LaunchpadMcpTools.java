@@ -3,6 +3,8 @@ package com.acltabontabon.launchpad.mcp;
 import com.acltabontabon.launchpad.audit.AuditService;
 import com.acltabontabon.launchpad.config.ProjectRegistry;
 import com.acltabontabon.launchpad.config.RegisteredProject;
+import com.acltabontabon.launchpad.model.VirtualProjectContextStore;
+import com.acltabontabon.launchpad.model.Workflow;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationIndex;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationPage;
 import com.acltabontabon.launchpad.scanner.doc.Purpose;
@@ -72,6 +74,7 @@ public class LaunchpadMcpTools {
     private final StandardsLoader standardsLoader;
     private final ProjectRegistry projectRegistry;
     private final ProjectSupportDetector projectSupportDetector;
+    private final VirtualProjectContextStore modelStore;
     private final long maxFileSizeBytes;
 
     public LaunchpadMcpTools(ProjectScanner scanner,
@@ -80,6 +83,7 @@ public class LaunchpadMcpTools {
                              StandardsLoader standardsLoader,
                              ProjectRegistry projectRegistry,
                              ProjectSupportDetector projectSupportDetector,
+                             VirtualProjectContextStore modelStore,
                              @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb) {
         this.scanner = scanner;
         this.scanStore = scanStore;
@@ -87,6 +91,7 @@ public class LaunchpadMcpTools {
         this.standardsLoader = standardsLoader;
         this.projectRegistry = projectRegistry;
         this.projectSupportDetector = projectSupportDetector;
+        this.modelStore = modelStore;
         this.maxFileSizeBytes = maxFileSizeKb * 1024L;
     }
 
@@ -292,6 +297,53 @@ public class LaunchpadMcpTools {
             "skills", skillsDiff,
             "checklists", checklistsDiff
         );
+    }
+
+    @McpTool(
+        name = "get_workflows",
+        description = "Return the business and operational workflows Launchpad discovered for a project - "
+            + "what the service actually does. Each workflow carries a name, type (inbound API, scheduled, "
+            + "event-driven, ...), trigger, steps, and the systems, external calls, and data stores it "
+            + "touches. This is the synthesized answer from the persisted project model; prefer it over "
+            + "re-deriving call flows from source. The `project` argument accepts either a short name from "
+            + "the registry (see list_projects) or an absolute path. Run a scan first if no model exists yet."
+    )
+    public Map<String, Object> getWorkflows(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project
+    ) {
+        var resolved = resolveProject(project);
+        if (resolved instanceof Resolution.Error err) return err.payload();
+        var projectRoot = ((Resolution.Path) resolved).value();
+        var model = modelStore.load(projectRoot).orElse(null);
+        if (model == null) {
+            return errorPayload("no_project_model",
+                "No project model found at " + projectRoot.resolve(".launchpad")
+                    + "/project-context.json. Scan the project first.");
+        }
+        var workflows = model.workflows().stream()
+            .map(LaunchpadMcpTools::workflowToMap)
+            .toList();
+        return Map.of(
+            "project", model.identity().name(),
+            "rootPath", projectRoot.toString(),
+            "workflowCount", workflows.size(),
+            "workflows", workflows
+        );
+    }
+
+    private static Map<String, Object> workflowToMap(Workflow w) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(w.id()));
+        m.put("name", nullToEmpty(w.name()));
+        m.put("type", w.type() == null ? "" : w.type().name());
+        m.put("trigger", nullToEmpty(w.trigger()));
+        m.put("steps", w.steps() == null ? List.of() : w.steps());
+        m.put("touchedSystems", w.touchedSystems() == null ? List.of() : w.touchedSystems());
+        m.put("externalCalls", w.externalCalls() == null ? List.of() : w.externalCalls());
+        m.put("dataEffects", w.dataEffects() == null ? List.of() : w.dataEffects());
+        return m;
     }
 
     @McpTool(
