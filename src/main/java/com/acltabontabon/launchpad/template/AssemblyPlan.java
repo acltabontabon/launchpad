@@ -9,7 +9,10 @@ public record AssemblyPlan(List<Section> sections) {
         COMMANDS,
         ARCHITECTURE,
         ENDPOINTS,
-        BUILD_PROFILES,
+        WORKFLOWS,
+        OPERATIONS,
+        RISKS,
+        INFERRED_STANDARDS,
         COMPANION_POINTERS,
         BOUNDARIES
     }
@@ -19,7 +22,10 @@ public record AssemblyPlan(List<Section> sections) {
         Section.COMMANDS,
         Section.ARCHITECTURE,
         Section.ENDPOINTS,
-        Section.BUILD_PROFILES,
+        Section.WORKFLOWS,
+        Section.OPERATIONS,
+        Section.RISKS,
+        Section.INFERRED_STANDARDS,
         Section.COMPANION_POINTERS,
         Section.BOUNDARIES
     );

@@ -80,7 +80,9 @@ class ContextGenerationVerification {
         Mockito.when(loader.loadProjectionIds(Mockito.any())).thenReturn(java.util.Set.of("claude"));
         var engine = new ContextTemplateEngine(loader, new AdapterResolver(loader), new SectionSynthesizer(generator), new com.acltabontabon.launchpad.template.companion.CompanionFileBuilder(), new AgentsPrimaryFileBuilder(), java.util.List.of(new com.acltabontabon.launchpad.template.projection.claude.ClaudeSkillsProjection()));
 
-        var files = engine.buildFiles(ctx);
+        var model = new com.acltabontabon.launchpad.model.ProjectContextAssembler()
+            .assemble(ctx, "", "2026-05-31T00:00:00Z");
+        var files = engine.buildFiles(ctx, model);
         var primary = files.stream()
             .filter(f -> f.relativePath().equals("AGENTS.md"))
             .findFirst()

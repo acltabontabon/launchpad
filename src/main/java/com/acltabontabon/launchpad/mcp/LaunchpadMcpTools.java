@@ -3,6 +3,10 @@ package com.acltabontabon.launchpad.mcp;
 import com.acltabontabon.launchpad.audit.AuditService;
 import com.acltabontabon.launchpad.config.ProjectRegistry;
 import com.acltabontabon.launchpad.config.RegisteredProject;
+import com.acltabontabon.launchpad.model.Risk;
+import com.acltabontabon.launchpad.model.SystemComponent;
+import com.acltabontabon.launchpad.model.VirtualProjectContextStore;
+import com.acltabontabon.launchpad.model.Workflow;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationIndex;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationPage;
 import com.acltabontabon.launchpad.scanner.doc.Purpose;
@@ -72,6 +76,7 @@ public class LaunchpadMcpTools {
     private final StandardsLoader standardsLoader;
     private final ProjectRegistry projectRegistry;
     private final ProjectSupportDetector projectSupportDetector;
+    private final VirtualProjectContextStore modelStore;
     private final long maxFileSizeBytes;
 
     public LaunchpadMcpTools(ProjectScanner scanner,
@@ -80,6 +85,7 @@ public class LaunchpadMcpTools {
                              StandardsLoader standardsLoader,
                              ProjectRegistry projectRegistry,
                              ProjectSupportDetector projectSupportDetector,
+                             VirtualProjectContextStore modelStore,
                              @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb) {
         this.scanner = scanner;
         this.scanStore = scanStore;
@@ -87,6 +93,7 @@ public class LaunchpadMcpTools {
         this.standardsLoader = standardsLoader;
         this.projectRegistry = projectRegistry;
         this.projectSupportDetector = projectSupportDetector;
+        this.modelStore = modelStore;
         this.maxFileSizeBytes = maxFileSizeKb * 1024L;
     }
 
@@ -124,7 +131,10 @@ public class LaunchpadMcpTools {
             + "dependencies, package structure, and source file list. Returns a cached result when one "
             + "exists and is younger than 24 hours; otherwise runs a fresh scan. The `project` argument "
             + "accepts either a short name from the registry (see list_projects) or an absolute path. "
-            + "Use this before calling get_standards or get_audit_findings on the same project."
+            + "Use this before calling get_standards or get_audit_findings on the same project. "
+            + "When NOT to call it: if you have a working sandbox or filesystem access, reading the build "
+            + "file and source tree directly is cheaper - reach for the synthesis tools "
+            + "(get_project_overview, get_systems, get_workflows) for the parts a sandbox cannot derive."
     )
     public Map<String, Object> scanProject(
         @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
@@ -292,6 +302,193 @@ public class LaunchpadMcpTools {
             "skills", skillsDiff,
             "checklists", checklistsDiff
         );
+    }
+
+    @McpTool(
+        name = "get_workflows",
+        description = "Return the business and operational workflows Launchpad discovered for a project - "
+            + "what the service actually does. Each workflow carries a name, type (inbound API, scheduled, "
+            + "event-driven, ...), trigger, steps, and the systems, external calls, and data stores it "
+            + "touches. This is the synthesized answer from the persisted project model; prefer it over "
+            + "re-deriving call flows from source. The `project` argument accepts either a short name from "
+            + "the registry (see list_projects) or an absolute path. Run a scan first if no model exists yet."
+    )
+    public Map<String, Object> getWorkflows(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project
+    ) {
+        var resolved = resolveProject(project);
+        if (resolved instanceof Resolution.Error err) return err.payload();
+        var projectRoot = ((Resolution.Path) resolved).value();
+        var model = modelStore.load(projectRoot).orElse(null);
+        if (model == null) {
+            return errorPayload("no_project_model",
+                "No project model found at " + projectRoot.resolve(".launchpad")
+                    + "/project-context.json. Scan the project first.");
+        }
+        var workflows = model.workflows().stream()
+            .map(LaunchpadMcpTools::workflowToMap)
+            .toList();
+        return Map.of(
+            "project", model.identity().name(),
+            "rootPath", projectRoot.toString(),
+            "workflowCount", workflows.size(),
+            "workflows", workflows
+        );
+    }
+
+    private static Map<String, Object> workflowToMap(Workflow w) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(w.id()));
+        m.put("name", nullToEmpty(w.name()));
+        m.put("type", w.type() == null ? "" : w.type().name());
+        m.put("trigger", nullToEmpty(w.trigger()));
+        m.put("steps", w.steps() == null ? List.of() : w.steps());
+        m.put("touchedSystems", w.touchedSystems() == null ? List.of() : w.touchedSystems());
+        m.put("externalCalls", w.externalCalls() == null ? List.of() : w.externalCalls());
+        m.put("dataEffects", w.dataEffects() == null ? List.of() : w.dataEffects());
+        return m;
+    }
+
+    @McpTool(
+        name = "get_systems",
+        description = "Return the logical subsystems Launchpad identified for a project - the named "
+            + "components, what each is responsible for, and which packages own it. Use this to orient "
+            + "in an unfamiliar codebase before diving into files. Synthesized from the persisted project "
+            + "model. The `project` argument accepts a short name (see list_projects) or an absolute path."
+    )
+    public Map<String, Object> getSystems(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project
+    ) {
+        var resolved = resolveProject(project);
+        if (resolved instanceof Resolution.Error err) return err.payload();
+        var projectRoot = ((Resolution.Path) resolved).value();
+        var model = modelStore.load(projectRoot).orElse(null);
+        if (model == null) return noModelPayload(projectRoot);
+        var systems = model.systems().stream().map(LaunchpadMcpTools::systemToMap).toList();
+        return Map.of(
+            "project", model.identity().name(),
+            "rootPath", projectRoot.toString(),
+            "systemCount", systems.size(),
+            "systems", systems
+        );
+    }
+
+    @McpTool(
+        name = "get_risks",
+        description = "Return the risks Launchpad inferred for a project - concerns surfaced from observed "
+            + "consistency (e.g. layering drift where a controller reaches a data store with no service in "
+            + "between). Each risk carries a category, severity, description, affected systems, and a "
+            + "suggested mitigation. These are inferred signals to verify, not confirmed defects. The "
+            + "`project` argument accepts a short name (see list_projects) or an absolute path."
+    )
+    public Map<String, Object> getRisks(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project
+    ) {
+        var resolved = resolveProject(project);
+        if (resolved instanceof Resolution.Error err) return err.payload();
+        var projectRoot = ((Resolution.Path) resolved).value();
+        var model = modelStore.load(projectRoot).orElse(null);
+        if (model == null) return noModelPayload(projectRoot);
+        var risks = model.risks().stream().map(LaunchpadMcpTools::riskToMap).toList();
+        return Map.of(
+            "project", model.identity().name(),
+            "rootPath", projectRoot.toString(),
+            "riskCount", risks.size(),
+            "risks", risks
+        );
+    }
+
+    @McpTool(
+        name = "get_project_overview",
+        description = "Return the five-minute brief for a project: the single call that answers \"what "
+            + "would a senior engineer need to know to be productive here?\". Aggregates the synthesized "
+            + "model - identity and stack, architecture style and layers, subsystem names, workflow names "
+            + "by type, build commands, the top risks, and any suggested guardrails - with counts so the "
+            + "caller can drill in via get_systems / get_workflows / get_risks. Prefer this as the first "
+            + "call on an unfamiliar project. The `project` argument accepts a short name or absolute path."
+    )
+    public Map<String, Object> getProjectOverview(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project
+    ) {
+        var resolved = resolveProject(project);
+        if (resolved instanceof Resolution.Error err) return err.payload();
+        var projectRoot = ((Resolution.Path) resolved).value();
+        var model = modelStore.load(projectRoot).orElse(null);
+        if (model == null) return noModelPayload(projectRoot);
+
+        var overview = new LinkedHashMap<String, Object>();
+        overview.put("project", model.identity().name());
+        overview.put("rootPath", projectRoot.toString());
+        overview.put("stack", nullToEmpty(model.identity().primaryStack()));
+        overview.put("generatedAt", nullToEmpty(model.identity().generatedAt()));
+
+        var arch = new LinkedHashMap<String, Object>();
+        arch.put("style", nullToEmpty(model.architecture().style()));
+        arch.put("layers", model.architecture().layers());
+        overview.put("architecture", arch);
+
+        overview.put("systems", model.systems().stream().map(s -> nullToEmpty(s.name())).toList());
+
+        // Workflow names grouped by type, so the brief reads "what it does" at a glance.
+        var workflowsByType = new LinkedHashMap<String, List<String>>();
+        for (var w : model.workflows()) {
+            var type = w.type() == null ? "OTHER" : w.type().name();
+            workflowsByType.computeIfAbsent(type, k -> new ArrayList<>()).add(nullToEmpty(w.name()));
+        }
+        overview.put("workflowsByType", workflowsByType);
+
+        overview.put("buildCommands", model.operations().buildCommands());
+        overview.put("healthEndpoints", model.operations().healthEndpoints());
+
+        overview.put("risks", model.risks().stream().map(r ->
+            r.severity().name().toLowerCase() + " [" + nullToEmpty(r.category()) + "] "
+                + nullToEmpty(r.description())).toList());
+        overview.put("suggestedGuardrails", model.standards().inferredStandards().stream()
+            .map(s -> nullToEmpty(s.proposedRule())).toList());
+
+        overview.put("counts", Map.of(
+            "systems", model.systems().size(),
+            "workflows", model.workflows().size(),
+            "risks", model.risks().size(),
+            "suggestedGuardrails", model.standards().inferredStandards().size()
+        ));
+        return overview;
+    }
+
+    private static Map<String, Object> systemToMap(SystemComponent s) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(s.id()));
+        m.put("name", nullToEmpty(s.name()));
+        m.put("responsibility", nullToEmpty(s.responsibility()));
+        m.put("owningPackages", s.owningPackages() == null ? List.of() : s.owningPackages());
+        m.put("entryPoints", s.entryPoints() == null ? List.of() : s.entryPoints());
+        return m;
+    }
+
+    private static Map<String, Object> riskToMap(Risk r) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(r.id()));
+        m.put("category", nullToEmpty(r.category()));
+        m.put("severity", r.severity() == null ? "" : r.severity().name());
+        m.put("description", nullToEmpty(r.description()));
+        m.put("affectedSystems", r.affectedSystems() == null ? List.of() : r.affectedSystems());
+        m.put("suggestedMitigation", nullToEmpty(r.suggestedMitigation()));
+        return m;
+    }
+
+    /** Shared no-model error so every model-backed tool reports the same way. */
+    private Map<String, Object> noModelPayload(Path projectRoot) {
+        return errorPayload("no_project_model",
+            "No project model found at " + projectRoot.resolve(".launchpad")
+                + "/project-context.json. Scan the project first.");
     }
 
     @McpTool(

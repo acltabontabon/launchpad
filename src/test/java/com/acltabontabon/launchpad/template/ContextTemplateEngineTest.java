@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.acltabontabon.launchpad.model.ProjectContextAssembler;
+import com.acltabontabon.launchpad.model.VirtualProjectContext;
 import com.acltabontabon.launchpad.scanner.PackageSummary;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.scanner.StackProfile;
@@ -51,7 +53,7 @@ class ContextTemplateEngineTest {
             List.of(SAMPLE_CHECKLIST),
             agentsAdapterIncluding("rules", "skills", "checklists"));
 
-        var files = engine.buildFiles(sampleContext());
+        var files = engine.buildFiles(sampleContext(), modelFor(sampleContext()));
 
         var primary = contentAt(files, "AGENTS.md");
 
@@ -102,7 +104,7 @@ class ContextTemplateEngineTest {
 
         var ctx = contextWithReadmeIntro(
             "A reproducible benchmark of Spring Boot 4 + Oracle GraalVM Native Image 25.");
-        var files = engine.buildFiles(ctx);
+        var files = engine.buildFiles(ctx, modelFor(ctx));
         var primary = contentAt(files, "AGENTS.md");
 
         assertThat(primary).contains(
@@ -117,7 +119,7 @@ class ContextTemplateEngineTest {
         var engine = engineWith(List.of(), List.of(), List.of(),
             agentsAdapterIncluding("rules", "skills"));
 
-        var files = engine.buildFiles(sampleContext());
+        var files = engine.buildFiles(sampleContext(), modelFor(sampleContext()));
         var primary = contentAt(files, "AGENTS.md");
 
         // Section renders, but pointers are limited to what exists.
@@ -137,7 +139,7 @@ class ContextTemplateEngineTest {
             agentsAdapterIncluding("rules", "skills"));
 
         var ctx = contextWithoutPackages();
-        var files = engine.buildFiles(ctx);
+        var files = engine.buildFiles(ctx, modelFor(ctx));
         var primary = contentAt(files, "AGENTS.md");
 
         assertThat(primary).doesNotContain("## Project map");
@@ -149,7 +151,7 @@ class ContextTemplateEngineTest {
             agentsAdapterIncluding("rules", "skills"));
 
         var ctx = contextWithUnknownBuildTool();
-        var files = engine.buildFiles(ctx);
+        var files = engine.buildFiles(ctx, modelFor(ctx));
         var primary = contentAt(files, "AGENTS.md");
 
         assertThat(primary).doesNotContain("## Commands");
@@ -165,7 +167,7 @@ class ContextTemplateEngineTest {
             List.of(SAMPLE_CHECKLIST),
             agentsAdapterIncluding("rules", "skills", "checklists"));
 
-        var files = engine.buildFiles(sampleContext());
+        var files = engine.buildFiles(sampleContext(), modelFor(sampleContext()));
         var primary = contentAt(files, "AGENTS.md");
 
         // Without README intro, pom <description>, or a synthesizer, the
@@ -187,7 +189,7 @@ class ContextTemplateEngineTest {
             new AgentsPrimaryFileBuilder(),
             List.of(new ClaudeSkillsProjection()));
 
-        var files = engine.buildFiles(sampleContext());
+        var files = engine.buildFiles(sampleContext(), modelFor(sampleContext()));
 
         var primary = contentAt(files, "AGENTS.md");
         assertThat(primary).contains("# sample-project");
@@ -208,7 +210,7 @@ class ContextTemplateEngineTest {
             new AgentsPrimaryFileBuilder(),
             List.of(new ClaudeSkillsProjection()));
 
-        var files = engine.buildFiles(sampleContext());
+        var files = engine.buildFiles(sampleContext(), modelFor(sampleContext()));
 
         assertThat(pathsOf(files)).noneMatch(p -> p.startsWith(".claude/skills/"));
         // Canonical companions and AGENTS.md still ship.
@@ -286,6 +288,33 @@ class ContextTemplateEngineTest {
             base.fileSnippets(), base.packageSummaries(),
             base.existingContextSummary(), base.documentation(),
             base.endpoints(), intro, base.pomDescription(), base.mavenProfiles());
+    }
+
+    @Test
+    void primaryProjectsDiscoveredWorkflows() {
+        var engine = engineWith(List.of(), List.of(), List.of(),
+            agentsAdapterIncluding("rules", "skills"));
+
+        var base = sampleContext();
+        var ctx = new ProjectContext(
+            base.name(), base.rootPath(), base.stack(),
+            base.sourceFiles(), base.testClassNames(), base.entryPoints(),
+            base.dependencies(), base.fileSnippets(), base.packageSummaries(),
+            base.existingContextSummary(),
+            com.acltabontabon.launchpad.scanner.doc.DocumentationIndex.empty(),
+            List.of(new com.acltabontabon.launchpad.springboot.runtime.Endpoint(
+                "POST", "/loans", "LoanController.apply")),
+            "", "", List.of());
+
+        var primary = contentAt(engine.buildFiles(ctx, modelFor(ctx)), "AGENTS.md");
+
+        assertThat(primary).contains("## Workflows");
+        assertThat(primary).contains("**Loan**");
+        assertThat(primary).contains("`POST /loans`");
+    }
+
+    private static VirtualProjectContext modelFor(ProjectContext ctx) {
+        return new ProjectContextAssembler().assemble(ctx, "", "2026-05-31T00:00:00Z");
     }
 
     private static String contentAt(List<GeneratedFile> files, String path) {

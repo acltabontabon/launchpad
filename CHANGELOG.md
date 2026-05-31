@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **Project Virtualization Roadmap**: New `docs/roadmap.adoc` outlining the Project Virtualization Engine.
+- **Virtualized Project Model**: New `ProjectContext` aggregate representing architecture, workflows, standards, and risks.
+- **Model Persistence**: Each scan now saves the synthesized model to `.launchpad/project-context.json`.
+- **Workflow Discovery**: Deterministic mapping of HTTP, scheduled, and event-driven workflows.
+- **Workflow Correlation**: Links workflows to the systems, integrations, and data stores they touch.
+- **Standards Inference**: Detects architectural patterns and surfaces "layering drift" as risks.
+- **Guardrail Suggestions**: Proposes new standards based on prevalent code patterns.
+- **Model-Grounded `/new-task`**: Synthesized tasks now include execution context from the virtualized model.
+- **New MCP Tools**: Added `get_workflows`, `get_systems`, `get_risks`, and `get_project_overview` for model access.
+
+### Changed
+- **Model-Driven Context**: `AGENTS.md` sections (Operations, Workflows, Risks) are now projected from the virtualized model.
+- **Operations Consolidation**: Merged build profiles and health endpoints into a single `## Operations` section.
+- **Internal Cleanup**: Removed obsolete planning markers and redundant tests.
+
+### Removed
+- **Redundant Renderers**: Removed `BuildProfilesRenderer` and duplicate synthesis paths.
 
 
 ## [0.5.0] - 2026-05-30

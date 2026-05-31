@@ -8,12 +8,16 @@ import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.config.ProjectRegistry;
 import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import com.acltabontabon.launchpad.scanner.ScanStore;
+import com.acltabontabon.launchpad.model.ProjectContextAssembler;
+import com.acltabontabon.launchpad.model.VirtualProjectContextStore;
 import com.acltabontabon.launchpad.scanner.StackProfile;
 import com.acltabontabon.launchpad.standards.RemoteStandardsChecker;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import com.acltabontabon.launchpad.task.TaskAdvisorService;
 import com.acltabontabon.launchpad.template.ContextTemplateEngine;
+import com.acltabontabon.launchpad.template.GeneratedFile;
+import com.acltabontabon.launchpad.template.LegacyPrimaryFileDetector;
 import com.acltabontabon.launchpad.tui.components.Footer;
 import com.acltabontabon.launchpad.tui.components.Header;
 import com.acltabontabon.launchpad.tui.view.ProjectSelectView;
@@ -35,6 +39,7 @@ import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.TickEvent;
+import java.util.List;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -85,6 +90,8 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final TaskAdvisorService taskAdvisor;
     private final StandardsLoader standardsLoader;
     private final LaunchpadSettings settings;
+    private final ProjectContextAssembler projectContextAssembler;
+    private final VirtualProjectContextStore virtualProjectContextStore;
 
     // Single pool for all background scan / task futures. Using a cached pool
     // (unbounded, but tasks are short-lived and serialised in practice) so each
@@ -161,7 +168,9 @@ public class LaunchpadRunner implements ApplicationRunner {
         ContextTemplateEngine templateEngine,
         TaskAdvisorService taskAdvisor,
         StandardsLoader standardsLoader,
-        LaunchpadSettings settings
+        LaunchpadSettings settings,
+        ProjectContextAssembler projectContextAssembler,
+        VirtualProjectContextStore virtualProjectContextStore
     ) {
         this.welcomeView = welcomeView;
         this.projectSelectView = projectSelectView;
@@ -184,6 +193,8 @@ public class LaunchpadRunner implements ApplicationRunner {
         this.taskAdvisor = taskAdvisor;
         this.standardsLoader = standardsLoader;
         this.settings = settings;
+        this.projectContextAssembler = projectContextAssembler;
+        this.virtualProjectContextStore = virtualProjectContextStore;
         this.state.activeModel = settings.snapshot().model();
     }
 
@@ -338,7 +349,8 @@ public class LaunchpadRunner implements ApplicationRunner {
 
         var future = backgroundExecutor.submit(() -> {
             try {
-                // Phase 1 - file scan  (eases 5 -> 25 as scanner emits progress)
+                // Eases 5 -> 25 as the scanner emits progress, so the bar
+                // moves smoothly even when chunk counts are bursty.
                 beginPhase(AppState.Phase.SCAN_FILES, 5, "Scanning project files...");
                 state.pushActivity("scan", "walking project tree at " + state.projectPath);
                 if (checkCancelled()) return;
@@ -367,6 +379,21 @@ public class LaunchpadRunner implements ApplicationRunner {
                 if (checkCancelled()) return;
                 var projectRootForAudit = Path.of(state.projectPath).toAbsolutePath();
                 scanStore.save(projectRootForAudit, ctx);
+
+                // Assemble the virtualized project model. This is the
+                // synthesized understanding the rest of the pipeline projects
+                // from (AGENTS.md + .ai/*) and that out-of-process MCP
+                // consumers read. Assembly is deterministic; the persist is
+                // best-effort so a write failure cannot block the run.
+                var model = projectContextAssembler.assemble(
+                    ctx, "", java.time.Instant.now().toString());
+                try {
+                    virtualProjectContextStore.save(projectRootForAudit, model);
+                } catch (Exception modelError) {
+                    org.slf4j.LoggerFactory.getLogger(LaunchpadRunner.class)
+                        .warn("Failed to persist project model for {}", state.projectPath, modelError);
+                }
+
                 registerProjectQuietly(projectRootForAudit, ctx.stack());
                 runAuditPhase(ctx, projectRootForAudit);
 
@@ -383,11 +410,10 @@ public class LaunchpadRunner implements ApplicationRunner {
                     return;
                 }
 
-                // Phase 2 - assemble files
                 beginPhase(AppState.Phase.ASSEMBLE, 30, "Assembling output files...");
                 state.pushActivity("assemble", "rendering vendor-neutral output set");
                 if (checkCancelled()) return;
-                var files = templateEngine.buildFiles(ctx);
+                var files = templateEngine.buildFiles(ctx, model);
                 state.generatedFiles = files;
                 var projectRoot = java.nio.file.Path.of(state.projectPath).toAbsolutePath();
                 var plans = new java.util.ArrayList<com.acltabontabon.launchpad.template.FilePlan>();
@@ -428,8 +454,8 @@ public class LaunchpadRunner implements ApplicationRunner {
      * banner picks it up. The generated AGENTS.md body itself stays clean.
      */
     private void detectLegacyPrimaryFiles(Path projectRoot,
-                                          java.util.List<com.acltabontabon.launchpad.template.GeneratedFile> files) {
-        com.acltabontabon.launchpad.template.LegacyPrimaryFileDetector.detect(projectRoot, files)
+                                          List<GeneratedFile> files) {
+        LegacyPrimaryFileDetector.detect(projectRoot, files)
             .ifPresent(msg -> {
                 org.slf4j.LoggerFactory.getLogger(LaunchpadRunner.class).warn(msg);
                 var merged = new java.util.ArrayList<>(state.generationWarnings);
@@ -596,7 +622,21 @@ public class LaunchpadRunner implements ApplicationRunner {
                     }
                 );
                 if (state.cancelRequested) return;
-                state.taskFinalPrompt = result.markdown();
+
+                // Ground the synthesised prompt in the persisted project model:
+                // append an Execution context section naming the systems the task
+                // affects, the relevant workflows, and the risks to watch. This
+                // is the cheap, repeatable discovery local synthesis does so the
+                // cloud agent doesn't re-derive it from source. Best-effort - a
+                // missing or stale model just yields no section.
+                var grounded = result.markdown();
+                var grounding = com.acltabontabon.launchpad.task.TaskModelGrounding.ground(
+                    state.taskDescription,
+                    virtualProjectContextStore.load(projectRoot).orElse(null));
+                if (!grounding.markdown().isBlank()) {
+                    grounded = grounded + "\n\n" + grounding.markdown();
+                }
+                state.taskFinalPrompt = grounded;
                 state.taskWarnings = new java.util.ArrayList<>(result.warnings());
 
                 // Save the prompt to disk + an `<!-- interview -->` appendix that
@@ -609,7 +649,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                     var ts = LocalDateTime.now().format(TASK_TS_FMT);
                     var slug = slugify(state.taskDescription);
                     var file = taskDir.resolve(ts + "-" + slug + ".md");
-                    var fullContent = result.markdown() + "\n\n" + renderInterviewAppendix(
+                    var fullContent = grounded + "\n\n" + renderInterviewAppendix(
                         state.taskDescription, state.taskTurns.get(), ts);
                     Files.writeString(file, fullContent);
                     state.taskSavedPath = file.toString();

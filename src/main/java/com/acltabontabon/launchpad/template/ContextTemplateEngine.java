@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.template;
 
+import com.acltabontabon.launchpad.model.VirtualProjectContext;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import com.acltabontabon.launchpad.template.companion.CompanionFileBuilder;
@@ -14,10 +15,12 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Thin orchestrator: loads canonical standards, resolves the adapter, runs
- * synthesis, builds canonical companion files, delegates primary-file
- * construction to the {@link PrimaryFileBuilder}, and finally invokes every
- * enabled {@link AgentProjection} bean to emit agent-native discovery files.
+ * Projector for the virtualized {@link VirtualProjectContext}: loads canonical
+ * standards, resolves the adapter, runs synthesis, builds canonical companion
+ * files, delegates primary-file construction to the {@link PrimaryFileBuilder}
+ * (passing the model so its synthesized sections can be projected), and finally
+ * invokes every enabled {@link AgentProjection} bean to emit agent-native
+ * discovery files.
  *
  * <p>The engine does not know vendor file formats. It only resolves enabled
  * projection ids and dispatches to matching beans.
@@ -46,7 +49,7 @@ public class ContextTemplateEngine {
         this.projections = projections;
     }
 
-    public List<GeneratedFile> buildFiles(ProjectContext ctx) {
+    public List<GeneratedFile> buildFiles(ProjectContext ctx, VirtualProjectContext model) {
         var projectRoot = Path.of(ctx.rootPath());
         var rules = standardsLoader.loadRules(projectRoot);
         var skills = standardsLoader.loadSkills(projectRoot);
@@ -59,7 +62,7 @@ public class ContextTemplateEngine {
         for (var c : companions) companionPaths.add(c.relativePath());
 
         var plan = AssemblyPlan.standard();
-        var primaryBody = primaryBuilder.build(ctx, plan, resolved, synthesis, companionPaths);
+        var primaryBody = primaryBuilder.build(ctx, model, plan, resolved, synthesis, companionPaths);
 
         var files = new ArrayList<GeneratedFile>();
         files.add(new GeneratedFile(resolved.primaryPath(),

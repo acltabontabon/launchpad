@@ -10,6 +10,5 @@ public record SynthesisOutputs(
     String architectureNarrative,
     List<ClassFact> classFacts,
     List<Endpoint> allEndpoints,
-    Map<String, String> endpointNotes,
-    String buildProfileBullets
+    Map<String, String> endpointNotes
 ) {}
