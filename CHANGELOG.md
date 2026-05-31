@@ -7,26 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- **MCP Integration Test Harness**: `LaunchpadMcpToolsTest` exercises every MCP tool end-to-end against the spring-boot fixture.
-- **Project Virtualization Roadmap**: New `docs/roadmap.adoc` outlining the Project Virtualization Engine.
-- **Virtualized Project Model**: New `ProjectContext` aggregate representing architecture, workflows, standards, and risks.
-- **Model Persistence**: Each scan now saves the synthesized model to `.launchpad/project-context.json`.
-- **Workflow Discovery**: Deterministic mapping of HTTP, scheduled, and event-driven workflows.
-- **Workflow Correlation**: Links workflows to the systems, integrations, and data stores they touch.
-- **Standards Inference**: Detects architectural patterns and surfaces "layering drift" as risks.
-- **Guardrail Suggestions**: Proposes new standards based on prevalent code patterns.
-- **Model-Grounded `/new-task`**: Synthesized tasks now include execution context from the virtualized model.
-- **New MCP Tools**: Added `get_workflows`, `get_systems`, `get_risks`, and `get_project_overview` for model access.
+- **Project Virtualization Engine**: New canonical model (`ProjectContext`) with automated persistence to `.launchpad/project-context.json` and a roadmap in `docs/roadmap.adoc`.
+- **Intelligent Discovery**: Automated mapping of multi-trigger workflows (HTTP/Event/Scheduled) and inference of architectural risks/guardrail suggestions.
+- **Model-Grounded `/new-task`**: Task synthesis now injects execution context (impacted systems, workflows, and risks) directly from the virtualized model.
+- **MCP Expansion**: New tools for model access (`get_workflows`, `get_risks`, etc.) and a comprehensive integration test harness.
 
 ### Changed
-- **AppState Decomposition**: Split monolithic `AppState` into five focused components (`NavigationState`, `ScanState`, `GenerationState`, `SettingsDraftState`, `TaskFlowState`); reset logic now lives in each component.
-- **Model-Driven Context**: `AGENTS.md` sections (Operations, Workflows, Risks) are now projected from the virtualized model.
-- **Operations Consolidation**: Merged build profiles and health endpoints into a single `## Operations` section.
-- **Internal Cleanup**: Removed obsolete planning markers and redundant tests.
+- **AppState Decomposition**: Refactored monolithic `AppState` into focused state components with independent reset logic.
+- **Model-Driven Context**: `AGENTS.md` now projects operations, workflows, and risks directly from the virtualized model.
 
 ### Removed
 - **Redundant Renderers**: Removed `BuildProfilesRenderer` and duplicate synthesis paths.
-
+- **Legacy Artifacts**: Removed obsolete planning markers and redundant tests.
 
 ## [0.5.0] - 2026-05-30
 ### Added
