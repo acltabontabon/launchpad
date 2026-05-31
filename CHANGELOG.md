@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- **MCP Integration Test Harness**: `LaunchpadMcpToolsTest` exercises every MCP tool end-to-end against the spring-boot fixture - response shape, key payload fields, error contracts, and the `ScanStore` 24h freshness/cache contract. Runs as part of `./mvnw test` without an Ollama dependency.
+- **MCP Integration Test Harness**: `LaunchpadMcpToolsTest` exercises every MCP tool end-to-end against the spring-boot fixture.
 - **Project Virtualization Roadmap**: New `docs/roadmap.adoc` outlining the Project Virtualization Engine.
 - **Virtualized Project Model**: New `ProjectContext` aggregate representing architecture, workflows, standards, and risks.
 - **Model Persistence**: Each scan now saves the synthesized model to `.launchpad/project-context.json`.
