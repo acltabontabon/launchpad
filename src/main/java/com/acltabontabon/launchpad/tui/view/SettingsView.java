@@ -71,7 +71,7 @@ public class SettingsView implements View {
 
     @Override
     public void render(Frame frame, Rect area, AppState state) {
-        switch (state.settingsMode) {
+        switch (state.settings.mode) {
             case FIELDS -> renderFields(frame, area, state);
             case MCP_PICKER -> renderPicker(frame, area, state);
             case MCP_CONFIRM -> renderConfirm(frame, area, state);
@@ -103,17 +103,17 @@ public class SettingsView implements View {
         renderAiToolsRow(frame, rows.get(7), state);
         renderMcpClientsRow(frame, rows.get(8), state);
 
-        if (state.settingsErrorMessage != null) {
-            renderError(frame, rows.get(10), state.settingsErrorMessage);
+        if (state.settings.errorMessage != null) {
+            renderError(frame, rows.get(10), state.settings.errorMessage);
         }
     }
 
     private void renderLlmCard(Frame frame, Rect rowArea, AppState state) {
         var area = centeredColumn(rowArea, CARD_WIDTH);
-        boolean groupActive = state.settingsFocusIndex == FIELD_PROVIDER
-            || state.settingsFocusIndex == FIELD_BASE_URL
-            || state.settingsFocusIndex == FIELD_MODEL
-            || state.settingsFocusIndex == FIELD_API_KEY;
+        boolean groupActive = state.settings.focusIndex == FIELD_PROVIDER
+            || state.settings.focusIndex == FIELD_BASE_URL
+            || state.settings.focusIndex == FIELD_MODEL
+            || state.settings.focusIndex == FIELD_API_KEY;
         var card = Card.of("LLM").active(groupActive).padding(1, 2).build();
         var inner = card.inner(area);
         frame.renderWidget(card, area);
@@ -131,7 +131,7 @@ public class SettingsView implements View {
 
     private void renderStandardsCard(Frame frame, Rect rowArea, AppState state) {
         var area = centeredColumn(rowArea, CARD_WIDTH);
-        boolean focused = state.settingsFocusIndex == FIELD_REMOTE_STANDARDS;
+        boolean focused = state.settings.focusIndex == FIELD_REMOTE_STANDARDS;
         var card = Card.of("Standards").active(focused).padding(1, 2).build();
         var inner = card.inner(area);
         frame.renderWidget(card, area);
@@ -151,7 +151,7 @@ public class SettingsView implements View {
 
     private void renderAiToolsRow(Frame frame, Rect rowArea, AppState state) {
         var area = centeredColumn(rowArea, CARD_WIDTH);
-        boolean focused = state.settingsFocusIndex == FIELD_PROJECTIONS;
+        boolean focused = state.settings.focusIndex == FIELD_PROJECTIONS;
         String chipText = " " + Icons.ARROW_TARGET + " change ";
         String value = fitValue(projectionsValue(), area.width(), chipText.length(), false);
         var row = new RowBuilder(focused)
@@ -163,7 +163,7 @@ public class SettingsView implements View {
 
     private void renderMcpClientsRow(Frame frame, Rect rowArea, AppState state) {
         var area = centeredColumn(rowArea, CARD_WIDTH);
-        boolean focused = state.settingsFocusIndex == FIELD_CONNECT_ACTION;
+        boolean focused = state.settings.focusIndex == FIELD_CONNECT_ACTION;
         String chipText = " " + Icons.ARROW_TARGET + " connect ";
         int rightCols = chipText.length();
         String value = fitValue(mcpClientsValue(state), area.width(), rightCols, false);
@@ -175,12 +175,12 @@ public class SettingsView implements View {
     }
 
     private Line providerRow(AppState state, int innerWidth) {
-        boolean focused = state.settingsFocusIndex == FIELD_PROVIDER;
+        boolean focused = state.settings.focusIndex == FIELD_PROVIDER;
         var row = new RowBuilder(focused).label("Provider");
         var providers = LlmProvider.values();
         for (int i = 0; i < providers.length; i++) {
             var p = providers[i];
-            boolean isActive = p == state.settingsProviderInput;
+            boolean isActive = p == state.settings.providerInput;
             Style chipStyle;
             if (isActive) {
                 chipStyle = focused ? Styles.activeChip() : Styles.brandChip();
@@ -194,9 +194,9 @@ public class SettingsView implements View {
     }
 
     private Line baseUrlRow(AppState state, LlmProviderStatus llm, int innerWidth) {
-        boolean focused = state.settingsFocusIndex == FIELD_BASE_URL;
+        boolean focused = state.settings.focusIndex == FIELD_BASE_URL;
         var chip = baseUrlChip(llm);
-        String value = fitValue(state.settingsBaseUrlInput, innerWidth,
+        String value = fitValue(state.settings.baseUrlInput, innerWidth,
             chip != null ? chip.text.length() : 0, focused);
         var row = new RowBuilder(focused)
             .label("Base URL")
@@ -207,9 +207,9 @@ public class SettingsView implements View {
     }
 
     private Line modelRow(AppState state, LlmProviderStatus llm, int innerWidth) {
-        boolean focused = state.settingsFocusIndex == FIELD_MODEL;
+        boolean focused = state.settings.focusIndex == FIELD_MODEL;
         var chip = modelChip(llm);
-        String value = fitValue(state.settingsModelInput, innerWidth,
+        String value = fitValue(state.settings.modelInput, innerWidth,
             chip != null ? chip.text.length() : 0, focused);
         var row = new RowBuilder(focused)
             .label("Model")
@@ -220,9 +220,9 @@ public class SettingsView implements View {
     }
 
     private Line apiKeyRow(AppState state, int innerWidth) {
-        boolean focused = state.settingsFocusIndex == FIELD_API_KEY;
-        boolean empty = state.settingsApiKeyInput.isEmpty();
-        String masked = maskApiKey(state.settingsApiKeyInput);
+        boolean focused = state.settings.focusIndex == FIELD_API_KEY;
+        boolean empty = state.settings.apiKeyInput.isEmpty();
+        String masked = maskApiKey(state.settings.apiKeyInput);
         var row = new RowBuilder(focused)
             .label("API key")
             .value(masked, valueStyle(focused, masked));
@@ -232,12 +232,12 @@ public class SettingsView implements View {
     }
 
     private Line remoteStandardsRow(AppState state, int innerWidth) {
-        boolean focused = state.settingsFocusIndex == FIELD_REMOTE_STANDARDS;
-        boolean empty = state.settingsRemoteStandardsUrlInput.isEmpty();
+        boolean focused = state.settings.focusIndex == FIELD_REMOTE_STANDARDS;
+        boolean empty = state.settings.remoteStandardsUrlInput.isEmpty();
         var chip = remoteStandardsChip(state);
         int rightCols = (chip != null ? chip.text.length() : 0)
             + (empty ? " optional ".length() + (chip != null ? 1 : 0) : 0);
-        String value = fitValue(state.settingsRemoteStandardsUrlInput, innerWidth, rightCols, focused);
+        String value = fitValue(state.settings.remoteStandardsUrlInput, innerWidth, rightCols, focused);
         var row = new RowBuilder(focused)
             .label("Remote pack")
             .value(value, valueStyle(focused, value));
@@ -269,7 +269,7 @@ public class SettingsView implements View {
     }
 
     private static Chip remoteStandardsChip(AppState state) {
-        if (state.settingsRemoteStandardsUrlInput.isEmpty()) return null;
+        if (state.settings.remoteStandardsUrlInput.isEmpty()) return null;
         return switch (state.remoteStandardsStatus.get().state()) {
             case SYNCED -> new Chip(" " + Icons.CHECK + " synced ", Styles.successChip());
             case STALE_CACHE -> new Chip(" " + Icons.WARN + " offline cache ", Styles.cautionChip());
@@ -286,7 +286,7 @@ public class SettingsView implements View {
     }
 
     private static String mcpClientsValue(AppState state) {
-        var clients = state.mcpClients.get();
+        var clients = state.settings.mcpClients.get();
         if (clients.isEmpty()) return "wire Claude Desktop / Code / Cursor";
         var linked = clients.stream().filter(AiClient::alreadyLinked).map(AiClient::displayName).toList();
         if (linked.isEmpty()) return "no clients linked yet";
@@ -295,7 +295,7 @@ public class SettingsView implements View {
 
     private static Style mcpClientsValueStyle(AppState state, boolean focused) {
         if (focused) return Styles.focus();
-        var clients = state.mcpClients.get();
+        var clients = state.settings.mcpClients.get();
         if (clients.isEmpty()) return Styles.dim();
         boolean anyLinked = clients.stream().anyMatch(AiClient::alreadyLinked);
         return anyLinked ? Styles.success() : Styles.dim();
@@ -381,8 +381,8 @@ public class SettingsView implements View {
     }
 
     private void renderPicker(Frame frame, Rect area, AppState state) {
-        var clients = state.mcpClients.get();
-        var selected = state.mcpSelected.get();
+        var clients = state.settings.mcpClients.get();
+        var selected = state.settings.mcpSelected.get();
         int rowCount = Math.max(clients.size(), 1);
 
         var rows = Layout.vertical()
@@ -412,7 +412,7 @@ public class SettingsView implements View {
         var lines = new ArrayList<Line>(clients.size());
         for (int i = 0; i < clients.size(); i++) {
             var c = clients.get(i);
-            boolean isCursor = i == state.mcpSelectionIndex;
+            boolean isCursor = i == state.settings.mcpSelectionIndex;
             boolean isOn = c.alreadyLinked() || selected.contains(c.id());
             boolean isWritable = c.detected();
 
@@ -439,14 +439,14 @@ public class SettingsView implements View {
         }
         frame.renderWidget(Paragraph.builder().text(Text.from(lines.toArray(new Line[0]))).build(), inner);
 
-        if (state.settingsErrorMessage != null) {
-            renderError(frame, rows.get(3), state.settingsErrorMessage);
+        if (state.settings.errorMessage != null) {
+            renderError(frame, rows.get(3), state.settings.errorMessage);
         }
     }
 
     private void renderConfirm(Frame frame, Rect area, AppState state) {
-        var clients = state.mcpClients.get();
-        var selected = state.mcpSelected.get();
+        var clients = state.settings.mcpClients.get();
+        var selected = state.settings.mcpSelected.get();
         var picked = clients.stream().filter(c -> selected.contains(c.id())).toList();
 
         var rows = Layout.vertical()
@@ -487,7 +487,7 @@ public class SettingsView implements View {
     }
 
     private void renderResult(Frame frame, Rect area, AppState state) {
-        var reports = state.mcpReports.get();
+        var reports = state.settings.mcpReports.get();
 
         var rows = Layout.vertical()
             .constraints(
@@ -501,9 +501,9 @@ public class SettingsView implements View {
         var heading = Text.from(
             Line.from(Span.styled("  Results", Styles.heading())),
             Line.from(Span.styled(
-                state.mcpBackupDir == null
+                state.settings.mcpBackupDir == null
                     ? "  No files modified."
-                    : "  Backups: " + state.mcpBackupDir,
+                    : "  Backups: " + state.settings.mcpBackupDir,
                 Styles.caption()))
         );
         frame.renderWidget(Paragraph.builder().text(heading).build(), rows.get(1));
@@ -578,7 +578,7 @@ public class SettingsView implements View {
 
     @Override
     public List<KeyHint> footerHints(AppState state) {
-        return switch (state.settingsMode) {
+        return switch (state.settings.mode) {
             case FIELDS -> List.of(
                 new KeyHint("↑↓", "next field"),
                 new KeyHint("enter", "save / open"),
@@ -600,7 +600,7 @@ public class SettingsView implements View {
     @Override
     public boolean handleEvent(Event event, TuiRunner runner, AppState state) {
         if (!(event instanceof KeyEvent key)) return false;
-        return switch (state.settingsMode) {
+        return switch (state.settings.mode) {
             case FIELDS -> handleFields(key, state);
             case MCP_PICKER -> handlePicker(key, state);
             case MCP_CONFIRM -> handleConfirm(key, state);
@@ -610,50 +610,50 @@ public class SettingsView implements View {
 
     private boolean handleFields(KeyEvent key, AppState state) {
         if (key.isKey(KeyCode.ESCAPE)) {
-            state.settingsErrorMessage = null;
-            state.currentScreen = AppState.Screen.WELCOME;
+            state.settings.errorMessage = null;
+            state.nav.currentScreen = AppState.Screen.WELCOME;
             return true;
         }
         if (key.isKey(KeyCode.ENTER)) {
-            if (state.settingsFocusIndex == FIELD_CONNECT_ACTION) {
+            if (state.settings.focusIndex == FIELD_CONNECT_ACTION) {
                 openPicker(state);
                 return true;
             }
-            if (state.settingsFocusIndex == FIELD_PROJECTIONS) {
+            if (state.settings.focusIndex == FIELD_PROJECTIONS) {
                 state.projectionPickerReturnsToSettings = true;
                 projectionSelectView.seedSelection(state);
-                state.currentScreen = AppState.Screen.PROJECTION_SELECT;
+                state.nav.currentScreen = AppState.Screen.PROJECTION_SELECT;
                 return true;
             }
             return save(state);
         }
         if (key.isKey(KeyCode.TAB) || key.isKey(KeyCode.DOWN)) {
-            state.settingsFocusIndex = (state.settingsFocusIndex + 1) % FIELD_COUNT;
+            state.settings.focusIndex = (state.settings.focusIndex + 1) % FIELD_COUNT;
             return true;
         }
         if (key.isKey(KeyCode.UP)) {
-            state.settingsFocusIndex = Math.floorMod(state.settingsFocusIndex - 1, FIELD_COUNT);
+            state.settings.focusIndex = Math.floorMod(state.settings.focusIndex - 1, FIELD_COUNT);
             return true;
         }
-        if (state.settingsFocusIndex == FIELD_PROVIDER) {
+        if (state.settings.focusIndex == FIELD_PROVIDER) {
             if (key.isKey(KeyCode.LEFT)) {
-                state.settingsProviderInput = cycleProvider(state.settingsProviderInput, -1);
+                state.settings.providerInput = cycleProvider(state.settings.providerInput, -1);
                 return true;
             }
             if (key.isKey(KeyCode.RIGHT)) {
-                state.settingsProviderInput = cycleProvider(state.settingsProviderInput, 1);
+                state.settings.providerInput = cycleProvider(state.settings.providerInput, 1);
                 return true;
             }
             if (key.code() == KeyCode.CHAR && key.character() == ' ') {
-                state.settingsProviderInput = cycleProvider(state.settingsProviderInput, 1);
+                state.settings.providerInput = cycleProvider(state.settings.providerInput, 1);
                 return true;
             }
             // Stray keys (letters, backspace) are swallowed so they don't fall
             // through into another field's buffer.
             return true;
         }
-        if (state.settingsFocusIndex == FIELD_CONNECT_ACTION
-            || state.settingsFocusIndex == FIELD_PROJECTIONS) {
+        if (state.settings.focusIndex == FIELD_CONNECT_ACTION
+            || state.settings.focusIndex == FIELD_PROJECTIONS) {
             // Action rows swallow character input so stray keys don't accumulate.
             return true;
         }
@@ -678,18 +678,20 @@ public class SettingsView implements View {
     }
 
     private boolean handlePicker(KeyEvent key, AppState state) {
-        var clients = state.mcpClients.get();
+        var clients = state.settings.mcpClients.get();
         if (key.isKey(KeyCode.ESCAPE)) {
-            state.settingsMode = SettingsMode.FIELDS;
-            state.settingsErrorMessage = null;
+            state.settings.mode = SettingsMode.FIELDS;
+            state.settings.errorMessage = null;
             return true;
         }
         if (key.isKey(KeyCode.UP)) {
-            state.mcpSelectionIndex = Math.floorMod(state.mcpSelectionIndex - 1, Math.max(clients.size(), 1));
+            state.settings.mcpSelectionIndex =
+                Math.floorMod(state.settings.mcpSelectionIndex - 1, Math.max(clients.size(), 1));
             return true;
         }
         if (key.isKey(KeyCode.DOWN)) {
-            state.mcpSelectionIndex = Math.floorMod(state.mcpSelectionIndex + 1, Math.max(clients.size(), 1));
+            state.settings.mcpSelectionIndex =
+                Math.floorMod(state.settings.mcpSelectionIndex + 1, Math.max(clients.size(), 1));
             return true;
         }
         if (key.code() == KeyCode.CHAR && key.character() == ' ') {
@@ -697,13 +699,13 @@ public class SettingsView implements View {
             return true;
         }
         if (key.isKey(KeyCode.ENTER)) {
-            var selected = state.mcpSelected.get();
+            var selected = state.settings.mcpSelected.get();
             if (selected.isEmpty()) {
-                state.settingsErrorMessage = "Pick at least one client (space to toggle)";
+                state.settings.errorMessage = "Pick at least one client (space to toggle)";
                 return true;
             }
-            state.settingsErrorMessage = null;
-            state.settingsMode = SettingsMode.MCP_CONFIRM;
+            state.settings.errorMessage = null;
+            state.settings.mode = SettingsMode.MCP_CONFIRM;
             return true;
         }
         return false;
@@ -711,7 +713,7 @@ public class SettingsView implements View {
 
     private boolean handleConfirm(KeyEvent key, AppState state) {
         if (key.isKey(KeyCode.ESCAPE)) {
-            state.settingsMode = SettingsMode.MCP_PICKER;
+            state.settings.mode = SettingsMode.MCP_PICKER;
             return true;
         }
         if (key.isKey(KeyCode.ENTER)) {
@@ -723,97 +725,97 @@ public class SettingsView implements View {
 
     private boolean handleResult(KeyEvent key, AppState state) {
         if (key.isKey(KeyCode.ENTER) || key.isKey(KeyCode.ESCAPE)) {
-            state.settingsMode = SettingsMode.FIELDS;
-            state.mcpBackupDir = null;
+            state.settings.mode = SettingsMode.FIELDS;
+            state.settings.mcpBackupDir = null;
             return true;
         }
         return false;
     }
 
     private void openPicker(AppState state) {
-        state.mcpClients.set(clientRegistry.discover());
-        state.mcpSelected.set(new HashSet<>());
-        state.mcpReports.set(new ArrayList<>());
-        state.mcpSelectionIndex = 0;
-        state.settingsErrorMessage = null;
-        state.mcpBackupDir = null;
-        state.settingsMode = SettingsMode.MCP_PICKER;
+        state.settings.mcpClients.set(clientRegistry.discover());
+        state.settings.mcpSelected.set(new HashSet<>());
+        state.settings.mcpReports.set(new ArrayList<>());
+        state.settings.mcpSelectionIndex = 0;
+        state.settings.errorMessage = null;
+        state.settings.mcpBackupDir = null;
+        state.settings.mode = SettingsMode.MCP_PICKER;
     }
 
     private static void toggleSelection(AppState state, List<AiClient> clients) {
         if (clients.isEmpty()) return;
-        var idx = Math.min(state.mcpSelectionIndex, clients.size() - 1);
+        var idx = Math.min(state.settings.mcpSelectionIndex, clients.size() - 1);
         var client = clients.get(idx);
         if (client.alreadyLinked()) {
-            state.settingsErrorMessage = client.displayName()
+            state.settings.errorMessage = client.displayName()
                 + " is already linked - remove the launchpad entry from "
                 + client.configPath() + " to re-link";
             return;
         }
         if (!client.detected()) {
-            state.settingsErrorMessage = client.displayName() + " is not installed on this machine";
+            state.settings.errorMessage = client.displayName() + " is not installed on this machine";
             return;
         }
-        state.settingsErrorMessage = null;
-        var current = state.mcpSelected.get();
+        state.settings.errorMessage = null;
+        var current = state.settings.mcpSelected.get();
         var next = new HashSet<>(current);
         if (!next.remove(client.id())) next.add(client.id());
-        state.mcpSelected.set(next);
+        state.settings.mcpSelected.set(next);
     }
 
     private void runWrite(AppState state) {
         var snippet = snippetFactory.build();
-        var clients = state.mcpClients.get();
-        var selected = state.mcpSelected.get();
+        var clients = state.settings.mcpClients.get();
+        var selected = state.settings.mcpSelected.get();
         var picked = new ArrayList<AiClient>();
         for (var c : clients) {
             if (selected.contains(c.id())) picked.add(c);
         }
         var run = mcpWriter.apply(picked, snippet.orElse(null));
-        state.mcpReports.set(run.reports());
-        state.mcpBackupDir = run.backupDir() == null ? null : run.backupDir().toString();
-        state.settingsMode = SettingsMode.MCP_RESULT;
+        state.settings.mcpReports.set(run.reports());
+        state.settings.mcpBackupDir = run.backupDir() == null ? null : run.backupDir().toString();
+        state.settings.mode = SettingsMode.MCP_RESULT;
     }
 
     private boolean save(AppState state) {
-        var url = state.settingsBaseUrlInput.trim();
-        var model = state.settingsModelInput.trim();
-        var apiKey = state.settingsApiKeyInput.trim();
-        var remoteUrl = state.settingsRemoteStandardsUrlInput.trim();
+        var url = state.settings.baseUrlInput.trim();
+        var model = state.settings.modelInput.trim();
+        var apiKey = state.settings.apiKeyInput.trim();
+        var remoteUrl = state.settings.remoteStandardsUrlInput.trim();
         if (url.isEmpty() || model.isEmpty()) {
-            state.settingsErrorMessage = "Base URL and model cannot be empty";
+            state.settings.errorMessage = "Base URL and model cannot be empty";
             return true;
         }
         try {
-            settings.update(state.settingsProviderInput, url, model, apiKey, remoteUrl);
+            settings.update(state.settings.providerInput, url, model, apiKey, remoteUrl);
         } catch (IOException e) {
-            state.settingsErrorMessage = "Could not save: " + e.getMessage();
+            state.settings.errorMessage = "Could not save: " + e.getMessage();
             return true;
         }
-        state.settingsErrorMessage = null;
+        state.settings.errorMessage = null;
         state.healthCheckRequested = true;
         state.remoteStandardsCheckRequested = true;
-        state.currentScreen = AppState.Screen.WELCOME;
+        state.nav.currentScreen = AppState.Screen.WELCOME;
         return true;
     }
 
     private static void appendChar(AppState state, char c) {
-        switch (state.settingsFocusIndex) {
-            case FIELD_BASE_URL -> state.settingsBaseUrlInput = state.settingsBaseUrlInput + c;
-            case FIELD_MODEL -> state.settingsModelInput = state.settingsModelInput + c;
-            case FIELD_API_KEY -> state.settingsApiKeyInput = state.settingsApiKeyInput + c;
+        switch (state.settings.focusIndex) {
+            case FIELD_BASE_URL -> state.settings.baseUrlInput = state.settings.baseUrlInput + c;
+            case FIELD_MODEL -> state.settings.modelInput = state.settings.modelInput + c;
+            case FIELD_API_KEY -> state.settings.apiKeyInput = state.settings.apiKeyInput + c;
             case FIELD_REMOTE_STANDARDS ->
-                state.settingsRemoteStandardsUrlInput = state.settingsRemoteStandardsUrlInput + c;
+                state.settings.remoteStandardsUrlInput = state.settings.remoteStandardsUrlInput + c;
         }
     }
 
     private static void popChar(AppState state) {
-        switch (state.settingsFocusIndex) {
-            case FIELD_BASE_URL -> state.settingsBaseUrlInput = chop(state.settingsBaseUrlInput);
-            case FIELD_MODEL -> state.settingsModelInput = chop(state.settingsModelInput);
-            case FIELD_API_KEY -> state.settingsApiKeyInput = chop(state.settingsApiKeyInput);
+        switch (state.settings.focusIndex) {
+            case FIELD_BASE_URL -> state.settings.baseUrlInput = chop(state.settings.baseUrlInput);
+            case FIELD_MODEL -> state.settings.modelInput = chop(state.settings.modelInput);
+            case FIELD_API_KEY -> state.settings.apiKeyInput = chop(state.settings.apiKeyInput);
             case FIELD_REMOTE_STANDARDS ->
-                state.settingsRemoteStandardsUrlInput = chop(state.settingsRemoteStandardsUrlInput);
+                state.settings.remoteStandardsUrlInput = chop(state.settings.remoteStandardsUrlInput);
         }
     }
 

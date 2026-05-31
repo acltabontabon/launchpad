@@ -412,7 +412,7 @@ public class ProjectSelectView implements View {
             state.projectPickerCursor = 0;
             state.projectGateError = null;
             liveSearch.cancel();
-            state.currentScreen = AppState.Screen.WELCOME;
+            state.nav.currentScreen = AppState.Screen.WELCOME;
             return true;
         }
 
@@ -495,9 +495,9 @@ public class ProjectSelectView implements View {
             // matches what they actually use.
             state.projectionPickerReturnsToSettings = false;
             projectionSelectView.seedSelection(state);
-            state.currentScreen = AppState.Screen.PROJECTION_SELECT;
+            state.nav.currentScreen = AppState.Screen.PROJECTION_SELECT;
         } else {
-            state.currentScreen = AppState.Screen.SCANNING;
+            state.nav.currentScreen = AppState.Screen.SCANNING;
         }
         return true;
     }

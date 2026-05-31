@@ -54,56 +54,53 @@ public class TaskResultView implements View {
 
     private void renderHeader(Frame frame, Rect area, AppState state) {
         Line line;
-        if (state.taskError) {
+        if (state.task.error) {
             line = Line.from(
                 Span.styled("  " + Icons.CROSS + "  ", Styles.error()),
-                Span.styled(state.taskStatus.get().isEmpty()
-                    ? "Something went wrong." : state.taskStatus.get(), Styles.error())
+                Span.styled(state.task.status.get().isEmpty()
+                    ? "Something went wrong." : state.task.status.get(), Styles.error())
             );
-        } else if (state.taskThinking) {
-            var msg = state.taskStatus.get().isEmpty() ? "synthesising prompt..." : state.taskStatus.get();
+        } else if (state.task.thinking) {
+            var msg = state.task.status.get().isEmpty() ? "synthesising prompt..." : state.task.status.get();
             line = Line.from(
                 Span.styled("  " + Spinner.frame(tick / 3) + "  ", Styles.focus()),
                 Span.styled(msg + elapsedSuffix(state), Styles.caption())
             );
-        } else if (state.taskFinalPrompt.isEmpty()) {
+        } else if (state.task.finalPrompt.isEmpty()) {
             line = Line.from(
                 Span.styled("  ⋯  ", Styles.dim()),
                 Span.styled("Preparing...", Styles.dim())
             );
-        } else if (state.taskSavedPath.isEmpty()) {
+        } else if (state.task.savedPath.isEmpty()) {
             line = StatusDot.of(StatusDot.State.WORKING, "Prompt ready (saving to disk...)");
         } else {
-            line = StatusDot.of(StatusDot.State.OK, "Saved to", state.taskSavedPath);
+            line = StatusDot.of(StatusDot.State.OK, "Saved to", state.task.savedPath);
         }
         var widget = Paragraph.builder().text(Text.from(line)).build();
         frame.renderWidget(widget, area);
     }
 
     private static String elapsedSuffix(AppState state) {
-        long start = state.taskOpStartedAtMs;
+        long start = state.task.opStartedAtMs;
         if (start == 0L) return "";
         long sec = (System.currentTimeMillis() - start) / 1000;
         return sec <= 0 ? "" : "  " + Icons.SEP + "  " + sec + "s";
     }
 
     private void renderPrompt(Frame frame, Rect area, AppState state) {
-        String bottom = state.taskSavedPath.isEmpty()
+        String bottom = state.task.savedPath.isEmpty()
             ? ("press y to copy  " + Icons.SEP + "  n for new task")
-            : (state.taskSavedPath + "  " + Icons.SEP + "  press n for new task");
+            : (state.task.savedPath + "  " + Icons.SEP + "  press n for new task");
         var card = Card.of("refined prompt").bottomTitle(bottom).active(true).build();
         var inner = card.inner(area);
         frame.renderWidget(card, area);
 
-        var content = state.taskFinalPrompt;
+        var content = state.task.finalPrompt;
 
-        // Error and empty/thinking states are simple status lines, not Markdown -
-        // keep the line-based Paragraph for those. Once the final prompt is in,
-        // hand off to MarkdownView for proper headings / lists / code fences.
-        if (state.taskError) {
+        if (state.task.error) {
             var lines = new ArrayList<Line>();
             lines.add(blank());
-            lines.add(Line.from(Span.styled("  " + state.taskStatus.get(), Styles.error())));
+            lines.add(Line.from(Span.styled("  " + state.task.status.get(), Styles.error())));
             lines.add(blank());
             lines.add(Line.from(Span.styled("  Press q to return to Welcome, then try again.",
                 Styles.caption())));
@@ -122,14 +119,12 @@ public class TaskResultView implements View {
             return;
         }
 
-        // Clamp scrollOffset against the rendered markdown height. computeHeight
-        // wraps the source against the available width, so this matches what the
-        // user actually sees on screen.
+        // Clamp scrollOffset against the rendered markdown height.
         var probe = MarkdownView.builder().source(content).overflow(Overflow.WRAP_WORD).build();
         int total = probe.computeHeight(inner.width());
         int viewportRows = Math.max(1, inner.height());
         int maxScroll = Math.max(0, total - viewportRows);
-        if (state.taskThinking) scrollOffset = maxScroll;
+        if (state.task.thinking) scrollOffset = maxScroll;
         if (scrollOffset > maxScroll) scrollOffset = maxScroll;
         if (scrollOffset < 0) scrollOffset = 0;
 
@@ -155,7 +150,7 @@ public class TaskResultView implements View {
 
     @Override
     public List<KeyHint> footerHints(AppState state) {
-        boolean ready = !state.taskFinalPrompt.isEmpty();
+        boolean ready = !state.task.finalPrompt.isEmpty();
         var hints = new ArrayList<KeyHint>();
         hints.add(new KeyHint("↑↓", "scroll"));
         hints.add(new KeyHint("pgup/pgdn", "jump"));
@@ -206,13 +201,13 @@ public class TaskResultView implements View {
         if (key.isChar('q')) {
             scrollOffset = 0;
             state.resetTaskFlow();
-            state.currentScreen = AppState.Screen.WELCOME;
+            state.nav.currentScreen = AppState.Screen.WELCOME;
             return true;
         }
-        if (key.isChar('n') && !state.taskFinalPrompt.isEmpty()) {
+        if (key.isChar('n') && !state.task.finalPrompt.isEmpty()) {
             scrollOffset = 0;
             state.resetTaskForReuse();
-            state.currentScreen = AppState.Screen.TASK_INPUT;
+            state.nav.currentScreen = AppState.Screen.TASK_INPUT;
             return true;
         }
         return false;

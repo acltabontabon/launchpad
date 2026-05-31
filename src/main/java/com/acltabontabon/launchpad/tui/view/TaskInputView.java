@@ -57,7 +57,7 @@ public class TaskInputView implements View {
         frame.renderWidget(card, area);
 
         var lines = new ArrayList<Line>();
-        var buffer = state.taskDescription;
+        var buffer = state.task.description;
         var bufLines = buffer.isEmpty() ? new String[]{""} : buffer.split("\n", -1);
         for (int i = 0; i < bufLines.length; i++) {
             var text = bufLines[i];
@@ -89,27 +89,27 @@ public class TaskInputView implements View {
 
         if (key.isKey(KeyCode.ESCAPE)) {
             state.resetTaskFlow();
-            state.currentScreen = AppState.Screen.WELCOME;
+            state.nav.currentScreen = AppState.Screen.WELCOME;
             return true;
         }
         if (key.isKey(KeyCode.TAB)) {
-            if (state.taskDescription.trim().isEmpty()) return true;
-            state.currentScreen = AppState.Screen.TASK_INTERVIEW;
+            if (state.task.description.trim().isEmpty()) return true;
+            state.nav.currentScreen = AppState.Screen.TASK_INTERVIEW;
             return true;
         }
         if (key.isKey(KeyCode.ENTER)) {
-            state.taskDescription = state.taskDescription + "\n";
+            state.task.description = state.task.description + "\n";
             return true;
         }
         if (key.isKey(KeyCode.BACKSPACE)) {
-            if (!state.taskDescription.isEmpty()) {
-                state.taskDescription =
-                    state.taskDescription.substring(0, state.taskDescription.length() - 1);
+            if (!state.task.description.isEmpty()) {
+                state.task.description =
+                    state.task.description.substring(0, state.task.description.length() - 1);
             }
             return true;
         }
         if (key.code() == KeyCode.CHAR) {
-            state.taskDescription = state.taskDescription + key.character();
+            state.task.description = state.task.description + key.character();
             return true;
         }
         return false;

@@ -52,11 +52,11 @@ public class TaskInterviewView implements View {
     }
 
     private void renderTranscript(Frame frame, Rect area, AppState state) {
-        var turns = state.taskTurns.get();
+        var turns = state.task.turns.get();
 
         var header = new ArrayList<Line>();
         header.add(Line.from(Span.styled("Task", Styles.subheading())));
-        for (var l : state.taskDescription.split("\n", -1)) {
+        for (var l : state.task.description.split("\n", -1)) {
             header.add(Line.from(Span.styled("  " + l, Styles.body())));
         }
         header.add(Line.from(Span.styled("", Style.create())));
@@ -117,27 +117,27 @@ public class TaskInterviewView implements View {
     }
 
     private void renderQuestion(Frame frame, Rect area, AppState state) {
-        boolean active = !state.taskError;
-        String title = "question  " + Icons.SEP + "  #" + (state.taskRound + 1);
+        boolean active = !state.task.error;
+        String title = "question  " + Icons.SEP + "  #" + (state.task.round + 1);
         var card = Card.of(title).active(active).build();
         var inner = card.inner(area);
         frame.renderWidget(card, area);
 
         Text body;
-        if (state.taskError) {
+        if (state.task.error) {
             body = Text.from(Line.from(
                 Span.styled(Icons.CROSS + "  ", Styles.error()),
-                Span.styled(state.taskStatus.get(), Styles.error())
+                Span.styled(state.task.status.get(), Styles.error())
             ));
-        } else if (state.taskThinking) {
+        } else if (state.task.thinking) {
             var elapsed = elapsedSuffix(state);
-            var msg = state.taskStatus.get().isEmpty() ? "thinking..." : state.taskStatus.get();
+            var msg = state.task.status.get().isEmpty() ? "thinking..." : state.task.status.get();
             body = Text.from(Line.from(
                 Span.styled(Spinner.frame(tick / 3) + "  ", Styles.focus()),
                 Span.styled(msg + elapsed, Styles.caption())
             ));
         } else {
-            var q = state.taskCurrentQuestion.get();
+            var q = state.task.currentQuestion.get();
             body = Text.styled(q.isEmpty() ? "(waiting for first question...)" : q,
                 Styles.heading());
         }
@@ -146,20 +146,20 @@ public class TaskInterviewView implements View {
     }
 
     private static String elapsedSuffix(AppState state) {
-        long start = state.taskOpStartedAtMs;
+        long start = state.task.opStartedAtMs;
         if (start == 0L) return "";
         long sec = (System.currentTimeMillis() - start) / 1000;
         return sec <= 0 ? "" : "  " + Icons.SEP + "  " + sec + "s";
     }
 
     private void renderAnswerInput(Frame frame, Rect area, AppState state) {
-        boolean focused = !state.taskThinking && !state.taskCurrentQuestion.get().isEmpty();
+        boolean focused = !state.task.thinking && !state.task.currentQuestion.get().isEmpty();
         var card = Card.of("your answer").active(focused).build();
         var inner = card.inner(area);
         frame.renderWidget(card, area);
 
         var cursorChar = focused ? "█" : " ";
-        var buffer = state.taskCurrentAnswer;
+        var buffer = state.task.currentAnswer;
         var bufLines = buffer.isEmpty() ? new String[]{""} : buffer.split("\n", -1);
         var lines = new ArrayList<Line>();
         for (int i = 0; i < bufLines.length; i++) {
@@ -194,15 +194,15 @@ public class TaskInterviewView implements View {
     public boolean handleEvent(Event event, TuiRunner runner, AppState state) {
         if (!(event instanceof KeyEvent key)) return false;
 
-        if (state.taskThinking) {
+        if (state.task.thinking) {
             if (key.isKey(KeyCode.ESCAPE)) {
                 state.cancelRequested = true;
-                var fq = state.currentTaskQuestionFuture;
+                var fq = state.task.questionFuture;
                 if (fq != null) fq.cancel(true);
-                var ff = state.currentTaskFinalizeFuture;
+                var ff = state.task.finalizeFuture;
                 if (ff != null) ff.cancel(true);
                 state.resetTaskFlow();
-                state.currentScreen = AppState.Screen.WELCOME;
+                state.nav.currentScreen = AppState.Screen.WELCOME;
                 return true;
             }
             return false;
@@ -210,45 +210,45 @@ public class TaskInterviewView implements View {
 
         if (key.isKey(KeyCode.ESCAPE)) {
             state.cancelRequested = true;
-            var fq = state.currentTaskQuestionFuture;
+            var fq = state.task.questionFuture;
             if (fq != null) fq.cancel(true);
-            var ff = state.currentTaskFinalizeFuture;
+            var ff = state.task.finalizeFuture;
             if (ff != null) ff.cancel(true);
             state.resetTaskFlow();
-            state.currentScreen = AppState.Screen.WELCOME;
+            state.nav.currentScreen = AppState.Screen.WELCOME;
             return true;
         }
         if (key.isKey(KeyCode.F1)) {
-            state.taskReadyToFinalize = true;
-            state.currentScreen = AppState.Screen.TASK_RESULT;
+            state.task.readyToFinalize = true;
+            state.nav.currentScreen = AppState.Screen.TASK_RESULT;
             return true;
         }
-        if (state.taskCurrentQuestion.get().isEmpty()) return false;
+        if (state.task.currentQuestion.get().isEmpty()) return false;
 
         if (key.isKey(KeyCode.TAB)) {
-            var answer = state.taskCurrentAnswer.trim();
+            var answer = state.task.currentAnswer.trim();
             if (answer.isEmpty()) return true;
-            var current = new ArrayList<>(state.taskTurns.get());
-            current.add(new TaskTurn(state.taskCurrentQuestion.get(), answer));
-            state.taskTurns.set(current);
-            state.taskCurrentAnswer = "";
-            state.taskCurrentQuestion.set("");
-            state.taskRound = state.taskRound + 1;
+            var current = new ArrayList<>(state.task.turns.get());
+            current.add(new TaskTurn(state.task.currentQuestion.get(), answer));
+            state.task.turns.set(current);
+            state.task.currentAnswer = "";
+            state.task.currentQuestion.set("");
+            state.task.round = state.task.round + 1;
             return true;
         }
         if (key.isKey(KeyCode.ENTER)) {
-            state.taskCurrentAnswer = state.taskCurrentAnswer + "\n";
+            state.task.currentAnswer = state.task.currentAnswer + "\n";
             return true;
         }
         if (key.isKey(KeyCode.BACKSPACE)) {
-            if (!state.taskCurrentAnswer.isEmpty()) {
-                state.taskCurrentAnswer =
-                    state.taskCurrentAnswer.substring(0, state.taskCurrentAnswer.length() - 1);
+            if (!state.task.currentAnswer.isEmpty()) {
+                state.task.currentAnswer =
+                    state.task.currentAnswer.substring(0, state.task.currentAnswer.length() - 1);
             }
             return true;
         }
         if (key.code() == KeyCode.CHAR) {
-            state.taskCurrentAnswer = state.taskCurrentAnswer + key.character();
+            state.task.currentAnswer = state.task.currentAnswer + key.character();
             return true;
         }
         return false;

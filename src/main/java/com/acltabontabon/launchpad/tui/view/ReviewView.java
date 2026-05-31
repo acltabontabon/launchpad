@@ -52,9 +52,9 @@ public class ReviewView implements View {
         // Layout: save status at the top (latest action), file list / preview
         // in the middle (the real content), warnings at the bottom (persistent
         // reference info, low-attention zone next to the footer).
-        var warnings = state.generationWarnings;
+        var warnings = state.gen.warnings;
         var hasWarnings = warnings != null && !warnings.isEmpty();
-        var status = state.reviewSaveStatus.get();
+        var status = state.gen.saveStatus.get();
         var hasStatus = status != null && !status.isEmpty();
 
         int statusRows = hasStatus ? 2 : 0;
@@ -72,7 +72,7 @@ public class ReviewView implements View {
             )
             .split(area);
 
-        if (hasStatus) renderSaveStatusStrip(frame, rows.get(0), status, state.reviewSaveError);
+        if (hasStatus) renderSaveStatusStrip(frame, rows.get(0), status, state.gen.saveError);
         if (hasWarnings) renderWarningStrip(frame, rows.get(2), warnings);
 
         var bodyArea = rows.get(1);
@@ -99,7 +99,7 @@ public class ReviewView implements View {
     }
 
     private void renderFileList(Frame frame, Rect area, AppState state) {
-        int n = state.generatedFiles.size();
+        int n = state.gen.files.size();
         var card = Card.of("files  " + Icons.SEP + "  " + n).active(true).build();
         var inner = card.inner(area);
         frame.renderWidget(card, area);
@@ -110,7 +110,7 @@ public class ReviewView implements View {
         }
 
         var listState = new ListState();
-        listState.select(state.reviewFileIndex);
+        listState.select(state.gen.fileIndex);
 
         var fileList = ListWidget.builder()
             .items(items)
@@ -122,10 +122,10 @@ public class ReviewView implements View {
     }
 
     private static Line buildFileRow(AppState state, int idx, int width) {
-        var file = state.generatedFiles.get(idx);
-        var plan = idx < state.filePlans.size() ? state.filePlans.get(idx) : null;
+        var file = state.gen.files.get(idx);
+        var plan = idx < state.gen.plans.size() ? state.gen.plans.get(idx) : null;
         var path = file.relativePath();
-        boolean wasSaved = state.savedFileIndices.contains(idx);
+        boolean wasSaved = state.gen.savedFileIndices.contains(idx);
         var chip = wasSaved ? "SAVED" : (plan == null ? "NEW" : plan.statusChip());
         var chipStyle = wasSaved
             ? Styles.successChip()
@@ -145,7 +145,7 @@ public class ReviewView implements View {
     }
 
     private void renderPreview(Frame frame, Rect area, AppState state) {
-        var current = state.currentReviewFile();
+        var current = state.gen.currentFile();
         if (current == null) {
             var card = Card.of("preview").build();
             var inner = card.inner(area);
@@ -156,12 +156,12 @@ public class ReviewView implements View {
             frame.renderWidget(empty, inner);
             return;
         }
-        var plan = state.currentFilePlan();
+        var plan = state.gen.currentPlan();
         if (plan != null && plan.action() == FilePlan.Action.UNREADABLE) {
             renderUnreadable(frame, area, current, plan);
             return;
         }
-        if (state.reviewShowDiff) {
+        if (state.gen.showDiff) {
             // NEW files have no on-disk baseline, so a real diff is empty. Render the
             // whole file as additions instead - useful preview, and the `d` key
             // actually does something visible.
@@ -216,14 +216,12 @@ public class ReviewView implements View {
         var content = current.content() == null ? "" : current.content();
         if (isMarkdownFile(current.relativePath())) {
             // Clamp the scroll offset so PgUp/PgDn can't push the view past the
-            // last line of the document. computeHeight gives total rendered rows
-            // for the given width; anything beyond (total - inner.height()) is
-            // empty space.
+            // last line of the document.
             var probe = MarkdownView.builder().source(content).overflow(Overflow.WRAP_WORD).build();
             int total = probe.computeHeight(inner.width());
             int maxScroll = Math.max(0, total - inner.height());
-            int scroll = Math.min(state.reviewPreviewScroll, maxScroll);
-            state.reviewPreviewScroll = scroll;
+            int scroll = Math.min(state.gen.previewScroll, maxScroll);
+            state.gen.previewScroll = scroll;
             var preview = MarkdownView.builder()
                 .source(content)
                 .overflow(Overflow.WRAP_WORD)
@@ -393,15 +391,13 @@ public class ReviewView implements View {
     @Override
     public boolean handleEvent(Event event, TuiRunner runner, AppState state) {
         if (event instanceof MouseEvent mouse) {
-            // Route scroll-wheel events to the preview pane only. The file list
-            // is keyboard-driven (↑/↓/j/k); leaving scroll for the preview gives
-            // each pane an unambiguous input channel.
+            // Route scroll-wheel events to the preview pane only.
             if (mouse.kind() == dev.tamboui.tui.event.MouseEventKind.SCROLL_DOWN) {
-                state.reviewPreviewScroll = state.reviewPreviewScroll + 3;
+                state.gen.previewScroll = state.gen.previewScroll + 3;
                 return true;
             }
             if (mouse.kind() == dev.tamboui.tui.event.MouseEventKind.SCROLL_UP) {
-                state.reviewPreviewScroll = Math.max(0, state.reviewPreviewScroll - 3);
+                state.gen.previewScroll = Math.max(0, state.gen.previewScroll - 3);
                 return true;
             }
             return false;
@@ -410,15 +406,15 @@ public class ReviewView implements View {
 
         if (key.isKey(KeyCode.ESCAPE)) {
             state.resetReviewFlow();
-            state.currentScreen = AppState.Screen.WELCOME;
+            state.nav.currentScreen = AppState.Screen.WELCOME;
             return true;
         }
         if (key.isKey(KeyCode.DOWN) || key.isChar('j')) {
-            state.nextReviewFile();
+            state.gen.nextFile();
             return true;
         }
         if (key.isKey(KeyCode.UP) || key.isChar('k')) {
-            state.prevReviewFile();
+            state.gen.prevFile();
             return true;
         }
         if (key.isChar('o')) {
@@ -434,18 +430,18 @@ public class ReviewView implements View {
             return true;
         }
         if (key.isChar('d')) {
-            state.reviewShowDiff = !state.reviewShowDiff;
-            state.reviewPreviewScroll = 0;
+            state.gen.showDiff = !state.gen.showDiff;
+            state.gen.previewScroll = 0;
             return true;
         }
         if (key.isKey(KeyCode.PAGE_DOWN)) {
             // Step is clamped at render time, so a generous jump here just gets
             // capped against the document length.
-            state.reviewPreviewScroll = state.reviewPreviewScroll + 10;
+            state.gen.previewScroll = state.gen.previewScroll + 10;
             return true;
         }
         if (key.isKey(KeyCode.PAGE_UP)) {
-            state.reviewPreviewScroll = Math.max(0, state.reviewPreviewScroll - 10);
+            state.gen.previewScroll = Math.max(0, state.gen.previewScroll - 10);
             return true;
         }
         if (key.isChar('s')) {
@@ -456,7 +452,7 @@ public class ReviewView implements View {
     }
 
     private void setActionForCurrent(AppState state, FilePlan.Action action) {
-        var plan = state.currentFilePlan();
+        var plan = state.gen.currentPlan();
         if (plan == null) return;
         // Markers are broken; MERGE would either throw or silently rewrite around
         // the corruption. Force the user to choose OVERWRITE or SKIP.
@@ -479,41 +475,38 @@ public class ReviewView implements View {
     private void applyPlans(AppState state) {
         var root = Path.of(state.projectPath).toAbsolutePath();
         try {
-            var result = writeService.apply(root, state.filePlans);
+            var result = writeService.apply(root, state.gen.plans);
 
-            // Derive the set of indices that were actually written: every plan
-            // that wasn't SKIP and whose relative path doesn't appear in the
-            // error list. WriteService prefixes error strings with the path so
-            // we match by startsWith.
+            // Derive the set of indices that were actually written.
             var failedPaths = new java.util.HashSet<String>();
             for (var err : result.errors()) {
                 int colon = err.indexOf(':');
                 if (colon > 0) failedPaths.add(err.substring(0, colon));
             }
-            for (int i = 0; i < state.filePlans.size(); i++) {
-                var plan = state.filePlans.get(i);
+            for (int i = 0; i < state.gen.plans.size(); i++) {
+                var plan = state.gen.plans.get(i);
                 if (plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.SKIP
                     || plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.CORRUPTED
                     || plan.action() == com.acltabontabon.launchpad.template.FilePlan.Action.UNREADABLE) continue;
                 if (failedPaths.contains(plan.file.relativePath())) continue;
-                state.savedFileIndices.add(i);
+                state.gen.savedFileIndices.add(i);
             }
 
             if (!result.errors().isEmpty()) {
-                state.reviewSaveError = true;
-                state.reviewSaveStatus.set(Icons.CROSS + " " + result.written() + " written, "
+                state.gen.saveError = true;
+                state.gen.saveStatus.set(Icons.CROSS + " " + result.written() + " written, "
                     + result.errors().size() + " error(s): " + result.errors().get(0));
                 return;
             }
-            state.reviewSaveError = false;
+            state.gen.saveError = false;
             var msg = new StringBuilder(Icons.CHECK + " ").append(result.written()).append(" written");
             if (result.skipped() > 0) msg.append(", ").append(result.skipped()).append(" skipped");
             if (result.backedUp() > 0) msg.append(", ").append(result.backedUp())
                 .append(" backed up to ").append(root.relativize(result.backupDir()));
-            state.reviewSaveStatus.set(msg.toString());
+            state.gen.saveStatus.set(msg.toString());
         } catch (Exception e) {
-            state.reviewSaveError = true;
-            state.reviewSaveStatus.set(Icons.CROSS + " Save failed: " + e.getMessage());
+            state.gen.saveError = true;
+            state.gen.saveStatus.set(Icons.CROSS + " Save failed: " + e.getMessage());
         }
     }
 }
