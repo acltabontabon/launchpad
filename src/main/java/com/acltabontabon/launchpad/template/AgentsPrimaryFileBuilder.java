@@ -1,6 +1,8 @@
 package com.acltabontabon.launchpad.template;
 
+import com.acltabontabon.launchpad.model.InferredStandard;
 import com.acltabontabon.launchpad.model.Operations;
+import com.acltabontabon.launchpad.model.Risk;
 import com.acltabontabon.launchpad.model.VirtualProjectContext;
 import com.acltabontabon.launchpad.model.Workflow;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
@@ -68,6 +70,10 @@ class AgentsPrimaryFileBuilder implements PrimaryFileBuilder {
 
                 case OPERATIONS -> appendOperations(sb, model);
 
+                case RISKS -> appendRisks(sb, model);
+
+                case INFERRED_STANDARDS -> appendInferredStandards(sb, model);
+
                 case COMPANION_POINTERS -> {
                     var block = PointerBlocks.renderGeneratedContextBlock(companionPaths);
                     if (!block.isEmpty()) sb.append(block);
@@ -121,6 +127,44 @@ class AgentsPrimaryFileBuilder implements PrimaryFileBuilder {
         for (int i = 0; i < values.size(); i++) {
             if (i > 0) sb.append(", ");
             sb.append("`").append(values.get(i)).append("`");
+        }
+        sb.append("\n");
+    }
+
+    /**
+     * Projects inferred risks from the virtualized model - drift and concerns
+     * Launchpad surfaced from observed consistency (e.g. layering violations).
+     * Rendered only when risks exist, so clean projects stay clean.
+     */
+    private void appendRisks(StringBuilder sb, VirtualProjectContext model) {
+        if (model == null || model.risks() == null || model.risks().isEmpty()) return;
+
+        sb.append("## Risks\n\n");
+        for (Risk risk : model.risks()) {
+            sb.append("- **").append(risk.severity().name().toLowerCase()).append("** [")
+                .append(risk.category()).append("] ").append(risk.description());
+            if (risk.suggestedMitigation() != null && !risk.suggestedMitigation().isBlank()) {
+                sb.append(" _").append(risk.suggestedMitigation()).append("_");
+            }
+            sb.append("\n");
+        }
+        sb.append("\n");
+    }
+
+    /**
+     * Projects guardrails Launchpad suggests codifying - conventions the code
+     * already follows that have no declared rule yet. Clearly labelled as
+     * suggestions so they are never mistaken for enforced standards. Rendered
+     * only when suggestions exist.
+     */
+    private void appendInferredStandards(StringBuilder sb, VirtualProjectContext model) {
+        if (model == null || model.standards() == null
+            || model.standards().inferredStandards().isEmpty()) {
+            return;
+        }
+        sb.append("## Inferred standards (suggested, not enforced)\n\n");
+        for (InferredStandard s : model.standards().inferredStandards()) {
+            sb.append("- ").append(s.proposedRule()).append("\n");
         }
         sb.append("\n");
     }

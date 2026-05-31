@@ -622,7 +622,21 @@ public class LaunchpadRunner implements ApplicationRunner {
                     }
                 );
                 if (state.cancelRequested) return;
-                state.taskFinalPrompt = result.markdown();
+
+                // Ground the synthesised prompt in the persisted project model:
+                // append an Execution context section naming the systems the task
+                // affects, the relevant workflows, and the risks to watch. This
+                // is the cheap, repeatable discovery local synthesis does so the
+                // cloud agent doesn't re-derive it from source. Best-effort - a
+                // missing or stale model just yields no section.
+                var grounded = result.markdown();
+                var grounding = com.acltabontabon.launchpad.task.TaskModelGrounding.ground(
+                    state.taskDescription,
+                    virtualProjectContextStore.load(projectRoot).orElse(null));
+                if (!grounding.markdown().isBlank()) {
+                    grounded = grounded + "\n\n" + grounding.markdown();
+                }
+                state.taskFinalPrompt = grounded;
                 state.taskWarnings = new java.util.ArrayList<>(result.warnings());
 
                 // Save the prompt to disk + an `<!-- interview -->` appendix that
@@ -635,7 +649,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                     var ts = LocalDateTime.now().format(TASK_TS_FMT);
                     var slug = slugify(state.taskDescription);
                     var file = taskDir.resolve(ts + "-" + slug + ".md");
-                    var fullContent = result.markdown() + "\n\n" + renderInterviewAppendix(
+                    var fullContent = grounded + "\n\n" + renderInterviewAppendix(
                         state.taskDescription, state.taskTurns.get(), ts);
                     Files.writeString(file, fullContent);
                     state.taskSavedPath = file.toString();

@@ -5,6 +5,7 @@ import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationPage;
 import com.acltabontabon.launchpad.springboot.maven.MavenProfile;
 import com.acltabontabon.launchpad.springboot.runtime.Endpoint;
+import com.acltabontabon.launchpad.standards.infer.StandardsInferer;
 import com.acltabontabon.launchpad.workflow.WorkflowDiscoverer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -38,6 +39,7 @@ public class ProjectContextAssembler {
     private static final int MAX_SYSTEMS = 12;
 
     private final WorkflowDiscoverer workflowDiscoverer = new WorkflowDiscoverer();
+    private final StandardsInferer standardsInferer = new StandardsInferer();
 
     /**
      * Assemble the virtualized model. {@code packVersion} is the resolved
@@ -59,15 +61,17 @@ public class ProjectContextAssembler {
             contentHash(scan)
         );
 
+        StandardsInferer.Inference inference = standardsInferer.infer(scan);
+
         return new VirtualProjectContext(
             identity,
             architecture(scan),
             systems(scan),
             workflowDiscoverer.discover(scan),
-            StandardsProfile.empty(),  // detected patterns / inferred standards - Phase 3
+            new StandardsProfile(List.of(), inference.patterns(), inference.inferredStandards()),
             operations(scan),
             documentation(scan),
-            List.of()                  // risks - Phase 3
+            inference.risks()
         );
     }
 

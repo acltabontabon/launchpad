@@ -11,6 +11,8 @@ public record AssemblyPlan(List<Section> sections) {
         ENDPOINTS,
         WORKFLOWS,
         OPERATIONS,
+        RISKS,
+        INFERRED_STANDARDS,
         COMPANION_POINTERS,
         BOUNDARIES
     }
@@ -22,6 +24,8 @@ public record AssemblyPlan(List<Section> sections) {
         Section.ENDPOINTS,
         Section.WORKFLOWS,
         Section.OPERATIONS,
+        Section.RISKS,
+        Section.INFERRED_STANDARDS,
         Section.COMPANION_POINTERS,
         Section.BOUNDARIES
     );
