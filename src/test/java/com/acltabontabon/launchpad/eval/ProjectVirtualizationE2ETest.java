@@ -10,7 +10,7 @@ import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import org.junit.jupiter.api.Test;
 
 /**
- * Phase 4 end-to-end proof: scan a real Spring Boot fixture, assemble the
+ * End-to-end proof: scan a real Spring Boot fixture, assemble the
  * virtualized model, and assert the full pipeline (scan -> workflows ->
  * correlation -> standards inference) produces real synthesized content.
  * <p>

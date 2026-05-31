@@ -256,7 +256,7 @@ public class TaskAdvisorService {
      * Java side composes the under-specified aspects most likely relevant given
      * the task wording. A bug-fix task hears about symptoms and reproduction; a
      * REST task hears about resource and callers; an unclassified task gets a
-     * neutral fallback. The prompt picks one of these to probe in PHASE 1.
+     * neutral fallback. The prompt picks one of these to probe first.
      */
     static String discoveryHintFor(String taskDescription, List<TaskTurn> history) {
         var tags = classifyTaskTags(taskDescription, history);

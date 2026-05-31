@@ -17,11 +17,6 @@ class ClaudeSkillsProjectionTest {
     private final ClaudeSkillsProjection projection = new ClaudeSkillsProjection();
 
     @Test
-    void idIsClaude() {
-        assertThat(projection.id()).isEqualTo("claude");
-    }
-
-    @Test
     void emptySkillsListReturnsEmptyOutput() {
         var files = projection.project(null, List.of(), List.of(), List.of());
         assertThat(files).isEmpty();

@@ -18,7 +18,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Deterministic engineering-standards inference (Phase 3 foundation).
+ * Deterministic engineering-standards inference.
  * <p>
  * Where the audit engine checks <em>declared</em> rules, this engine derives
  * <em>de-facto</em> standards from observed consistency: it detects an

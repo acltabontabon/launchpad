@@ -18,8 +18,8 @@ import java.util.Map;
  * Discovers the business and operational workflows a project implements.
  * <p>
  * This is the deterministic foundation of the Project Virtualization Engine's
- * workflow story (Phase 2). It harvests two kinds of trigger signal and turns
- * each into a candidate {@link Workflow}:
+ * workflow story. It harvests two kinds of trigger signal and turns each into
+ * a candidate {@link Workflow}:
  * <ul>
  *   <li>inbound HTTP endpoints (from the scan), grouped one per controller
  *       resource;</li>

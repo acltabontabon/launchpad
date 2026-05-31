@@ -17,13 +17,12 @@ import org.springframework.stereotype.Component;
 
 /**
  * Builds a {@link VirtualProjectContext} from the deterministic scan
- * ({@link ProjectContext}). This is the Phase 1 foundation of the Project
- * Virtualization Engine: it maps the structural facts of a scan into the
+ * ({@link ProjectContext}). It maps the structural facts of a scan into the
  * synthesized model shape, attaching provenance and confidence. Architecture,
  * systems, operations, documentation, and workflows (via
  * {@link WorkflowDiscoverer}) are populated here; the remaining inference-heavy
- * fields (detected patterns, risks) are left empty and filled in by later
- * phases, their containers present so the model shape is stable.
+ * fields (detected patterns, risks) are left empty and filled in later, their
+ * containers present so the model shape is stable.
  * <p>
  * Everything this assembler produces is {@link Confidence#DETERMINISTIC} - no
  * model is involved. The local model only enriches narrative and inference

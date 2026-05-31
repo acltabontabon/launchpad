@@ -7,25 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- **Project Virtualization roadmap:** New `docs/roadmap.adoc` setting the direction toward a Project Virtualization Engine (canonical project model, workflow discovery, standards inference, model-grounded `/new-task`, ninety-day plan).
-- **Virtualized project model:** New `com.acltabontabon.launchpad.model` package with a synthesized `ProjectContext` aggregate (identity, architecture, systems, workflows, standards, operations, documentation, risks) carrying per-field provenance and confidence, built over the deterministic scan.
-- **Model persistence:** Each scan now assembles the virtualized model and writes it to `.launchpad/project-context.json`, so out-of-process consumers can read the synthesized understanding without re-deriving it.
-- **Model-projected `## Operations`:** The primary `AGENTS.md` now projects operational facts (build profiles and health endpoints) from the virtualized model.
-- **Workflow discovery:** A new deterministic discoverer groups inbound HTTP endpoints by controller into business workflows, populating the model's `workflows` and adding a `## Workflows` section to `AGENTS.md` describing what the service does, by resource.
-- **Event and scheduled workflow discovery:** Workflow discovery now also harvests non-HTTP triggers from source - scheduled jobs (`@Scheduled`) and message/event listeners (`@KafkaListener`, `@RabbitListener`, `@JmsListener`, `@EventListener`, ...) - and adds them to the model's `workflows` and the `## Workflows` section alongside inbound HTTP workflows.
-- **Workflow correlation:** Each workflow is now correlated through a deterministic collaborator graph that walks from the handler class to the systems, integrations, and data stores it transitively touches, filling the model's `touchedSystems`/`externalCalls`/`dataEffects` and listing them under each entry in the `## Workflows` section.
-- **`get_workflows` MCP tool:** Connected AI agents can now query a project's discovered workflows (name, type, trigger, steps, and the systems/external calls/data stores each touches) from the persisted project model, instead of re-deriving call flows from source.
-- **Standards inference:** A new deterministic inferer detects the controller-to-service delegation pattern, scores its prevalence across controllers, and surfaces layering drift (a controller reaching a data store with no service in between) as a `Risk`. Detected patterns populate the model's `standards`, and risks populate the model's `risks` and a new `## Risks` section in `AGENTS.md`.
-- **Guardrail suggestion:** When a pattern is prevalent (>= 60% of controllers) but no declared rule covers it, the inferer drafts a proposed rule as an `InferredStandard` for a tech lead to promote into the pack. Suggestions populate the model's `standards` and a new `## Inferred standards (suggested, not enforced)` section in `AGENTS.md`.
-- **`/new-task` model grounding:** Synthesised tasks now end with an `## Execution context` section grounded in the persisted project model - the systems the task affects, the relevant workflows, and a risk watchlist - matched deterministically from the task description so the cloud agent starts with the discovery already done.
-- **Synthesis MCP tools:** New `get_systems`, `get_risks`, and `get_project_overview` tools serve the virtualized model to connected AI agents. `get_project_overview` is the five-minute brief (stack, architecture, subsystems, workflows by type, build commands, top risks, suggested guardrails). `scan_project` now documents when not to call it (prefer a sandbox plus the synthesis tools).
+- **Project Virtualization Roadmap**: New `docs/roadmap.adoc` outlining the Project Virtualization Engine.
+- **Virtualized Project Model**: New `ProjectContext` aggregate representing architecture, workflows, standards, and risks.
+- **Model Persistence**: Each scan now saves the synthesized model to `.launchpad/project-context.json`.
+- **Workflow Discovery**: Deterministic mapping of HTTP, scheduled, and event-driven workflows.
+- **Workflow Correlation**: Links workflows to the systems, integrations, and data stores they touch.
+- **Standards Inference**: Detects architectural patterns and surfaces "layering drift" as risks.
+- **Guardrail Suggestions**: Proposes new standards based on prevalent code patterns.
+- **Model-Grounded `/new-task`**: Synthesized tasks now include execution context from the virtualized model.
+- **New MCP Tools**: Added `get_workflows`, `get_systems`, `get_risks`, and `get_project_overview` for model access.
 
 ### Changed
-- **Context engine projects from the model:** `ContextTemplateEngine` and the primary-file builder now receive the virtualized model and project its synthesized sections into the output, rather than rendering solely from the raw scan.
-- **Build profiles fold into `## Operations`:** The standalone `## Build profiles` section is now projected from the model's operations alongside health endpoints, instead of from a dedicated renderer.
+- **Model-Driven Context**: `AGENTS.md` sections (Operations, Workflows, Risks) are now projected from the virtualized model.
+- **Operations Consolidation**: Merged build profiles and health endpoints into a single `## Operations` section.
+- **Internal Cleanup**: Removed obsolete planning markers and redundant tests.
 
 ### Removed
-- **`BuildProfilesRenderer` and the duplicate build-profile synthesis path:** Build profiles are now projected from the virtualized model, so the standalone renderer and the redundant `SynthesisOutputs.buildProfileBullets` field were removed.
+- **Redundant Renderers**: Removed `BuildProfilesRenderer` and duplicate synthesis paths.
 
 
 ## [0.5.0] - 2026-05-30

@@ -349,7 +349,8 @@ public class LaunchpadRunner implements ApplicationRunner {
 
         var future = backgroundExecutor.submit(() -> {
             try {
-                // Phase 1 - file scan  (eases 5 -> 25 as scanner emits progress)
+                // Eases 5 -> 25 as the scanner emits progress, so the bar
+                // moves smoothly even when chunk counts are bursty.
                 beginPhase(AppState.Phase.SCAN_FILES, 5, "Scanning project files...");
                 state.pushActivity("scan", "walking project tree at " + state.projectPath);
                 if (checkCancelled()) return;
@@ -409,7 +410,6 @@ public class LaunchpadRunner implements ApplicationRunner {
                     return;
                 }
 
-                // Phase 2 - assemble files
                 beginPhase(AppState.Phase.ASSEMBLE, 30, "Assembling output files...");
                 state.pushActivity("assemble", "rendering vendor-neutral output set");
                 if (checkCancelled()) return;
