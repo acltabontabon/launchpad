@@ -219,18 +219,18 @@ public class ProjectionSelectView implements View {
     private void advance(AppState state) {
         if (state.projectionPickerReturnsToSettings) {
             state.projectionPickerReturnsToSettings = false;
-            state.currentScreen = AppState.Screen.SETTINGS;
+            state.nav.currentScreen = AppState.Screen.SETTINGS;
         } else {
-            state.currentScreen = AppState.Screen.SCANNING;
+            state.nav.currentScreen = AppState.Screen.SCANNING;
         }
     }
 
     private void cancel(AppState state) {
         if (state.projectionPickerReturnsToSettings) {
             state.projectionPickerReturnsToSettings = false;
-            state.currentScreen = AppState.Screen.SETTINGS;
+            state.nav.currentScreen = AppState.Screen.SETTINGS;
         } else {
-            state.currentScreen = AppState.Screen.PROJECT_SELECT;
+            state.nav.currentScreen = AppState.Screen.PROJECT_SELECT;
         }
     }
 }

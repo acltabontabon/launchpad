@@ -28,7 +28,7 @@ class AppStateSavedFileIndicesTest {
                 while (System.nanoTime() < deadline) {
                     for (int i = 0; i < writerCount * adds; i++) {
                         // The TUI render loop's only read pattern.
-                        state.savedFileIndices.contains(i);
+                        state.gen.savedFileIndices.contains(i);
                     }
                 }
             } catch (Throwable t) {
@@ -43,7 +43,7 @@ class AppStateSavedFileIndicesTest {
                 try {
                     start.await();
                     for (int i = 0; i < adds; i++) {
-                        state.savedFileIndices.add(base + i);
+                        state.gen.savedFileIndices.add(base + i);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -55,19 +55,19 @@ class AppStateSavedFileIndicesTest {
         pool.shutdown();
         assertThat(pool.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
         assertThat(readerSawTrouble).isFalse();
-        assertThat(state.savedFileIndices).hasSize(writerCount * adds);
+        assertThat(state.gen.savedFileIndices).hasSize(writerCount * adds);
     }
 
     @Test
     void resetScanLatchClearsSavedIndicesWithoutReplacingTheReference() {
         AppState state = new AppState();
-        state.savedFileIndices.add(0);
-        state.savedFileIndices.add(7);
-        var ref = state.savedFileIndices;
+        state.gen.savedFileIndices.add(0);
+        state.gen.savedFileIndices.add(7);
+        var ref = state.gen.savedFileIndices;
 
         state.resetScanLatch();
 
-        assertThat(state.savedFileIndices).isSameAs(ref);
-        assertThat(state.savedFileIndices).isEmpty();
+        assertThat(state.gen.savedFileIndices).isSameAs(ref);
+        assertThat(state.gen.savedFileIndices).isEmpty();
     }
 }

@@ -4,6 +4,7 @@ import com.acltabontabon.launchpad.tui.AppState;
 import com.acltabontabon.launchpad.tui.components.Card;
 import com.acltabontabon.launchpad.tui.components.KeyHint;
 import com.acltabontabon.launchpad.tui.components.Spinner;
+import com.acltabontabon.launchpad.tui.state.ScanState;
 import com.acltabontabon.launchpad.tui.theme.Icons;
 import com.acltabontabon.launchpad.tui.theme.Styles;
 import com.acltabontabon.launchpad.tui.theme.Theme;
@@ -77,27 +78,27 @@ public class ScanProgressView implements View {
     }
 
     private void renderProgressCard(Frame frame, Rect area, AppState state) {
-        var card = Card.of("progress").active(!state.scanComplete).build();
+        var card = Card.of("progress").active(!state.scan.complete).build();
         var inner = card.inner(area);
         frame.renderWidget(card, area);
 
-        var statusGlyph = state.scanComplete
-            ? (state.scanError ? Icons.CROSS : Icons.CHECK)
+        var statusGlyph = state.scan.complete
+            ? (state.scan.error ? Icons.CROSS : Icons.CHECK)
             : Spinner.frame(tick / 3);
-        var statusStyle = state.scanError
+        var statusStyle = state.scan.error
             ? Styles.error()
-            : state.scanComplete ? Styles.success() : Styles.focus();
+            : state.scan.complete ? Styles.success() : Styles.focus();
 
         var lines = new ArrayList<Line>();
         lines.add(blank());
         lines.add(Line.from(
             Span.styled(" " + statusGlyph + "  ", statusStyle),
-            Span.styled(state.scanMessage.get(),
-                state.scanError ? Styles.error() : Styles.body())
+            Span.styled(state.scan.message.get(),
+                state.scan.error ? Styles.error() : Styles.body())
         ));
 
-        var item = state.currentItem.get();
-        if (item != null && !item.isEmpty() && !state.scanComplete) {
+        var item = state.scan.currentItem.get();
+        if (item != null && !item.isEmpty() && !state.scan.complete) {
             lines.add(Line.from(
                 Span.styled("    " + Icons.ARROW_RIGHT + "  ", Styles.dim()),
                 Span.styled(item, Styles.caption())
@@ -115,7 +116,7 @@ public class ScanProgressView implements View {
         // Gauge sits on the last row of the inner area.
         int gaugeY = inner.y() + inner.height() - 1;
         if (gaugeY >= inner.y()) {
-            int progress = state.scanProgress.get();
+            int progress = state.scan.progress.get();
             var gauge = Gauge.builder()
                 .gaugeStyle(Style.create().fg(Theme.brand).bg(Theme.surface))
                 .ratio(Math.max(0, Math.min(100, progress)) / 100.0)
@@ -154,15 +155,15 @@ public class ScanProgressView implements View {
         var inner = card.inner(area);
         frame.renderWidget(card, area);
 
-        var current = state.currentPhase.get();
+        var current = state.scan.currentPhase.get();
         var lines = new ArrayList<Line>();
         lines.add(blank());
         lines.add(phaseRow(AppState.Phase.SCAN_FILES, "Scan project files", current, state));
         lines.add(phaseRow(AppState.Phase.AUDIT_STANDARDS, "Audit against standards", current, state));
-        if (!state.taskFlow) {
+        if (!state.task.flow) {
             lines.add(phaseRow(AppState.Phase.ASSEMBLE, "Assemble output files", current, state));
         }
-        lines.add(phaseRow(AppState.Phase.DONE, state.taskFlow ? "Ready to describe task" : "Done", current, state));
+        lines.add(phaseRow(AppState.Phase.DONE, state.task.flow ? "Ready to describe task" : "Done", current, state));
 
         var paragraph = Paragraph.builder()
             .text(Text.from(lines.toArray(new Line[0])))
@@ -175,17 +176,17 @@ public class ScanProgressView implements View {
         var inner = card.inner(area);
         frame.renderWidget(card, area);
 
-        int rulesEvaluated = state.auditRulesEvaluated.get();
-        int rulesTotal = state.statsRulesTotal.get();
-        int findings = state.auditFindingsCount.get();
-        int must = state.auditMustCount.get();
-        int should = state.auditShouldCount.get();
+        int rulesEvaluated = state.scan.auditRulesEvaluated.get();
+        int rulesTotal = state.scan.statsRulesTotal.get();
+        int findings = state.scan.auditFindingsCount.get();
+        int must = state.scan.auditMustCount.get();
+        int should = state.scan.auditShouldCount.get();
 
         var lines = new ArrayList<Line>();
         lines.add(blank());
-        lines.add(statRow("Files scanned",  String.valueOf(state.statsFilesScanned.get())));
-        lines.add(statRow("Packages",       String.valueOf(state.statsPackages.get())));
-        lines.add(statRow("Dependencies",   String.valueOf(state.statsDependencies.get())));
+        lines.add(statRow("Files scanned",  String.valueOf(state.scan.statsFilesScanned.get())));
+        lines.add(statRow("Packages",       String.valueOf(state.scan.statsPackages.get())));
+        lines.add(statRow("Dependencies",   String.valueOf(state.scan.statsDependencies.get())));
         lines.add(statRow("Rules evaluated",
             rulesTotal > 0 ? rulesEvaluated + " / " + rulesTotal : String.valueOf(rulesEvaluated)));
         lines.add(statRow("Findings",
@@ -208,16 +209,16 @@ public class ScanProgressView implements View {
     }
 
     private void renderActivityCard(Frame frame, Rect area, AppState state) {
-        var events = state.activitySnapshot();
+        var events = state.scan.activitySnapshot();
         // Clamp scroll offset to what's actually available so the viewport
         // can never sit past the oldest event (e.g. when entries get evicted
         // from the ring buffer faster than the user scrolls).
         int maxScroll = Math.max(0, events.size() - 1);
-        if (state.activityScrollOffset > maxScroll) state.activityScrollOffset = maxScroll;
-        boolean pinned = state.activityScrollOffset == 0;
+        if (state.scan.activityScrollOffset > maxScroll) state.scan.activityScrollOffset = maxScroll;
+        boolean pinned = state.scan.activityScrollOffset == 0;
 
         var bottomTitle = pinned ? null
-            : Icons.ARROW_RIGHT + " scrolled  " + state.activityScrollOffset
+            : Icons.ARROW_RIGHT + " scrolled  " + state.scan.activityScrollOffset
                 + " back  ·  end / G to pin";
         var cardBuilder = Card.of("activity");
         if (bottomTitle != null) cardBuilder.bottomTitle(bottomTitle);
@@ -237,7 +238,7 @@ public class ScanProgressView implements View {
 
         // Anchor the bottom of the slice at (size - offset), then take the
         // last `inner.height()` entries before that anchor.
-        int end = events.size() - state.activityScrollOffset;
+        int end = events.size() - state.scan.activityScrollOffset;
         int start = Math.max(0, end - inner.height());
         var slice = events.subList(start, end);
         var lines = new ArrayList<Line>();
@@ -253,7 +254,7 @@ public class ScanProgressView implements View {
         frame.renderWidget(paragraph, inner);
     }
 
-    private static Line activityRow(AppState.ActivityEvent evt, boolean fade) {
+    private static Line activityRow(ScanState.ActivityEvent evt, boolean fade) {
         var ts = LocalTime.ofInstant(Instant.ofEpochMilli(evt.timestampMs()), ZoneId.systemDefault())
             .format(LOG_TS);
 
@@ -303,9 +304,9 @@ public class ScanProgressView implements View {
 
         int rowIdx = row.ordinal();
         int curIdx = current.ordinal();
-        boolean done = state.scanComplete && !state.scanError;
+        boolean done = state.scan.complete && !state.scan.error;
 
-        if (state.scanError && row == current) {
+        if (state.scan.error && row == current) {
             icon = Icons.CROSS;
             style = Styles.error();
         } else if (done || rowIdx < curIdx) {
@@ -324,12 +325,12 @@ public class ScanProgressView implements View {
     }
 
     private String activeSuffix(AppState.Phase phase, AppState state) {
-        long startedAt = state.phaseStartedAtMs.get();
+        long startedAt = state.scan.phaseStartedAtMs.get();
         if (startedAt == 0) return "";
         long elapsedSec = (System.currentTimeMillis() - startedAt) / 1000;
         if (phase == AppState.Phase.AUDIT_STANDARDS) {
-            int rulesEvaluated = state.auditRulesEvaluated.get();
-            int findings = state.auditFindingsCount.get();
+            int rulesEvaluated = state.scan.auditRulesEvaluated.get();
+            int findings = state.scan.auditFindingsCount.get();
             if (rulesEvaluated > 0) {
                 return "    " + elapsedSec + "s  " + Icons.SEP + "  "
                     + rulesEvaluated + " rules, " + findings + " findings";
@@ -339,14 +340,14 @@ public class ScanProgressView implements View {
     }
 
     private String completedSuffix(AppState.Phase phase, AppState state) {
-        if (phase == AppState.Phase.AUDIT_STANDARDS && state.auditRulesEvaluated.get() > 0) {
-            int findings = state.auditFindingsCount.get();
+        if (phase == AppState.Phase.AUDIT_STANDARDS && state.scan.auditRulesEvaluated.get() > 0) {
+            int findings = state.scan.auditFindingsCount.get();
             if (findings == 0) {
                 return "    " + Icons.SEP + "  clean";
             }
             return "    " + Icons.SEP + "  "
-                + state.auditMustCount.get() + " must, "
-                + state.auditShouldCount.get() + " should";
+                + state.scan.auditMustCount.get() + " must, "
+                + state.scan.auditShouldCount.get() + " should";
         }
         return "";
     }
@@ -358,10 +359,10 @@ public class ScanProgressView implements View {
     @Override
     public List<KeyHint> footerHints(AppState state) {
         var hints = new ArrayList<KeyHint>();
-        if (state.scanComplete && !state.scanError) {
+        if (state.scan.complete && !state.scan.error) {
             hints.add(new KeyHint("enter", "review generated files"));
             hints.add(new KeyHint("esc", "back"));
-        } else if (!state.scanComplete) {
+        } else if (!state.scan.complete) {
             hints.add(new KeyHint("esc", "cancel"));
             hints.add(new KeyHint("q", "quit"));
         } else {
@@ -377,29 +378,29 @@ public class ScanProgressView implements View {
 
         // Activity log scrolling. Up/k = back in history, down/j = toward latest.
         // Page keys jump by ~10 entries; end / G snaps back to the latest.
-        int maxScroll = Math.max(0, state.activitySnapshot().size() - 1);
+        int maxScroll = Math.max(0, state.scan.activitySnapshot().size() - 1);
         if (key.isKey(KeyCode.UP) || key.isChar('k')) {
-            state.activityScrollOffset = Math.min(maxScroll, state.activityScrollOffset + 1);
+            state.scan.activityScrollOffset = Math.min(maxScroll, state.scan.activityScrollOffset + 1);
             return true;
         }
         if (key.isKey(KeyCode.DOWN) || key.isChar('j')) {
-            state.activityScrollOffset = Math.max(0, state.activityScrollOffset - 1);
+            state.scan.activityScrollOffset = Math.max(0, state.scan.activityScrollOffset - 1);
             return true;
         }
         if (key.isKey(KeyCode.PAGE_UP)) {
-            state.activityScrollOffset = Math.min(maxScroll, state.activityScrollOffset + 10);
+            state.scan.activityScrollOffset = Math.min(maxScroll, state.scan.activityScrollOffset + 10);
             return true;
         }
         if (key.isKey(KeyCode.PAGE_DOWN)) {
-            state.activityScrollOffset = Math.max(0, state.activityScrollOffset - 10);
+            state.scan.activityScrollOffset = Math.max(0, state.scan.activityScrollOffset - 10);
             return true;
         }
         if (key.isKey(KeyCode.HOME) || key.isChar('g')) {
-            state.activityScrollOffset = maxScroll;
+            state.scan.activityScrollOffset = maxScroll;
             return true;
         }
         if (key.isKey(KeyCode.END) || key.isChar('G')) {
-            state.activityScrollOffset = 0;
+            state.scan.activityScrollOffset = 0;
             return true;
         }
 
@@ -408,20 +409,20 @@ public class ScanProgressView implements View {
                 state.quitConfirmPending = false;
                 return true;
             }
-            if (state.scanComplete) {
+            if (state.scan.complete) {
                 state.resetScanFlow();
-                state.currentScreen = AppState.Screen.WELCOME;
+                state.nav.currentScreen = AppState.Screen.WELCOME;
                 return true;
             }
             state.cancelRequested = true;
-            var f = state.currentScanFuture;
+            var f = state.scan.future;
             if (f != null) f.cancel(true);
-            state.scanMessage.set("Cancelling...");
+            state.scan.message.set("Cancelling...");
             return true;
         }
 
-        if (state.scanComplete && !state.scanError && key.isKey(KeyCode.ENTER)) {
-            state.currentScreen = AppState.Screen.REVIEW;
+        if (state.scan.complete && !state.scan.error && key.isKey(KeyCode.ENTER)) {
+            state.nav.currentScreen = AppState.Screen.REVIEW;
             return true;
         }
         return false;

@@ -120,11 +120,11 @@ public class LaunchpadRunner implements ApplicationRunner {
      */
     private void cancelAllInFlightWork() {
         state.cancelRequested = true;
-        var scan = state.currentScanFuture;
+        var scan = state.scan.future;
         if (scan != null) scan.cancel(true);
-        var question = state.currentTaskQuestionFuture;
+        var question = state.task.questionFuture;
         if (question != null) question.cancel(true);
-        var finalize = state.currentTaskFinalizeFuture;
+        var finalize = state.task.finalizeFuture;
         if (finalize != null) finalize.cancel(true);
     }
 
@@ -231,12 +231,6 @@ public class LaunchpadRunner implements ApplicationRunner {
         }
 
         // Global Ctrl-C: prompt for confirmation, then quit on a second press.
-        // Mirrors Claude CLI's "press Ctrl-C again to exit" guard - prevents
-        // accidental exits from a fat-fingered terminal shortcut and works
-        // uniformly across text-input screens where 'q' is a content character.
-        // The second press cancels any in-flight background work before
-        // quitting so partial state unwinds cleanly instead of relying on
-        // executor shutdownNow to interrupt blocked HTTP.
         if (event instanceof KeyEvent key && key.isCtrlC()) {
             if (state.quitConfirmPending) {
                 cancelAllInFlightWork();
@@ -248,21 +242,16 @@ public class LaunchpadRunner implements ApplicationRunner {
         }
 
         // Global quit - q from any screen except text-input screens.
-        // WELCOME accepts q as quit when the palette is closed; once the user has
-        // opened the palette by typing '/', q is a filter character (e.g. /quit).
-        // TASK_INPUT / TASK_INTERVIEW accept text (description, answers); TASK_RESULT
-        // uses q as "back to welcome" instead of quit so the user can start another task.
-        // During an active scan, the first q shows a confirmation banner; a second q quits.
         if (event instanceof KeyEvent key
                 && key.isChar('q')
-                && state.currentScreen != AppState.Screen.PROJECT_SELECT
-                && state.currentScreen != AppState.Screen.SETTINGS
-                && state.currentScreen != AppState.Screen.TASK_INPUT
-                && state.currentScreen != AppState.Screen.TASK_INTERVIEW
-                && state.currentScreen != AppState.Screen.TASK_RESULT
-                && !(state.currentScreen == AppState.Screen.WELCOME
-                     && state.commandInput.startsWith("/"))) {
-            if (state.currentScreen == AppState.Screen.SCANNING && !state.scanComplete) {
+                && state.nav.currentScreen != AppState.Screen.PROJECT_SELECT
+                && state.nav.currentScreen != AppState.Screen.SETTINGS
+                && state.nav.currentScreen != AppState.Screen.TASK_INPUT
+                && state.nav.currentScreen != AppState.Screen.TASK_INTERVIEW
+                && state.nav.currentScreen != AppState.Screen.TASK_RESULT
+                && !(state.nav.currentScreen == AppState.Screen.WELCOME
+                     && state.nav.commandInput.startsWith("/"))) {
+            if (state.nav.currentScreen == AppState.Screen.SCANNING && !state.scan.complete) {
                 if (state.quitConfirmPending) {
                     cancelAllInFlightWork();
                     runner.quit();
@@ -276,12 +265,8 @@ public class LaunchpadRunner implements ApplicationRunner {
             return true;
         }
 
-        // Any key press that is neither a quit attempt (Ctrl-C / eligible q)
-        // nor a tick dismisses a pending quit confirmation. The warning
-        // signals "you almost exited"; once the user starts doing something
-        // else it should clear so it does not linger across unrelated input.
-        // ESC also clears it via ScanProgressView's existing handler when on
-        // the scan screen.
+        // Any key press that is neither a quit attempt nor a tick dismisses a
+        // pending quit confirmation.
         if (event instanceof KeyEvent dismissKey
                 && state.quitConfirmPending
                 && !dismissKey.isCtrlC()) {
@@ -340,41 +325,41 @@ public class LaunchpadRunner implements ApplicationRunner {
     /**
      * Triggered once when the user enters the SCANNING screen.
      * Runs the full pipeline in a background thread, updating AppState for the TUI to read.
-     * When {@code state.taskFlow} is true, only the scan phase runs and the next screen
+     * When {@code state.task.flow} is true, only the scan phase runs and the next screen
      * is TASK_INPUT - the /new-task flow doesn't generate context files.
      */
     private void triggerScanIfNeeded() {
-        if (state.currentScreen != AppState.Screen.SCANNING || state.scanStarted) return;
-        state.scanStarted = true;
+        if (state.nav.currentScreen != AppState.Screen.SCANNING || state.scan.started) return;
+        state.scan.started = true;
 
         var future = backgroundExecutor.submit(() -> {
             try {
                 // Eases 5 -> 25 as the scanner emits progress, so the bar
                 // moves smoothly even when chunk counts are bursty.
                 beginPhase(AppState.Phase.SCAN_FILES, 5, "Scanning project files...");
-                state.pushActivity("scan", "walking project tree at " + state.projectPath);
+                state.scan.pushActivity("scan", "walking project tree at " + state.projectPath);
                 if (checkCancelled()) return;
                 var ctx = scanner.scan(state.projectPath, msg -> {
                     if (state.cancelRequested) throw new CancelledException();
-                    state.scanMessage.set(msg);
-                    state.currentItem.set(msg);
-                    int n = state.streamedChunks.incrementAndGet();
+                    state.scan.message.set(msg);
+                    state.scan.currentItem.set(msg);
+                    int n = state.scan.streamedChunks.incrementAndGet();
                     int p = 5 + (int) (20 * (1 - Math.exp(-n / 30.0)));
-                    state.scanProgress.set(Math.min(25, p));
+                    state.scan.progress.set(Math.min(25, p));
                 });
 
-                state.statsFilesScanned.set(ctx.sourceFiles() == null ? 0 : ctx.sourceFiles().size());
-                state.statsPackages.set(ctx.packageSummaries() == null ? 0 : ctx.packageSummaries().size());
-                state.statsDependencies.set(ctx.dependencies() == null ? 0 : ctx.dependencies().size());
-                state.currentItem.set("");
+                state.scan.statsFilesScanned.set(ctx.sourceFiles() == null ? 0 : ctx.sourceFiles().size());
+                state.scan.statsPackages.set(ctx.packageSummaries() == null ? 0 : ctx.packageSummaries().size());
+                state.scan.statsDependencies.set(ctx.dependencies() == null ? 0 : ctx.dependencies().size());
+                state.scan.currentItem.set("");
                 var stack = ctx.stack();
                 var stackLabel = stack == null ? "unknown stack"
                     : (stack.framework() == null ? stack.language() : stack.framework())
                         + (stack.buildTool() == null ? "" : "  " + "·" + "  " + stack.buildTool());
-                state.pushActivity("scan", "scanned " + state.statsFilesScanned.get()
-                    + " files  " + "·" + "  " + state.statsPackages.get() + " packages  "
-                    + "·" + "  " + state.statsDependencies.get() + " deps", "success");
-                state.pushActivity("scan", "detected " + stackLabel);
+                state.scan.pushActivity("scan", "scanned " + state.scan.statsFilesScanned.get()
+                    + " files  " + "·" + "  " + state.scan.statsPackages.get() + " packages  "
+                    + "·" + "  " + state.scan.statsDependencies.get() + " deps", "success");
+                state.scan.pushActivity("scan", "detected " + stackLabel);
 
                 if (checkCancelled()) return;
                 var projectRootForAudit = Path.of(state.projectPath).toAbsolutePath();
@@ -399,58 +384,58 @@ public class LaunchpadRunner implements ApplicationRunner {
 
                 if (checkCancelled()) return;
 
-                if (state.taskFlow) {
+                if (state.task.flow) {
                     // /new-task: scan-only. Stash the context and jump straight to the
                     // task input screen. No LLM summary / target / assemble phases here -
                     // those are for /init only.
-                    state.taskProjectContext = ctx;
+                    state.task.projectContext = ctx;
                     beginPhase(AppState.Phase.DONE, 100, "Project scanned. Describe your task next.");
-                    state.scanComplete = true;
-                    state.currentScreen = AppState.Screen.TASK_INPUT;
+                    state.scan.complete = true;
+                    state.nav.currentScreen = AppState.Screen.TASK_INPUT;
                     return;
                 }
 
                 beginPhase(AppState.Phase.ASSEMBLE, 30, "Assembling output files...");
-                state.pushActivity("assemble", "rendering vendor-neutral output set");
+                state.scan.pushActivity("assemble", "rendering vendor-neutral output set");
                 if (checkCancelled()) return;
                 var files = templateEngine.buildFiles(ctx, model);
-                state.generatedFiles = files;
+                state.gen.files = files;
                 var projectRoot = java.nio.file.Path.of(state.projectPath).toAbsolutePath();
                 var plans = new java.util.ArrayList<com.acltabontabon.launchpad.template.FilePlan>();
                 for (var f : files) plans.add(com.acltabontabon.launchpad.template.FilePlan.compute(f, projectRoot));
-                state.filePlans = plans;
+                state.gen.plans = plans;
                 detectLegacyPrimaryFiles(projectRoot, files);
-                state.pushActivity("assemble", "prepared " + files.size() + " files for review", "success");
+                state.scan.pushActivity("assemble", "prepared " + files.size() + " files for review", "success");
 
                 // Done
                 beginPhase(AppState.Phase.DONE, 100, "Done! " + files.size() + " files generated.");
-                state.pushActivity("done", "press enter to review changes", "success");
-                state.scanComplete = true;
+                state.scan.pushActivity("done", "press enter to review changes", "success");
+                state.scan.complete = true;
 
             } catch (CancelledException | java.util.concurrent.CancellationException ignored) {
                 // User-requested cancel - navigate back to Welcome cleanly.
                 state.resetScanFlow();
-                state.currentScreen = AppState.Screen.WELCOME;
+                state.nav.currentScreen = AppState.Screen.WELCOME;
             } catch (Exception e) {
                 // Unwrap CancelledException from IOException (Files.walkFileTree wraps it).
                 if (isCancelCause(e)) {
                     state.resetScanFlow();
-                    state.currentScreen = AppState.Screen.WELCOME;
+                    state.nav.currentScreen = AppState.Screen.WELCOME;
                     return;
                 }
-                state.scanError = true;
-                state.scanMessage.set(buildLlmErrorMessage("generation", e));
-                state.scanComplete = true;
+                state.scan.error = true;
+                state.scan.message.set(buildLlmErrorMessage("generation", e));
+                state.scan.complete = true;
             }
         });
-        state.currentScanFuture = future;
+        state.scan.future = future;
     }
 
     /**
      * If the project already contains legacy primary-instruction files
      * (CLAUDE.md, .cursorrules) that Launchpad no longer regenerates, surface
      * a warning so the user knows to delete or migrate them. The note lands
-     * in the WARN log and in AppState.generationWarnings so the Review screen
+     * in the WARN log and in the generation warnings so the Review screen
      * banner picks it up. The generated AGENTS.md body itself stays clean.
      */
     private void detectLegacyPrimaryFiles(Path projectRoot,
@@ -458,9 +443,9 @@ public class LaunchpadRunner implements ApplicationRunner {
         LegacyPrimaryFileDetector.detect(projectRoot, files)
             .ifPresent(msg -> {
                 org.slf4j.LoggerFactory.getLogger(LaunchpadRunner.class).warn(msg);
-                var merged = new java.util.ArrayList<>(state.generationWarnings);
+                var merged = new java.util.ArrayList<>(state.gen.warnings);
                 merged.add(msg);
-                state.generationWarnings = merged;
+                state.gen.warnings = merged;
             });
     }
 
@@ -473,47 +458,47 @@ public class LaunchpadRunner implements ApplicationRunner {
      * the primary stop signal is the model returning {@link TaskAdvisorService#DONE_TOKEN}.
      */
     private void triggerTaskQuestionIfNeeded() {
-        if (state.currentScreen != AppState.Screen.TASK_INTERVIEW) return;
-        if (state.taskThinking || state.taskReadyToFinalize) return;
-        if (!state.taskCurrentQuestion.get().isEmpty()) return;
-        if (state.taskProjectContext == null) return;
+        if (state.nav.currentScreen != AppState.Screen.TASK_INTERVIEW) return;
+        if (state.task.thinking || state.task.readyToFinalize) return;
+        if (!state.task.currentQuestion.get().isEmpty()) return;
+        if (state.task.projectContext == null) return;
 
-        if (state.taskRound >= TASK_RUNAWAY_CAP) {
-            state.taskReadyToFinalize = true;
-            state.currentScreen = AppState.Screen.TASK_RESULT;
+        if (state.task.round >= TASK_RUNAWAY_CAP) {
+            state.task.readyToFinalize = true;
+            state.nav.currentScreen = AppState.Screen.TASK_RESULT;
             return;
         }
 
-        state.taskThinking = true;
-        state.taskError = false;
-        state.taskOpStartedAtMs = System.currentTimeMillis();
-        state.taskStatus.set("asking the local model for the next clarifying question...");
+        state.task.thinking = true;
+        state.task.error = false;
+        state.task.opStartedAtMs = System.currentTimeMillis();
+        state.task.status.set("asking the local model for the next clarifying question...");
 
         var taskQFuture = backgroundExecutor.submit(() -> {
             try {
                 var projectRoot = Path.of(state.projectPath).toAbsolutePath();
                 ensureStandardsCached(projectRoot);
                 if (state.cancelRequested) return;
-                var rules = state.taskRelevantRules;
-                var skills = state.taskRelevantSkills;
-                var checklists = state.taskRelevantChecklists;
+                var rules = state.task.relevantRules;
+                var skills = state.task.relevantSkills;
+                var checklists = state.task.relevantChecklists;
 
                 // If the project has no relevant standards at all, there's nothing
                 // worth interviewing about - skip straight to finalize. The synthesised
                 // prompt will still benefit from the codebase scan in the Constraints
                 // section; the interview is purely a standards-driven phase.
                 boolean noStandards = rules.isEmpty() && skills.isEmpty() && checklists.isEmpty();
-                if (noStandards && state.taskRound == 0) {
-                    state.taskStatus.set("no engineering standards found - skipping interview");
-                    state.taskReadyToFinalize = true;
-                    state.currentScreen = AppState.Screen.TASK_RESULT;
+                if (noStandards && state.task.round == 0) {
+                    state.task.status.set("no engineering standards found - skipping interview");
+                    state.task.readyToFinalize = true;
+                    state.nav.currentScreen = AppState.Screen.TASK_RESULT;
                     return;
                 }
 
                 var response = taskAdvisor.askNextQuestion(
-                    state.taskProjectContext.stack(),
-                    state.taskDescription,
-                    state.taskTurns.get(),
+                    state.task.projectContext.stack(),
+                    state.task.description,
+                    state.task.turns.get(),
                     rules,
                     skills,
                     checklists
@@ -529,64 +514,64 @@ public class LaunchpadRunner implements ApplicationRunner {
                     // by CRITIC_CAP so a stubborn critic can't loop forever,
                     // and skipped below MIN_ROUNDS_BEFORE_CRITIC since the
                     // existing must-rule override handles the early-DONE case.
-                    if (state.taskCritiqueCount < CRITIC_CAP
-                            && state.taskTurns.get().size() >= MIN_ROUNDS_BEFORE_CRITIC) {
-                        state.taskStatus.set("checking whether the local model has enough context...");
+                    if (state.task.critiqueCount < CRITIC_CAP
+                            && state.task.turns.get().size() >= MIN_ROUNDS_BEFORE_CRITIC) {
+                        state.task.status.set("checking whether the local model has enough context...");
                         var verdict = taskAdvisor.critiqueReadiness(
-                            state.taskProjectContext.stack(),
-                            state.taskDescription,
-                            state.taskTurns.get(),
+                            state.task.projectContext.stack(),
+                            state.task.description,
+                            state.task.turns.get(),
                             rules, skills, checklists);
                         if (state.cancelRequested) return;
                         if (!verdict.equals(TaskAdvisorService.READY_TOKEN)) {
-                            state.taskCritiqueCount++;
-                            state.taskCurrentQuestion.set(verdict);
-                            state.taskStatus.set("");
+                            state.task.critiqueCount++;
+                            state.task.currentQuestion.set(verdict);
+                            state.task.status.set("");
                             return;
                         }
                     }
-                    state.taskReadyToFinalize = true;
-                    state.currentScreen = AppState.Screen.TASK_RESULT;
+                    state.task.readyToFinalize = true;
+                    state.nav.currentScreen = AppState.Screen.TASK_RESULT;
                 } else {
-                    state.taskCurrentQuestion.set(response);
+                    state.task.currentQuestion.set(response);
                 }
-                state.taskStatus.set("");
+                state.task.status.set("");
             } catch (Exception e) {
                 if (state.cancelRequested) return;
-                state.taskError = true;
-                state.taskStatus.set(buildLlmErrorMessage("interview", e));
+                state.task.error = true;
+                state.task.status.set(buildLlmErrorMessage("interview", e));
             } finally {
-                state.taskThinking = false;
-                state.taskOpStartedAtMs = 0L;
+                state.task.thinking = false;
+                state.task.opStartedAtMs = 0L;
             }
         });
-        state.currentTaskQuestionFuture = taskQFuture;
+        state.task.questionFuture = taskQFuture;
     }
 
     /**
-     * Load + scope-filter standards once per task and stash the result on
-     * AppState. Subsequent interview turns reuse the cached lists instead of
+     * Load + scope-filter standards once per task and stash the result on the
+     * task state. Subsequent interview turns reuse the cached lists instead of
      * re-reading the YAML pack and re-filtering on every dispatch. Re-derived
      * when the cache is null - that happens on task entry, after resetTaskFlow,
      * or after resetTaskForReuse (because new task tags / opt-outs change the
      * scope-filter result).
      */
     private void ensureStandardsCached(Path projectRoot) {
-        if (state.taskRelevantRules != null
-                && state.taskRelevantSkills != null
-                && state.taskRelevantChecklists != null) {
+        if (state.task.relevantRules != null
+                && state.task.relevantSkills != null
+                && state.task.relevantChecklists != null) {
             return;
         }
         var allRules = standardsLoader.loadRules(projectRoot);
         var allSkills = standardsLoader.loadSkills(projectRoot);
         var allChecklists = standardsLoader.loadChecklists(projectRoot);
-        var stack = state.taskProjectContext == null ? null : state.taskProjectContext.stack();
+        var stack = state.task.projectContext == null ? null : state.task.projectContext.stack();
         var relevant = TaskAdvisorService.selectRelevantStandards(
-            stack, state.taskDescription, state.taskTurns.get(),
+            stack, state.task.description, state.task.turns.get(),
             allRules, allSkills, allChecklists);
-        state.taskRelevantRules = relevant.rules();
-        state.taskRelevantSkills = relevant.skills();
-        state.taskRelevantChecklists = relevant.checklists();
+        state.task.relevantRules = relevant.rules();
+        state.task.relevantSkills = relevant.skills();
+        state.task.relevantChecklists = relevant.checklists();
     }
 
     /**
@@ -595,14 +580,14 @@ public class LaunchpadRunner implements ApplicationRunner {
      * {@code <projectRoot>/.launchpad/tasks/<ts>-<slug>.md}.
      */
     private void triggerTaskFinalizeIfNeeded() {
-        if (state.currentScreen != AppState.Screen.TASK_RESULT) return;
-        if (state.taskThinking || !state.taskFinalPrompt.isEmpty()) return;
-        if (state.taskProjectContext == null) return;
+        if (state.nav.currentScreen != AppState.Screen.TASK_RESULT) return;
+        if (state.task.thinking || !state.task.finalPrompt.isEmpty()) return;
+        if (state.task.projectContext == null) return;
 
-        state.taskThinking = true;
-        state.taskError = false;
-        state.taskOpStartedAtMs = System.currentTimeMillis();
-        state.taskStatus.set("synthesising the prompt from the local model...");
+        state.task.thinking = true;
+        state.task.error = false;
+        state.task.opStartedAtMs = System.currentTimeMillis();
+        state.task.status.set("synthesising the prompt from the local model...");
 
         var taskFFuture = backgroundExecutor.submit(() -> {
             try {
@@ -610,15 +595,15 @@ public class LaunchpadRunner implements ApplicationRunner {
                 ensureStandardsCached(projectRoot);
                 if (state.cancelRequested) return;
                 var result = taskAdvisor.synthesise(
-                    state.taskProjectContext,
-                    state.taskDescription,
-                    state.taskTurns.get(),
-                    state.taskRelevantRules,
-                    state.taskRelevantSkills,
-                    state.taskRelevantChecklists,
+                    state.task.projectContext,
+                    state.task.description,
+                    state.task.turns.get(),
+                    state.task.relevantRules,
+                    state.task.relevantSkills,
+                    state.task.relevantChecklists,
                     chunk -> {
                         if (state.cancelRequested) throw new CancelledException();
-                        state.taskFinalPrompt = chunk.isEmpty() ? "" : chunk;
+                        state.task.finalPrompt = chunk.isEmpty() ? "" : chunk;
                     }
                 );
                 if (state.cancelRequested) return;
@@ -631,13 +616,13 @@ public class LaunchpadRunner implements ApplicationRunner {
                 // missing or stale model just yields no section.
                 var grounded = result.markdown();
                 var grounding = com.acltabontabon.launchpad.task.TaskModelGrounding.ground(
-                    state.taskDescription,
+                    state.task.description,
                     virtualProjectContextStore.load(projectRoot).orElse(null));
                 if (!grounding.markdown().isBlank()) {
                     grounded = grounded + "\n\n" + grounding.markdown();
                 }
-                state.taskFinalPrompt = grounded;
-                state.taskWarnings = new java.util.ArrayList<>(result.warnings());
+                state.task.finalPrompt = grounded;
+                state.task.warnings = new java.util.ArrayList<>(result.warnings());
 
                 // Save the prompt to disk + an `<!-- interview -->` appendix that
                 // captures the raw task description and Q/A transcript so the
@@ -647,30 +632,30 @@ public class LaunchpadRunner implements ApplicationRunner {
                     var taskDir = projectRoot.resolve(".launchpad").resolve("tasks");
                     Files.createDirectories(taskDir);
                     var ts = LocalDateTime.now().format(TASK_TS_FMT);
-                    var slug = slugify(state.taskDescription);
+                    var slug = slugify(state.task.description);
                     var file = taskDir.resolve(ts + "-" + slug + ".md");
                     var fullContent = grounded + "\n\n" + renderInterviewAppendix(
-                        state.taskDescription, state.taskTurns.get(), ts);
+                        state.task.description, state.task.turns.get(), ts);
                     Files.writeString(file, fullContent);
-                    state.taskSavedPath = file.toString();
-                    state.taskStatus.set("");
+                    state.task.savedPath = file.toString();
+                    state.task.status.set("");
                 } catch (Exception writeFail) {
-                    state.taskStatus.set("displayed but could not save: " + writeFail.getMessage());
+                    state.task.status.set("displayed but could not save: " + writeFail.getMessage());
                 }
             } catch (CancelledException | java.util.concurrent.CancellationException ignored) {
                 // User-requested cancel - the view already navigated to Welcome.
             } catch (Exception e) {
                 if (state.cancelRequested) return;
-                state.taskError = true;
-                state.taskStatus.set(buildLlmErrorMessage("synthesise", e));
+                state.task.error = true;
+                state.task.status.set(buildLlmErrorMessage("synthesise", e));
                 // Clear any partial stream so the user sees the error instead of a half-prompt.
-                state.taskFinalPrompt = "";
+                state.task.finalPrompt = "";
             } finally {
-                state.taskThinking = false;
-                state.taskOpStartedAtMs = 0L;
+                state.task.thinking = false;
+                state.task.opStartedAtMs = 0L;
             }
         });
-        state.currentTaskFinalizeFuture = taskFFuture;
+        state.task.finalizeFuture = taskFFuture;
     }
 
     /**
@@ -710,9 +695,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     /**
      * Builds the HTML-commented interview appendix appended to every saved task
      * file. Captures the raw task description + Q/A transcript so the source
-     * of the synthesised prompt is traceable later. Markdown comment delimiters
-     * (`<!-- ... -->`) keep this invisible when the file is rendered, while
-     * still being plain text the user can read in any editor.
+     * of the synthesised prompt is traceable later.
      */
     private static String renderInterviewAppendix(String taskDescription,
             java.util.List<com.acltabontabon.launchpad.task.TaskTurn> turns, String timestamp) {
@@ -747,9 +730,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     /**
      * Enroll the project in the user-global registry so MCP clients can address
      * it by short name across sessions. Registry write failures are not fatal -
-     * the scan / audit / generation flow continues regardless. The message is
-     * swallowed quietly because the user did not explicitly ask to register;
-     * the registry is a side-effect of normal use.
+     * the scan / audit / generation flow continues regardless.
      */
     private void registerProjectQuietly(Path projectRoot, StackProfile stack) {
         try {
@@ -771,52 +752,49 @@ public class LaunchpadRunner implements ApplicationRunner {
 
     /**
      * Runs the audit between scan and generation. Silently no-ops when no rules
-     * in the active standards pack carry a {@code check} block - keeps existing
-     * setups (no audit defined) unchanged. The two output files
-     * ({@code .launchpad/audit.md}, {@code .launchpad/audit.sarif.json}) are
-     * written for downstream tooling (TUI, MCP server, IDE SARIF viewers).
+     * in the active standards pack carry a {@code check} block.
      */
     private void runAuditPhase(com.acltabontabon.launchpad.scanner.ProjectContext ctx, Path projectRoot) {
         try {
             beginPhase(AppState.Phase.AUDIT_STANDARDS, 26, "Auditing project against standards...");
             var lastFindings = new java.util.concurrent.atomic.AtomicInteger(0);
             var result = auditService.run(ctx, projectRoot, progress -> {
-                state.scanMessage.set("Auditing: " + progress.ruleId()
+                state.scan.message.set("Auditing: " + progress.ruleId()
                     + " (" + progress.index() + "/" + progress.total() + ")");
-                state.currentItem.set("rule " + progress.index() + " of " + progress.total()
+                state.scan.currentItem.set("rule " + progress.index() + " of " + progress.total()
                     + "  ·  " + progress.ruleId());
-                state.statsRulesTotal.set(progress.total());
+                state.scan.statsRulesTotal.set(progress.total());
                 // Smooth the gauge from 26 -> 60 across the rules.
                 int span = 60 - 26;
                 int p = 26 + (int) (span * (progress.index() / (double) Math.max(1, progress.total())));
-                state.scanProgress.set(Math.min(60, p));
-                state.pushActivity("audit", "checking " + progress.ruleId()
+                state.scan.progress.set(Math.min(60, p));
+                state.scan.pushActivity("audit", "checking " + progress.ruleId()
                     + "  (" + progress.index() + "/" + progress.total() + ")");
-                lastFindings.set(state.auditFindingsCount.get());
+                lastFindings.set(state.scan.auditFindingsCount.get());
             });
-            state.auditRulesEvaluated.set(result.rulesAudited());
-            state.auditFindingsCount.set(result.findings().size());
+            state.scan.auditRulesEvaluated.set(result.rulesAudited());
+            state.scan.auditFindingsCount.set(result.findings().size());
             var counts = result.countsBySeverity();
-            state.auditMustCount.set(counts.getOrDefault("must", 0L).intValue()
+            state.scan.auditMustCount.set(counts.getOrDefault("must", 0L).intValue()
                 + counts.getOrDefault("never", 0L).intValue());
-            state.auditShouldCount.set(counts.getOrDefault("should", 0L).intValue());
-            state.auditMarkdownPath = result.markdownPath() == null ? null : result.markdownPath().toString();
-            state.auditSarifPath = result.sarifPath() == null ? null : result.sarifPath().toString();
-            state.currentItem.set("");
+            state.scan.auditShouldCount.set(counts.getOrDefault("should", 0L).intValue());
+            state.scan.auditMarkdownPath = result.markdownPath() == null ? null : result.markdownPath().toString();
+            state.scan.auditSarifPath = result.sarifPath() == null ? null : result.sarifPath().toString();
+            state.scan.currentItem.set("");
             int findings = result.findings().size();
             if (findings == 0 && result.rulesAudited() > 0) {
-                state.pushActivity("audit",
+                state.scan.pushActivity("audit",
                     "all " + result.rulesAudited() + " rules clean", "success");
             } else if (findings > 0) {
-                state.pushActivity("audit",
+                state.scan.pushActivity("audit",
                     findings + " findings  ·  "
-                        + state.auditMustCount.get() + " must, "
-                        + state.auditShouldCount.get() + " should",
+                        + state.scan.auditMustCount.get() + " must, "
+                        + state.scan.auditShouldCount.get() + " should",
                     "finding");
             }
         } catch (RuntimeException e) {
-            state.scanMessage.set("Audit skipped: " + e.getMessage());
-            state.pushActivity("audit", "skipped: " + e.getMessage(), "warn");
+            state.scan.message.set("Audit skipped: " + e.getMessage());
+            state.scan.pushActivity("audit", "skipped: " + e.getMessage(), "warn");
         }
     }
 
@@ -827,13 +805,12 @@ public class LaunchpadRunner implements ApplicationRunner {
     private boolean checkCancelled() {
         if (!state.cancelRequested) return false;
         state.resetScanFlow();
-        state.currentScreen = AppState.Screen.WELCOME;
+        state.nav.currentScreen = AppState.Screen.WELCOME;
         return true;
     }
 
     /**
      * Returns true when any cause in the exception chain is a {@link CancelledException}.
-     * Used to detect cancellation wrapped by {@code Files.walkFileTree}'s IOException.
      */
     private static boolean isCancelCause(Throwable e) {
         for (var t = e; t != null; t = t.getCause()) {
@@ -844,21 +821,21 @@ public class LaunchpadRunner implements ApplicationRunner {
     }
 
     private void beginPhase(AppState.Phase phase, int baseProgress, String message) {
-        state.currentPhase.set(phase);
-        state.scanProgress.set(baseProgress);
-        state.scanMessage.set(message);
-        state.streamedChunks.set(0);
-        state.streamTail.set("");
-        state.phaseStartedAtMs.set(System.currentTimeMillis());
+        state.scan.currentPhase.set(phase);
+        state.scan.progress.set(baseProgress);
+        state.scan.message.set(message);
+        state.scan.streamedChunks.set(0);
+        state.scan.streamTail.set("");
+        state.scan.phaseStartedAtMs.set(System.currentTimeMillis());
     }
 
     private void onAiChunk(String chunk, int from, int to) {
-        int n = state.streamedChunks.incrementAndGet();
+        int n = state.scan.streamedChunks.incrementAndGet();
         int range = to - from;
         // diminishing returns: approaches `to` asymptotically so the bar always advances
         int p = from + (int) (range * (1 - Math.exp(-n / 80.0)));
-        state.scanProgress.set(Math.min(to, p));
-        state.streamTail.set(appendTail(state.streamTail.get(), chunk, 120));
+        state.scan.progress.set(Math.min(to, p));
+        state.scan.streamTail.set(appendTail(state.scan.streamTail.get(), chunk, 120));
     }
 
     private static String appendTail(String prev, String chunk, int max) {
@@ -867,7 +844,7 @@ public class LaunchpadRunner implements ApplicationRunner {
     }
 
     private View currentView() {
-        return switch (state.currentScreen) {
+        return switch (state.nav.currentScreen) {
             case WELCOME           -> welcomeView;
             case PROJECT_SELECT    -> projectSelectView;
             case PROJECTION_SELECT -> projectionSelectView;

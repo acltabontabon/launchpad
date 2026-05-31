@@ -14,7 +14,7 @@ public final class CommandPalette {
             (state, runner) -> {
                 state.resetTaskFlow();
                 state.resetScanLatch();
-                state.currentScreen = AppState.Screen.PROJECT_SELECT;
+                state.nav.currentScreen = AppState.Screen.PROJECT_SELECT;
             }
         ),
         new Command(
@@ -24,8 +24,8 @@ public final class CommandPalette {
             (state, runner) -> {
                 state.resetTaskFlow();
                 state.resetScanLatch();
-                state.taskFlow = true;
-                state.currentScreen = AppState.Screen.PROJECT_SELECT;
+                state.task.flow = true;
+                state.nav.currentScreen = AppState.Screen.PROJECT_SELECT;
             }
         ),
         new Command(
@@ -35,14 +35,14 @@ public final class CommandPalette {
             (state, runner) -> {
                 state.projectsCursorIndex = 0;
                 state.projectsFlashMessage = "";
-                state.currentScreen = AppState.Screen.PROJECTS;
+                state.nav.currentScreen = AppState.Screen.PROJECTS;
             }
         ),
         new Command(
             "/settings",
             "Settings",
             "Configure Ollama and remote standards repo",
-            (state, runner) -> state.currentScreen = AppState.Screen.SETTINGS
+            (state, runner) -> state.nav.currentScreen = AppState.Screen.SETTINGS
         ),
         new Command(
             "/quit",

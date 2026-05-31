@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New MCP Tools**: Added `get_workflows`, `get_systems`, `get_risks`, and `get_project_overview` for model access.
 
 ### Changed
+- **AppState Decomposition**: Split monolithic `AppState` into five focused components (`NavigationState`, `ScanState`, `GenerationState`, `SettingsDraftState`, `TaskFlowState`); reset logic now lives in each component.
 - **Model-Driven Context**: `AGENTS.md` sections (Operations, Workflows, Risks) are now projected from the virtualized model.
 - **Operations Consolidation**: Merged build profiles and health endpoints into a single `## Operations` section.
 - **Internal Cleanup**: Removed obsolete planning markers and redundant tests.

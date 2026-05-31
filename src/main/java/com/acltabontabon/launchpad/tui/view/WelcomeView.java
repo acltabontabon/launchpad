@@ -50,12 +50,8 @@ public class WelcomeView implements View {
     public void render(Frame frame, Rect area, AppState state) {
         tick++;
 
-        boolean paletteOpen = state.commandInput.startsWith("/");
+        boolean paletteOpen = state.nav.commandInput.startsWith("/");
 
-        // Vertical rhythm: spacer · hero · gap · main panel · gap · prompt · spacer
-        // The "main panel" slot holds either the system-check card or, when the
-        // user is typing a slash command, the palette card - never both. This
-        // makes the palette a real modal swap, not a z-stacked overlay.
         var rows = Layout.vertical()
             .constraints(
                 Constraint.length(2),    // top spacer
@@ -89,10 +85,7 @@ public class WelcomeView implements View {
         }
     }
 
-    // Show the rocket only when both subsystems are non-blocking. The footer
-    // already exposes the same two dots, so dropping the system-check card on
-    // a clean boot removes redundant chrome - we only surface it when there
-    // is an actionable problem the user can read inline.
+    // Show the rocket only when both subsystems are non-blocking.
     private static boolean allReady(AppState state) {
         return ollamaReady(state) && standardsReady(state);
     }
@@ -137,17 +130,10 @@ public class WelcomeView implements View {
         }
     }
 
-    /**
-     * Single-row entry: "  ● Name        label  ·  detail (truncated)".
-     * Everything lives on one line so a long detail string can never bleed
-     * into adjacent rows under any rendering quirk.
-     */
     private static Line serviceRow(String name, StatusDot.State dot, String label, String detail, int cardWidth) {
-        // 2 borders + 2 horizontal padding = 4 chrome cells; reserve a 1-cell margin so the
-        // text never butts against the right border.
         int budget = Math.max(20, cardWidth - 5);
         Style labelStyle = Style.create().fg(dot.color).bold();
-        int prefixWidth = 2 + 1 + 2 + 10 + label.length(); // "  ●  Name(10)label"
+        int prefixWidth = 2 + 1 + 2 + 10 + label.length();
         if (detail == null || detail.isBlank()) {
             return Line.from(
                 Span.styled("  ", Style.create()),
@@ -215,8 +201,6 @@ public class WelcomeView implements View {
     }
 
     private static String standardsDetail(RemoteStandardsStatus s) {
-        // The badge already says SYNCED / OFFLINE / etc. - the detail line should
-        // add NEW information (the why, the cache reason) and not repeat the badge.
         return switch (s.state()) {
             case SYNCED -> null;
             case STALE_CACHE, ERROR -> s.hint() != null && !s.hint().isBlank() ? s.hint() : null;
@@ -245,14 +229,11 @@ public class WelcomeView implements View {
 
     /**
      * Soft recommendation when the configured model is in a known
-     * hallucination-prone bucket. Returns null when the model is fine or
-     * we don't recognise it (silent default - no false positives).
+     * hallucination-prone bucket.
      */
     static String modelTip(String model) {
         if (model == null) return null;
         var m = model.toLowerCase();
-        // Llama 3.2 default = 3B; phi3/3.5 mini and any sub-4B coder model
-        // routinely invents Spring-Boot-shaped files on framework projects.
         boolean prone = m.startsWith("llama3.2")
             || m.contains("phi3.5:mini") || m.contains("phi3:mini")
             || m.contains("gemma2:2b") || m.contains("gemma:2b")
@@ -273,9 +254,9 @@ public class WelcomeView implements View {
     }
 
     private void renderCta(Frame frame, Rect area, AppState state) {
-        if (!state.welcomeFlashMessage.isEmpty()) {
+        if (!state.nav.welcomeFlashMessage.isEmpty()) {
             var flash = Paragraph.builder()
-                .text(Text.styled(state.welcomeFlashMessage, Styles.warning()))
+                .text(Text.styled(state.nav.welcomeFlashMessage, Styles.warning()))
                 .alignment(Alignment.CENTER)
                 .build();
             frame.renderWidget(flash, area);
@@ -294,11 +275,8 @@ public class WelcomeView implements View {
     }
 
     private void renderPalette(Frame frame, Rect area, AppState state) {
-        var filtered = CommandPalette.filter(state.commandInput);
+        var filtered = CommandPalette.filter(state.nav.commandInput);
 
-        // Pad ids to the longest in the full command set (not just the filtered
-        // subset) so descriptions stay column-aligned as the user types. Same
-        // reason we size the card off ALL: width should not jitter while typing.
         int idWidth = CommandPalette.ALL.stream()
             .mapToInt(c -> c.id().length())
             .max()
@@ -308,20 +286,15 @@ public class WelcomeView implements View {
             .max()
             .orElse(0);
 
-        // Card geometry: inner content needs idWidth + gap + description, plus
-        // a small margin for the cursor symbol and breathing room. Clamp to the
-        // available area so narrow terminals still render gracefully.
         int gap = 3;
-        // Margin accounts for: card borders (2), left/right inner padding (2),
-        // and the "▶ " highlight symbol rendered inside the list (2).
         int desiredInner = idWidth + gap + maxDescLen + 8;
-        int headerWidth = ("commands  " + Icons.SEP + "  " + state.commandInput).length() + 6;
+        int headerWidth = ("commands  " + Icons.SEP + "  " + state.nav.commandInput).length() + 6;
         int cardWidth = Math.min(area.width() - 4, Math.max(desiredInner, headerWidth));
         int cardHeight = Math.min(area.height(), Math.max(6, filtered.size() + 4));
         int leftPad = Math.max(0, (area.width() - cardWidth) / 2);
         var cardArea = new Rect(area.x() + leftPad, area.y(), cardWidth, cardHeight);
 
-        var card = Card.of("commands  " + Icons.SEP + "  " + state.commandInput)
+        var card = Card.of("commands  " + Icons.SEP + "  " + state.nav.commandInput)
             .active(true)
             .build();
         var inner = card.inner(cardArea);
@@ -350,7 +323,7 @@ public class WelcomeView implements View {
             .toArray(ListItem[]::new);
 
         var listState = new ListState();
-        listState.select(Math.min(state.commandCursorIndex, filtered.size() - 1));
+        listState.select(Math.min(state.nav.commandCursorIndex, filtered.size() - 1));
 
         var list = ListWidget.builder()
             .items(items)
@@ -362,7 +335,7 @@ public class WelcomeView implements View {
 
     @Override
     public List<KeyHint> footerHints(AppState state) {
-        if (state.commandInput.startsWith("/")) {
+        if (state.nav.commandInput.startsWith("/")) {
             return List.of(
                 new KeyHint("↑↓", "navigate"),
                 new KeyHint("enter", "run"),
@@ -379,75 +352,71 @@ public class WelcomeView implements View {
         if (event instanceof TickEvent) return true;
         if (!(event instanceof KeyEvent key)) return false;
 
-        var filtered = CommandPalette.filter(state.commandInput);
+        var filtered = CommandPalette.filter(state.nav.commandInput);
 
         if (key.isKey(KeyCode.ENTER)) {
             if (filtered.isEmpty()) return true;
-            int idx = Math.min(state.commandCursorIndex, filtered.size() - 1);
+            int idx = Math.min(state.nav.commandCursorIndex, filtered.size() - 1);
             var cmd = filtered.get(idx);
             if (cmd.id().equals("/settings")) {
                 var snap = settings.snapshot();
-                state.settingsProviderInput = snap.provider();
-                state.settingsBaseUrlInput = snap.baseUrl();
-                state.settingsModelInput = snap.model();
-                state.settingsApiKeyInput = snap.apiKey() == null ? "" : snap.apiKey();
-                state.settingsRemoteStandardsUrlInput =
+                state.settings.providerInput = snap.provider();
+                state.settings.baseUrlInput = snap.baseUrl();
+                state.settings.modelInput = snap.model();
+                state.settings.apiKeyInput = snap.apiKey() == null ? "" : snap.apiKey();
+                state.settings.remoteStandardsUrlInput =
                     snap.remoteStandardsUrl() == null ? "" : snap.remoteStandardsUrl();
-                state.settingsFocusIndex = 0;
-                state.settingsErrorMessage = null;
+                state.settings.focusIndex = 0;
+                state.settings.errorMessage = null;
             }
             cmd.action().execute(state, runner);
-            state.commandInput = "";
-            state.commandCursorIndex = 0;
+            state.nav.commandInput = "";
+            state.nav.commandCursorIndex = 0;
             return true;
         }
 
         if (key.isKey(KeyCode.ESCAPE)) {
-            state.commandInput = "";
-            state.commandCursorIndex = 0;
-            state.welcomeFlashMessage = "";
+            state.nav.commandInput = "";
+            state.nav.commandCursorIndex = 0;
+            state.nav.welcomeFlashMessage = "";
             return true;
         }
 
         if (key.isKey(KeyCode.UP)) {
             if (!filtered.isEmpty()) {
-                state.commandCursorIndex =
-                    (state.commandCursorIndex - 1 + filtered.size()) % filtered.size();
+                state.nav.commandCursorIndex =
+                    (state.nav.commandCursorIndex - 1 + filtered.size()) % filtered.size();
             }
             return true;
         }
 
         if (key.isKey(KeyCode.DOWN)) {
             if (!filtered.isEmpty()) {
-                state.commandCursorIndex = (state.commandCursorIndex + 1) % filtered.size();
+                state.nav.commandCursorIndex = (state.nav.commandCursorIndex + 1) % filtered.size();
             }
             return true;
         }
 
         if (key.isKey(KeyCode.BACKSPACE)) {
-            if (!state.commandInput.isEmpty()) {
-                state.commandInput =
-                    state.commandInput.substring(0, state.commandInput.length() - 1);
-                state.commandCursorIndex = 0;
-                state.welcomeFlashMessage = "";
+            if (!state.nav.commandInput.isEmpty()) {
+                state.nav.commandInput =
+                    state.nav.commandInput.substring(0, state.nav.commandInput.length() - 1);
+                state.nav.commandCursorIndex = 0;
+                state.nav.welcomeFlashMessage = "";
             }
             return true;
         }
 
         if (key.code() == KeyCode.CHAR) {
             // Only accept text input when the palette is already open, or when the
-            // keystroke is the '/' that opens it. Without this guard, any stray
-            // letter silently accumulates into commandInput and the render check
-            // (commandInput.startsWith("/")) never opens the palette - the screen
-            // looks frozen because every subsequent keypress mutates an invisible
-            // buffer instead of falling through to global handlers (q to quit).
-            boolean paletteOpen = state.commandInput.startsWith("/");
+            // keystroke is the '/' that opens it.
+            boolean paletteOpen = state.nav.commandInput.startsWith("/");
             if (!paletteOpen && key.character() != '/') {
                 return false;
             }
-            state.commandInput = state.commandInput + key.character();
-            state.commandCursorIndex = 0;
-            state.welcomeFlashMessage = "";
+            state.nav.commandInput = state.nav.commandInput + key.character();
+            state.nav.commandCursorIndex = 0;
+            state.nav.welcomeFlashMessage = "";
             return true;
         }
 

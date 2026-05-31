@@ -35,17 +35,13 @@ public final class Header {
         var spans = new ArrayList<Span>();
         spans.addAll(Brand.mark());
 
-        // breadcrumb() returns the complete breadcrumb (its own internal arrows
-        // and separators included). We add exactly one separator between the
-        // brand mark and the breadcrumb itself - no per-span loop, which used
-        // to stack a `·` in front of every internal connector.
         var crumbs = breadcrumb(state);
         if (!crumbs.isEmpty()) {
             spans.add(Span.styled("  " + Icons.SEP + "  ", Styles.dim()));
             spans.addAll(crumbs);
         }
 
-        if (state.launchpadAware && state.currentScreen != AppState.Screen.WELCOME) {
+        if (state.launchpadAware && state.nav.currentScreen != AppState.Screen.WELCOME) {
             spans.add(Span.styled("  ", Style.create()));
             spans.add(Span.styled(Icons.SPARK + " launchpad-aware",
                 Style.create().fg(Theme.ignition)));
@@ -66,7 +62,7 @@ public final class Header {
 
     private static List<Span> breadcrumb(AppState state) {
         var segs = new ArrayList<Span>();
-        switch (state.currentScreen) {
+        switch (state.nav.currentScreen) {
             case WELCOME -> {
                 var model = state.activeModel == null ? "" : state.activeModel;
                 if (model.isBlank()) {
@@ -77,12 +73,12 @@ public final class Header {
                 }
             }
             case PROJECT_SELECT -> {
-                segs.add(Span.styled(state.taskFlow ? "New Task" : "Init", Styles.muted()));
+                segs.add(Span.styled(state.task.flow ? "New Task" : "Init", Styles.muted()));
                 segs.add(Span.styled("  " + Icons.ARROW_RIGHT + "  ", Styles.dim()));
                 segs.add(Span.styled("Project", Style.create().fg(Theme.text)));
             }
             case SCANNING -> {
-                var lead = state.taskFlow
+                var lead = state.task.flow
                     ? "Scanning for New Task"
                     : "Generating context";
                 segs.add(Span.styled(lead, Style.create().fg(Theme.text)));
@@ -92,7 +88,7 @@ public final class Header {
                 }
             }
             case REVIEW -> {
-                int n = state.generatedFiles == null ? 0 : state.generatedFiles.size();
+                int n = state.gen.files == null ? 0 : state.gen.files.size();
                 segs.add(Span.styled("Review", Style.create().fg(Theme.text)));
                 segs.add(Span.styled("  " + Icons.SEP + "  ", Styles.dim()));
                 segs.add(Span.styled(n + " files generated", Styles.muted()));

@@ -179,7 +179,7 @@ public class ProjectsView implements View {
 
         if (key.isKey(KeyCode.ESCAPE)) {
             state.projectsFlashMessage = "";
-            state.currentScreen = AppState.Screen.WELCOME;
+            state.nav.currentScreen = AppState.Screen.WELCOME;
             return true;
         }
 
@@ -202,9 +202,9 @@ public class ProjectsView implements View {
             var selected = projects.get(state.projectsCursorIndex);
             state.projectPath = selected.path();
             state.projectsFlashMessage = "";
-            state.welcomeFlashMessage = "Loaded " + selected.name()
+            state.nav.welcomeFlashMessage = "Loaded " + selected.name()
                 + ". Open the command palette with / to pick an action.";
-            state.currentScreen = AppState.Screen.WELCOME;
+            state.nav.currentScreen = AppState.Screen.WELCOME;
             return true;
         }
 
