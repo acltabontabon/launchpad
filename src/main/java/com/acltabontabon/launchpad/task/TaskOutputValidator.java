@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 
 /**
  * Validates the synthesised-prompt markdown produced by
- * {@link TaskAdvisorService#synthesise} before it is written to disk. Mirrors
+ * {@link SynthesisPipeline#synthesise} before it is written to disk. Mirrors
  * the role of {@code OutputValidator} on the scan path: returns a list of
  * human-readable warnings (empty = passed) so the caller can either retry the
  * LLM call once or surface the warnings on the result screen.
@@ -65,7 +65,7 @@ public final class TaskOutputValidator {
         "as expected"
     );
     /** Exact text of the deterministic safety-net bullet from
-     *  {@link TaskAdvisorService#assembleFinalMarkdown}. When this stands as
+     *  {@link MarkdownPostProcessor#assembleFinalMarkdown}. When this stands as
      *  the only acceptance bullet it is by design, not LLM filler, so the
      *  filler / short-bullet checks skip it. */
     private static final String FALLBACK_ACCEPTANCE_BULLET =
