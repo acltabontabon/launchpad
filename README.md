@@ -5,7 +5,7 @@ Cloud AI burns tokens re-reading your project on every task. Launchpad front-loa
 Standards-first, not standards-after.
 
 > **Note:**
-> Launchpad is still in its early stages and currently supports **Spring Boot + Maven + Java** projects only.
+> Launchpad is still in its early stages and currently supports **Spring Boot Java** projects on **Maven or Gradle** only.
 >
 > The scope is intentionally narrow while the core experience around local-first context generation, standards packs, and AI-assisted development workflows continues to mature.
 

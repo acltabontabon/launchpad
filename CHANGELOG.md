@@ -11,10 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Intelligent Discovery**: Automated mapping of multi-trigger workflows (HTTP/Event/Scheduled) and inference of architectural risks/guardrail suggestions.
 - **Model-Grounded `/new-task`**: Task synthesis now injects execution context (impacted systems, workflows, and risks) directly from the virtualized model.
 - **MCP Expansion**: New tools for model access (`get_workflows`, `get_risks`, etc.) and a comprehensive integration test harness.
+- **Spring Boot Gradle support**: Gradle projects (`build.gradle` / `build.gradle.kts`, Groovy or Kotlin DSL) now pass the support gate via a new `SpringBootGradleSupportSignal` and structured `GradleBuildParser`.
 
 ### Changed
 - **AppState Decomposition**: Refactored monolithic `AppState` into focused state components with independent reset logic.
 - **Model-Driven Context**: `AGENTS.md` now projects operations, workflows, and risks directly from the virtualized model.
+- **Build-tool-agnostic scanner**: A `BuildSystem` abstraction now resolves the build tool, so dependencies, stack label, and build commands follow Maven or Gradle instead of assuming Maven. The unsupported-project message now reads "Maven or Gradle".
 
 ### Removed
 - **Redundant Renderers**: Removed `BuildProfilesRenderer` and duplicate synthesis paths.

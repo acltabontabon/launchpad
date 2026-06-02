@@ -17,16 +17,16 @@ import org.springframework.stereotype.Component;
  * frameworks come into scope - each new framework adds one
  * {@code ProjectSupportSignal} bean and the detector picks it up via DI.
  *
- * <p>The canonical unsupported reason is intentionally singular today
- * because Spring Boot Java + Maven is the only recognised path. As more
- * signals come online the reason copy can grow per-framework hints; the
- * {@link Result} shape does not change.
+ * <p>The canonical unsupported reason names the recognised paths today
+ * (Spring Boot Java on Maven or Gradle). As more signals come online the
+ * reason copy can grow per-framework hints; the {@link Result} shape does
+ * not change.
  */
 @Component
 public final class ProjectSupportDetector {
 
     static final String CANONICAL_REASON =
-        "Launchpad currently supports Spring Boot Java + Maven projects only.";
+        "Launchpad currently supports Spring Boot Java projects (Maven or Gradle) only.";
 
     private final List<ProjectSupportSignal> signals;
 

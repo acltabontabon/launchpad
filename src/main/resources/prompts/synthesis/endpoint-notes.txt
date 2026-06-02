@@ -38,6 +38,6 @@ Controller sources (first ~120 lines each):
 
 Project signals:
 - Spring Boot Actuator on classpath: {hasActuator}
-- `build-info` Maven goal configured: {hasBuildInfoGoal}
+- `build-info` generation configured: {hasBuildInfoGoal}
 - Suggested notes for actuator endpoints (use these unless evidence contradicts):
 {actuatorHints}

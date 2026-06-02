@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.tui.discovery;
 
 import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
+import com.acltabontabon.launchpad.scanner.build.BuildSystemDetector;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -26,8 +27,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Debounced, cancellable filesystem search for Spring Boot Maven projects whose
- * directory name contains the user's query. Complements the eager
+ * Debounced, cancellable filesystem search for Spring Boot projects (Maven or
+ * Gradle) whose directory name contains the user's query. Complements the eager
  * {@link ProjectDiscovery} walk: that one preloads common dev roots at startup;
  * this one fires on demand when the user types something that doesn't already
  * match, walking deeper into {@code $HOME} so projects living in unusual
@@ -177,9 +178,9 @@ public final class LiveProjectSearch {
                     if (!dir.equals(home) && (SKIP_DIRS.contains(name) || name.startsWith("."))) {
                         return FileVisitResult.SKIP_SUBTREE;
                     }
-                    // Match the directory name first - cheaper than parsing every pom.xml we pass.
-                    if (Files.isRegularFile(dir.resolve("pom.xml"))
-                        && name.toLowerCase(Locale.ROOT).contains(needle)) {
+                    // Match the directory name first - cheaper than parsing every build file we pass.
+                    if (name.toLowerCase(Locale.ROOT).contains(needle)
+                        && BuildSystemDetector.isProjectRoot(dir)) {
                         var result = detector.detect(dir);
                         if (result.isSupported()) {
                             var canonical = canonicalize(dir);
