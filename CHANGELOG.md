@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **AppState Decomposition**: Refactored monolithic `AppState` into focused state components with independent reset logic.
 - **Model-Driven Context**: `AGENTS.md` now projects operations, workflows, and risks directly from the virtualized model.
 - **Build-tool-agnostic scanner**: A `BuildSystem` abstraction now resolves the build tool, so dependencies, stack label, and build commands follow Maven or Gradle instead of assuming Maven. The unsupported-project message now reads "Maven or Gradle".
+- **TaskAdvisorService decomposed**: Broke the 1,150-line god class into focused collaborators (`StandardsSelector`, `TaskClassifier`, `InterviewQuestionPlanner`, `MarkdownPostProcessor`, `PromptFormatter`, `SynthesisPipeline`, `TaskTextSupport`); `TaskAdvisorService` is now a thin orchestrator wiring them together. Public entry points and behaviour unchanged.
 
 ### Removed
 - **Redundant Renderers**: Removed `BuildProfilesRenderer` and duplicate synthesis paths.
