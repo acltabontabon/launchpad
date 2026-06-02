@@ -2,6 +2,7 @@ package com.acltabontabon.launchpad.model;
 
 import com.acltabontabon.launchpad.scanner.PackageSummary;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
+import com.acltabontabon.launchpad.scanner.build.BuildSystemDetector;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationPage;
 import com.acltabontabon.launchpad.springboot.maven.MavenProfile;
 import com.acltabontabon.launchpad.springboot.runtime.Endpoint;
@@ -117,8 +118,8 @@ public class ProjectContextAssembler {
     }
 
     private Operations operations(ProjectContext scan) {
-        // Launchpad gates on Spring Boot + Maven, so the build commands are known.
-        List<String> buildCommands = List.of("./mvnw clean package", "./mvnw test");
+        // Build commands follow the detected build tool (Maven or Gradle).
+        List<String> buildCommands = BuildSystemDetector.commandsFor(scan.stack().buildTool());
 
         List<String> runProfiles = new ArrayList<>();
         for (MavenProfile profile : safe(scan.mavenProfiles())) {

@@ -9,8 +9,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 class ProjectSupportDetectorTest {
 
-    private final ProjectSupportDetector detector = new ProjectSupportDetector(
-        java.util.List.of(new com.acltabontabon.launchpad.springboot.detectors.SpringBootMavenSupportSignal()));
+    private final ProjectSupportDetector detector = new ProjectSupportDetector(java.util.List.of(
+        new com.acltabontabon.launchpad.springboot.detectors.SpringBootMavenSupportSignal(),
+        new com.acltabontabon.launchpad.springboot.detectors.SpringBootGradleSupportSignal()));
 
     @Test
     void supportedWhenParentIsSpringBootStarterParent(@TempDir Path tmp) throws Exception {
@@ -82,7 +83,7 @@ class ProjectSupportDetectorTest {
         var result = detector.detect(tmp);
 
         assertThat(result.isSupported()).isFalse();
-        assertThat(result.reason()).contains("Spring Boot Java + Maven");
+        assertThat(result.reason()).contains("Maven or Gradle");
     }
 
     @Test
@@ -90,13 +91,44 @@ class ProjectSupportDetectorTest {
         var result = detector.detect(tmp);
 
         assertThat(result.isSupported()).isFalse();
-        assertThat(result.reason()).contains("Spring Boot Java + Maven");
+        assertThat(result.reason()).contains("Maven or Gradle");
     }
 
     @Test
-    void unsupportedForGradleProject(@TempDir Path tmp) throws Exception {
+    void supportedForGradleGroovyPluginBlock(@TempDir Path tmp) throws Exception {
         Files.writeString(tmp.resolve("build.gradle"),
             "plugins { id 'org.springframework.boot' version '3.3.0' }\n");
+
+        assertThat(detector.detect(tmp).isSupported()).isTrue();
+    }
+
+    @Test
+    void supportedForGradleKotlinPluginBlock(@TempDir Path tmp) throws Exception {
+        Files.writeString(tmp.resolve("build.gradle.kts"),
+            "plugins { id(\"org.springframework.boot\") version \"3.3.0\" }\n");
+
+        assertThat(detector.detect(tmp).isSupported()).isTrue();
+    }
+
+    @Test
+    void supportedForGradleStarterDependency(@TempDir Path tmp) throws Exception {
+        Files.writeString(tmp.resolve("build.gradle"), """
+            dependencies {
+              implementation 'org.springframework.boot:spring-boot-starter-web'
+            }
+            """);
+
+        assertThat(detector.detect(tmp).isSupported()).isTrue();
+    }
+
+    @Test
+    void unsupportedForGradleWithoutSpringSignal(@TempDir Path tmp) throws Exception {
+        Files.writeString(tmp.resolve("build.gradle"), """
+            plugins { id 'java' }
+            dependencies {
+              implementation 'com.google.guava:guava:33.0.0-jre'
+            }
+            """);
 
         assertThat(detector.detect(tmp).isSupported()).isFalse();
     }
@@ -113,7 +145,7 @@ class ProjectSupportDetectorTest {
         var result = detector.detect(null);
 
         assertThat(result.isSupported()).isFalse();
-        assertThat(result.reason()).contains("Spring Boot Java + Maven");
+        assertThat(result.reason()).contains("Maven or Gradle");
     }
 
     private static void writePom(Path root, String content) throws Exception {

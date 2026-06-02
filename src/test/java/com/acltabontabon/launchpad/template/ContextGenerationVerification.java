@@ -26,7 +26,7 @@ import org.springframework.ai.ollama.api.OllamaChatOptions;
  *   ./mvnw test -Dtest=ContextGenerationVerification -DLAUNCHPAD_VERIFY_PROJECT=/path/to/project
  *
  * Requires:
- *   - LAUNCHPAD_VERIFY_PROJECT env var pointing at a Spring Boot Maven project
+ *   - LAUNCHPAD_VERIFY_PROJECT env var pointing at a Spring Boot project (Maven or Gradle)
  *   - Ollama running at http://localhost:11434
  *   - the configured model is pulled
  *

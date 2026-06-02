@@ -1,8 +1,8 @@
 # Launchpad - Contributor Guide
 
-Launchpad is a local-AI-powered TUI tool that scans a Spring Boot + Maven project and generates vendor-neutral context files for AI coding assistants: `AGENTS.md`, `.ai/` companion files, and agent-native projections (Claude skills, Cursor `.mdc`, Windsurf `.rules`). It runs as a Spring Boot app with no web server. GraalVM native image is supported.
+Launchpad is a local-AI-powered TUI tool that scans a Spring Boot project (Maven or Gradle) and generates vendor-neutral context files for AI coding assistants: `AGENTS.md`, `.ai/` companion files, and agent-native projections (Claude skills, Cursor `.mdc`, Windsurf `.rules`). It runs as a Spring Boot app with no web server. GraalVM native image is supported.
 
-**Scope:** Spring Boot Java + Maven projects only. All other stacks are rejected at `ProjectSupportDetector` before any scanner phase runs.
+**Scope:** Spring Boot Java projects on Maven or Gradle. All other stacks are rejected at `ProjectSupportDetector` before any scanner phase runs.
 
 ## Commands
 
@@ -23,9 +23,11 @@ Ollama setup: `ollama serve` + `ollama pull qwen2.5-coder:7b-instruct`
 **Scan pipeline** - runs in a background thread in `LaunchpadRunner.triggerScanIfNeeded()`:
 
 ```
-ProjectSupportDetector.detect()        gate: rejects non-Spring Boot Maven projects
+ProjectSupportDetector.detect()        gate: rejects non-Spring Boot projects (Maven or Gradle)
   → ProjectScanner.scan()              walks file tree → produces ProjectContext
+      ├─ BuildSystemDetector           resolves Maven/Gradle: deps, stack label, build commands
       ├─ MavenModelParser              structured pom.xml parse (deps, parent, plugins)
+      ├─ GradleBuildParser             structured build.gradle(.kts) parse (plugins, deps)
       ├─ SpringProfileDetector         detects sub-stack facets from dependencies
       ├─ EndpointExtractor             HTTP routes from @RequestMapping annotations
       └─ DocumentationDetector         Markdown/AsciiDoc files with purpose tagging
@@ -56,7 +58,7 @@ WELCOME → PROJECT_SELECT → SCANNING → REVIEW
 | Package | Role |
 |---|---|
 | `tui/` | Render loop, view state machine, `AppState` |
-| `scanner/` | `ProjectSupportDetector` (gate), `ProjectScanner`, `MavenModelParser`, `SpringProfileDetector` |
+| `scanner/` | `ProjectSupportDetector` (gate), `ProjectScanner`, `BuildSystem` abstraction (Maven/Gradle), `MavenModelParser`, `GradleBuildParser`, `SpringProfileDetector` |
 | `ai/` | `ContextGeneratorService` (synthesis), `PromptSelector`, `FacetPromptComposer`, `ProviderHealthChecker` |
 | `template/` | `ContextTemplateEngine`, `FilePlan`, `WriteService`, `MergeMarkers`, `AgentProjection` impls |
 | `standards/` | `StandardsLoader` - resolves rules/skills/checklists from remote git or per-project override |
@@ -81,6 +83,6 @@ WELCOME → PROJECT_SELECT → SCANNING → REVIEW
 - You MUST NOT add provider-specific logic to `ContextTemplateEngine`, `CompanionFileBuilder`, or any canonical renderer - agent-specific files are produced only by `AgentProjection` implementations
 - You MUST NOT write project files directly - all writes go through `WriteService`, which runs `FilePlan.compute()` and backs up anything it changes
 - You MUST NOT add plain mutable fields to `AppState` - all fields must be `volatile`, `AtomicInteger`, or `AtomicReference`
-- You MUST NOT add defensive `if (isSpring)` checks downstream of `ProjectSupportDetector` - the gate guarantees a valid Spring Boot Maven project for all downstream code
+- You MUST NOT add defensive `if (isSpring)` checks downstream of `ProjectSupportDetector` - the gate guarantees a valid Spring Boot project (Maven or Gradle) for all downstream code; the build tool is resolved via `BuildSystemDetector`
 - You MUST NOT add silent fallbacks to AI calls - a missing prompt template is a bug and should fail loudly
 - You MUST NOT add bundled default standards - if no remote repo or per-project override is configured, `ContextTemplateEngine` emits a placeholder and the scan completes normally

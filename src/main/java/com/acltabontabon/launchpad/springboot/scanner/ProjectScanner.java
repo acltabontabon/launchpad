@@ -7,13 +7,13 @@ import com.acltabontabon.launchpad.scanner.ProjectScriptsProvider;
 import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
 import com.acltabontabon.launchpad.scanner.StackProfile;
 import com.acltabontabon.launchpad.scanner.StructureSummarizer;
+import com.acltabontabon.launchpad.scanner.build.BuildSystemDetector;
 import com.acltabontabon.launchpad.scanner.doc.AiPurposeClassifier;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationDetector;
 import com.acltabontabon.launchpad.scanner.doc.PurposeClassifier;
 import com.acltabontabon.launchpad.scanner.doc.ReadmeIntroExtractor;
 import com.acltabontabon.launchpad.scanner.doc.ReadmeSectionsExtractor;
 import com.acltabontabon.launchpad.springboot.detectors.SpringProfileDetector;
-import com.acltabontabon.launchpad.springboot.maven.DependencyExtractor;
 import com.acltabontabon.launchpad.springboot.maven.MavenProfileExtractor;
 import com.acltabontabon.launchpad.springboot.parser.ActuatorDetector;
 import com.acltabontabon.launchpad.springboot.parser.EndpointExtractor;
@@ -36,10 +36,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * Walks a Spring Boot Java + Maven project tree and produces a structured
- * {@link ProjectContext}. Trusts its caller to have cleared
- * {@link ProjectSupportDetector} - downstream phases assume {@code pom.xml}
- * exists at the root, the language is Java, and the framework is Spring Boot.
+ * Walks a Spring Boot Java project tree (Maven or Gradle) and produces a
+ * structured {@link ProjectContext}. Trusts its caller to have cleared
+ * {@link ProjectSupportDetector} - downstream phases assume a recognised
+ * build file exists at the root, the language is Java, and the framework is
+ * Spring Boot. The build tool itself is resolved via {@link BuildSystemDetector}.
  */
 @Service
 public class ProjectScanner {
@@ -67,16 +68,16 @@ public class ProjectScanner {
     );
 
     private static final Set<String> BUILD_FILE_NAMES = Set.of(
-        "pom.xml", "README.md",
+        "pom.xml", "build.gradle", "build.gradle.kts", "README.md",
         "Dockerfile", "docker-compose.yml",
         "application.properties", "application.yml", "application.yaml"
     );
 
-    // Files we show as excerpts in the prompt. README and pom carry the bulk
-    // of "what is this project" signal, so they get ~200 lines; supporting
-    // infra files get 60.
+    // Files we show as excerpts in the prompt. README and the build file carry
+    // the bulk of "what is this project" signal, so they get ~200 lines;
+    // supporting infra files get 60.
     private static final Set<String> SNIPPET_LONG_FILE_NAMES = Set.of(
-        "README.md", "pom.xml"
+        "README.md", "pom.xml", "build.gradle", "build.gradle.kts"
     );
     private static final Set<String> SNIPPET_SHORT_FILE_NAMES = Set.of(
         "Dockerfile", "docker-compose.yml"
@@ -100,7 +101,7 @@ public class ProjectScanner {
     private final long maxFileSizeKb;
     private final boolean includeTestNames;
     private final StackDetector stackDetector = new StackDetector();
-    private final DependencyExtractor dependencyExtractor = new DependencyExtractor();
+    private final BuildSystemDetector buildSystemDetector = BuildSystemDetector.withDefaults();
     private final StructureSummarizer structureSummarizer = new StructureSummarizer();
     private final SpringProfileDetector springProfileDetector = new SpringProfileDetector();
     private final DocumentationDetector documentationDetector;
@@ -204,10 +205,12 @@ public class ProjectScanner {
         });
 
         progressCallback.accept("Scanned " + fileCount[0] + " files. Detecting stack...");
-        var stack = stackDetector.detect(root, fileNameKeyed(fullBuildContent));
+        var keyFiles = fileNameKeyed(fullBuildContent);
+        var buildSystem = buildSystemDetector.detect(root, keyFiles);
+        var stack = stackDetector.detect(root, keyFiles, buildSystem);
 
         progressCallback.accept("Extracting dependencies...");
-        var dependencies = dependencyExtractor.extract(fileNameKeyed(fullBuildContent));
+        var dependencies = buildSystem.dependencies(keyFiles);
 
         signals.hasAutoConfigAnnotation = findAutoConfigurationAnnotation(root, sourceFiles);
         stack = stack.withSpringProfile(

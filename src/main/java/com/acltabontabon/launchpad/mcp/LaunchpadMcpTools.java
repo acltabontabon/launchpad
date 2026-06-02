@@ -935,7 +935,7 @@ public class LaunchpadMcpTools {
     /**
      * Run the support gate before any tool method triggers a scan. Returns the
      * canonical unsupported-project error payload when the project does not
-     * meet the Spring Boot Java + Maven contract; returns {@code null} when the
+     * meet the Spring Boot Java contract (Maven or Gradle); returns {@code null} when the
      * project is supported and the caller may proceed.
      */
     private Map<String, Object> requireSupported(Path projectRoot) {

@@ -40,7 +40,7 @@ import org.springframework.stereotype.Component;
  * Fuzzy-filterable picker for the project to scan. Unifies two sources:
  * <ul>
  *   <li>recent projects from {@link ProjectRegistry} (most-recent first)</li>
- *   <li>discovered Spring Boot Maven projects from {@link ProjectDiscovery}</li>
+ *   <li>discovered Spring Boot projects (Maven or Gradle) from {@link ProjectDiscovery}</li>
  * </ul>
  * Typing filters by name and path; arrows move the cursor; Enter runs the
  * support gate and advances. There is no text-path mode - if a project is not
@@ -254,7 +254,7 @@ public class ProjectSelectView implements View {
         var lines = new ArrayList<Line>();
         if (state.projectPickerQuery.isEmpty()) {
             lines.add(Line.from(Span.styled(
-                "  No Spring Boot Maven projects found under your home directory yet.",
+                "  No Spring Boot projects found under your home directory yet.",
                 Styles.caption())));
             lines.add(Line.from(Span.raw("")));
             lines.add(Line.from(Span.styled(

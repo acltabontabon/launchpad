@@ -8,11 +8,11 @@ import java.util.List;
 /**
  * Structured view of a project's tech stack.
  *
- * <p>Today {@link ProjectSupportDetector} only admits Spring Boot Java +
- * Maven projects, so by the time a {@code StackProfile} reaches downstream
- * phases the {@code language} / {@code buildTool} / {@code framework} fields
- * are effectively constants (Java / Maven / Spring Boot). They are kept as
- * fields because display, JSON persistence (via {@link com.fasterxml.jackson.annotation.JsonIgnoreProperties}),
+ * <p>Today {@link ProjectSupportDetector} only admits Spring Boot Java
+ * projects, so by the time a {@code StackProfile} reaches downstream phases
+ * {@code language} is Java and {@code framework} is Spring Boot; {@code buildTool}
+ * is either Maven or Gradle, resolved from the project's build files. They are
+ * kept as fields because display, JSON persistence (via {@link com.fasterxml.jackson.annotation.JsonIgnoreProperties}),
  * and template rendering still read them; a follow-up pass may collapse them
  * into a Spring-specific profile model once those readers are tightened.
  *

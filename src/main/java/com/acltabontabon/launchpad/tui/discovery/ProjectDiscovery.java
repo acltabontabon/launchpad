@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.tui.discovery;
 
 import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
+import com.acltabontabon.launchpad.scanner.build.BuildSystemDetector;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -22,10 +23,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Walks the user's common dev roots looking for Spring Boot Maven projects so
- * the project-picker can surface them without the user typing a path. Results
- * are cached for the JVM lifetime - a fresh scan only happens on first request
- * (or via {@link #refresh()}).
+ * Walks the user's common dev roots looking for Spring Boot projects (Maven or
+ * Gradle) so the project-picker can surface them without the user typing a
+ * path. Results are cached for the JVM lifetime - a fresh scan only happens on
+ * first request (or via {@link #refresh()}).
  */
 @Component
 public final class ProjectDiscovery {
@@ -146,7 +147,7 @@ public final class ProjectDiscovery {
                     if (!dir.equals(root) && name.startsWith(".")) {
                         return FileVisitResult.SKIP_SUBTREE;
                     }
-                    if (Files.isRegularFile(dir.resolve("pom.xml"))) {
+                    if (BuildSystemDetector.isProjectRoot(dir)) {
                         var result = detector.detect(dir);
                         if (result.isSupported()) {
                             var canonical = canonicalize(dir);
