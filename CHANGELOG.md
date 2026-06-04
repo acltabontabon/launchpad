@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Responsive project picker on slow disks**: The on-demand live search now has a 3s wall-clock deadline; partial results render and the picker stays responsive even on slow or wide home directories (closes #77).
+- **Path containment in write service**: Reject standards-pack file plans whose target escapes the project root, closing a write-anywhere primitive in the file-mutating component (closes #65).
 
 ## [0.5.0] - 2026-05-30
 ### Added

@@ -59,6 +59,46 @@ class WriteServiceTest {
     }
 
     @Test
+    void refusesParentTraversalRelativePath(@TempDir Path root) throws Exception {
+        var file = new GeneratedFile("../evil.txt", "pwn", GeneratedFile.FileKind.CONTEXT);
+        var plan = FilePlan.compute(file, root);
+
+        var result = writer.apply(root, List.of(plan));
+
+        assertThat(result.written()).isZero();
+        assertThat(result.errors()).hasSize(1);
+        assertThat(result.errors().get(0)).contains("escapes project root");
+        assertThat(Files.exists(root.resolveSibling("evil.txt"))).isFalse();
+    }
+
+    @Test
+    void refusesAbsoluteRelativePath(@TempDir Path root, @TempDir Path elsewhere) throws Exception {
+        var absoluteEscape = elsewhere.resolve("pwn.txt").toAbsolutePath().toString();
+        var file = new GeneratedFile(absoluteEscape, "pwn", GeneratedFile.FileKind.CONTEXT);
+        var plan = FilePlan.compute(file, root);
+
+        var result = writer.apply(root, List.of(plan));
+
+        assertThat(result.written()).isZero();
+        assertThat(result.errors()).hasSize(1);
+        assertThat(result.errors().get(0)).contains("escapes project root");
+        assertThat(Files.exists(elsewhere.resolve("pwn.txt"))).isFalse();
+    }
+
+    @Test
+    void refusesEmbeddedTraversal(@TempDir Path root) throws Exception {
+        var file = new GeneratedFile("sub/../../escape.txt", "pwn", GeneratedFile.FileKind.CONTEXT);
+        var plan = FilePlan.compute(file, root);
+
+        var result = writer.apply(root, List.of(plan));
+
+        assertThat(result.written()).isZero();
+        assertThat(result.errors()).hasSize(1);
+        assertThat(result.errors().get(0)).contains("escapes project root");
+        assertThat(Files.exists(root.getParent().resolve("escape.txt"))).isFalse();
+    }
+
+    @Test
     void mergeReplacesManagedBlockOnly(@TempDir Path root) throws Exception {
         Files.writeString(root.resolve("AGENTS.md"),
             "user prelude\n" + MergeMarkers.START + "\nOLD MANAGED\n" + MergeMarkers.END + "\ntrailing notes\n");
