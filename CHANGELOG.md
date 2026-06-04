@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Redundant Renderers**: Removed `BuildProfilesRenderer` and duplicate synthesis paths.
 - **Legacy Artifacts**: Removed obsolete planning markers and redundant tests.
 
+### Fixed
+- **Responsive project picker on slow disks**: The on-demand live search now has a 3s wall-clock deadline; partial results render and the picker stays responsive even on slow or wide home directories (closes #77).
+
 ## [0.5.0] - 2026-05-30
 ### Added
 - **`/new-task` quality critic:** Added a second local-AI pass to ensure interview depth and inject follow-up questions if needed.
