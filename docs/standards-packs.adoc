@@ -270,3 +270,10 @@ _Why:_ Static methods with no owner are a symptom of missing domain objects.
 
 The same content is split into `.ai/engineering-rules.md` and `.ai/checklists.md` for tools that prefer smaller focused files.
 Agent projections (`.claude/skills/`, `.cursor/rules/`) are generated from the same source -- editing the YAML updates all outputs on the next scan.
+
+== Path containment guarantee
+
+Every file plan produced from a standards pack is written through a single component that enforces project-root containment.
+Before any write or backup, the resolved target path is normalized and checked against the real path of the scanned project root.
+Any `relativePath` that resolves outside the project root -- whether through `..` traversal segments, an absolute path override, or a symlink escape -- is rejected without touching disk and surfaces as an error entry in the review summary.
+A malicious or misconfigured pack therefore cannot use Launchpad as a write-anywhere primitive against the host filesystem.

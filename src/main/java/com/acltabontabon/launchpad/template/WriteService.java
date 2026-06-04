@@ -26,11 +26,13 @@ public class WriteService {
     public Result apply(Path projectRoot, List<FilePlan> plans) throws IOException {
         var ts = LocalDateTime.now().format(TS_FMT);
         var backupDir = projectRoot.resolve(".launchpad").resolve("backups").resolve(ts);
+        var safeRoot = projectRoot.toRealPath();
         var errors = new ArrayList<String>();
         int written = 0;
         int skipped = 0;
         int backedUp = 0;
         boolean backupDirCreated = false;
+        Path safeBackupDir = null;
 
         for (var plan : plans) {
             if (plan.action() == FilePlan.Action.SKIP
@@ -39,14 +41,24 @@ public class WriteService {
                 skipped++;
                 continue;
             }
-            var target = projectRoot.resolve(plan.file.relativePath());
+            var rel = plan.file.relativePath();
+            var target = safeRoot.resolve(rel).normalize();
+            if (!target.startsWith(safeRoot)) {
+                errors.add(rel + ": refused, path escapes project root");
+                continue;
+            }
             try {
                 if (plan.exists) {
                     if (!backupDirCreated) {
                         Files.createDirectories(backupDir);
+                        safeBackupDir = backupDir.toRealPath();
                         backupDirCreated = true;
                     }
-                    var backupPath = backupDir.resolve(plan.file.relativePath());
+                    var backupPath = safeBackupDir.resolve(rel).normalize();
+                    if (!backupPath.startsWith(safeBackupDir)) {
+                        errors.add(rel + ": refused, backup path escapes backup root");
+                        continue;
+                    }
                     Files.createDirectories(backupPath.getParent());
                     Files.copy(target, backupPath, StandardCopyOption.REPLACE_EXISTING);
                     backedUp++;
@@ -56,7 +68,7 @@ public class WriteService {
                 Files.writeString(target, plan.resolvedContent());
                 written++;
             } catch (IOException | RuntimeException e) {
-                errors.add(plan.file.relativePath() + ": " + e.getMessage());
+                errors.add(rel + ": " + e.getMessage());
             }
         }
         return new Result(written, skipped, backedUp,
