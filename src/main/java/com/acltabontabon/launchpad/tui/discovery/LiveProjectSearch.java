@@ -37,7 +37,11 @@ import org.springframework.stereotype.Component;
  * One walk runs at a time. A new {@link #submit(String)} cancels the prior
  * debounce timer and (if a walk is already running) interrupts it via the
  * generation counter, which {@code preVisitDirectory} checks between
- * directories. Stale results are dropped on completion.
+ * directories. Stale results are dropped on completion. A wall-clock deadline
+ * of {@link #WALL_CLOCK_MS} ms also caps each walk, so a slow disk or wide
+ * tree can't stall the picker even if the depth and hit caps don't fire;
+ * whatever hits accumulated before the deadline are published as partial
+ * results.
  */
 @Component
 public final class LiveProjectSearch {
@@ -52,13 +56,16 @@ public final class LiveProjectSearch {
     private static final int MAX_DEPTH = 6;
     /** Stop early once we have a usable shortlist - the picker can only show so many anyway. */
     private static final int MAX_HITS = 50;
+    /** Hard wall-clock cap so a slow disk can't stall the picker; partial results render on timeout. */
+    private static final long WALL_CLOCK_MS = 3_000;
 
     /** Same skip set as {@link ProjectDiscovery}; matters more here because the search reaches further. */
     private static final Set<String> SKIP_DIRS = Set.of(
         ".git", "node_modules", "target", "build", "dist", ".idea", ".vscode",
         ".gradle", ".mvn", "out", "bin", ".launchpad", ".cache", "vendor",
         "Library", "Applications", ".Trash", ".npm", ".m2", ".nvm", ".pyenv",
-        ".rustup", ".cargo", ".sdkman", "Pictures", "Movies", "Music", "Downloads");
+        ".rustup", ".cargo", ".sdkman", "Pictures", "Movies", "Music", "Downloads",
+        ".venv", "venv", ".next", ".nuxt", "_site");
 
     private final ProjectSupportDetector detector;
 
@@ -148,8 +155,9 @@ public final class LiveProjectSearch {
         currentWalk = worker.submit(() -> {
             if (gen != generation.get()) return;
             searching.set(true);
+            var deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WALL_CLOCK_MS);
             try {
-                var hits = walkHome(query, gen);
+                var hits = walkHome(query, gen, deadline);
                 if (gen == generation.get()) {
                     results.set(List.copyOf(hits));
                     resultsQuery.set(query);
@@ -162,16 +170,21 @@ public final class LiveProjectSearch {
         });
     }
 
-    private List<DiscoveredProject> walkHome(String query, long gen) {
+    private List<DiscoveredProject> walkHome(String query, long gen, long deadlineNanos) {
         var needle = query.toLowerCase(Locale.ROOT);
         var home = Path.of(System.getProperty("user.home"));
         if (!Files.isDirectory(home)) return List.of();
         var hits = new ArrayList<DiscoveredProject>();
+        var deadlineTripped = new boolean[]{false};
         try {
             Files.walkFileTree(home, Set.of(), MAX_DEPTH, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                     if (gen != generation.get() || Thread.currentThread().isInterrupted()) {
+                        return FileVisitResult.TERMINATE;
+                    }
+                    if (System.nanoTime() > deadlineNanos) {
+                        deadlineTripped[0] = true;
                         return FileVisitResult.TERMINATE;
                     }
                     var name = dir.getFileName() == null ? "" : dir.getFileName().toString();
@@ -201,6 +214,10 @@ public final class LiveProjectSearch {
             });
         } catch (IOException e) {
             log.debug("Live search walk under {} failed", home, e);
+        }
+        if (deadlineTripped[0]) {
+            log.debug("Live search hit {}ms deadline for query '{}'; returning {} partial hit(s)",
+                WALL_CLOCK_MS, query, hits.size());
         }
         return hits;
     }
