@@ -322,11 +322,7 @@ public class LaunchpadMcpTools {
         if (resolved instanceof Resolution.Error err) return err.payload();
         var projectRoot = ((Resolution.Path) resolved).value();
         var model = modelStore.load(projectRoot).orElse(null);
-        if (model == null) {
-            return errorPayload("no_project_model",
-                "No project model found at " + projectRoot.resolve(".launchpad")
-                    + "/project-context.json. Scan the project first.");
-        }
+        if (model == null) return noModelPayload(projectRoot);
         var workflows = model.workflows().stream()
             .map(LaunchpadMcpTools::workflowToMap)
             .toList();
@@ -486,9 +482,12 @@ public class LaunchpadMcpTools {
 
     /** Shared no-model error so every model-backed tool reports the same way. */
     private Map<String, Object> noModelPayload(Path projectRoot) {
-        return errorPayload("no_project_model",
+        return McpError.notFound(
+            "no_project_model",
             "No project model found at " + projectRoot.resolve(".launchpad")
-                + "/project-context.json. Scan the project first.");
+                + "/project-context.json.",
+            "Scan the project first via scan_project."
+        ).toPayload();
     }
 
     @McpTool(
@@ -519,9 +518,12 @@ public class LaunchpadMcpTools {
         var ctx = loadOrScan(projectRoot);
         Purpose filter = parsePurposeFilter(purpose);
         if (purpose != null && !purpose.isBlank() && filter == null) {
-            return errorPayload("invalid_purpose",
-                "Unknown purpose `" + purpose + "`. Allowed: overview, setup, architecture, "
-                    + "api, operations, contribution, changelog, unknown.");
+            return McpError.invalidArgument(
+                "invalid_purpose",
+                "Unknown purpose `" + purpose + "`.",
+                "Allowed values: overview, setup, architecture, api, operations, contribution, "
+                    + "changelog, unknown."
+            ).toPayload();
         }
         return documentationToMap(ctx, projectRoot, filter);
     }
@@ -546,7 +548,11 @@ public class LaunchpadMcpTools {
         String project
     ) {
         if (query == null || query.isBlank()) {
-            return errorPayload("missing_query", "Pass a non-empty `query` substring to search for.");
+            return McpError.invalidArgument(
+                "missing_query",
+                "The `query` argument is empty.",
+                "Pass a non-empty substring to search for."
+            ).toPayload();
         }
         String needle = query.toLowerCase();
 
@@ -640,60 +646,88 @@ public class LaunchpadMcpTools {
         if (unsupported != null) return unsupported;
 
         if (path == null || path.isBlank()) {
-            return errorPayload("missing_path", "Pass a project-relative doc-page path as `path`.");
+            return McpError.invalidArgument(
+                "missing_path",
+                "The `path` argument is empty.",
+                "Pass a project-relative doc-page path as `path`."
+            ).toPayload();
         }
 
         var ctx = loadOrScan(projectRoot);
         var docs = ctx.documentation();
         if (docs == null || docs.isEmpty()) {
-            return errorPayload("no_documentation",
-                "No documentation detected for this project. Call list_documentation first.");
+            return McpError.notFound(
+                "no_documentation",
+                "No documentation detected for this project.",
+                "Call list_documentation first to confirm there are pages to read."
+            ).toPayload();
         }
         DocumentationPage page = null;
         for (var p : docs.pages()) {
             if (p.path().equals(path)) { page = p; break; }
         }
         if (page == null) {
-            return errorPayload("path_not_in_docs_index",
-                "The path is not part of the detected docs set for this project. Use "
-                    + "list_documentation to see allowed paths.");
+            return McpError.permissionDenied(
+                "path_not_in_docs_index",
+                "The path is not part of the detected docs set for this project."
+            ).withDetails(Map.of("requested", path))
+                .toPayload();
         }
 
         Path target;
         try {
             target = projectRoot.resolve(path).normalize();
         } catch (RuntimeException e) {
-            return errorPayload("invalid_path", "Path could not be resolved: " + e.getMessage());
+            return McpError.invalidArgument(
+                "invalid_path",
+                "Path could not be resolved: " + e.getMessage()
+            ).toPayload();
         }
         if (!target.startsWith(projectRoot)) {
-            return errorPayload("path_escapes_project",
-                "The resolved path is outside the project root - refusing to read.");
+            return McpError.permissionDenied(
+                "path_escapes_project",
+                "The resolved path is outside the project root - refusing to read."
+            ).toPayload();
         }
         if (!Files.isRegularFile(target)) {
-            return errorPayload("not_a_file", "No regular file at " + path + " under the project root.");
+            return McpError.invalidArgument(
+                "not_a_file",
+                "No regular file at " + path + " under the project root."
+            ).toPayload();
         }
 
         long size;
         try {
             size = Files.size(target);
         } catch (IOException e) {
-            return errorPayload("stat_failed", "Could not stat " + path + ": " + e.getMessage());
+            return McpError.internal(
+                "stat_failed",
+                "Could not stat " + path + ": " + e.getMessage()
+            ).toPayload();
         }
         if (size > maxFileSizeBytes) {
-            return errorPayload("file_too_large",
-                "Doc page is " + size + " bytes; limit is " + maxFileSizeBytes
-                    + " (set by launchpad.scan.max-file-size-kb).");
+            return new McpError(
+                "file_too_large",
+                McpError.Type.RESOURCE_EXHAUSTED,
+                "Doc page is " + size + " bytes; limit is " + maxFileSizeBytes + ".",
+                "Raise launchpad.scan.max-file-size-kb if larger pages must be readable."
+            ).toPayload();
         }
 
         byte[] bytes;
         try {
             bytes = Files.readAllBytes(target);
         } catch (IOException e) {
-            return errorPayload("read_failed", "Could not read " + path + ": " + e.getMessage());
+            return McpError.internal(
+                "read_failed",
+                "Could not read " + path + ": " + e.getMessage()
+            ).toPayload();
         }
         if (looksBinary(bytes)) {
-            return errorPayload("file_appears_binary",
-                "File contains NUL bytes in its first kilobyte - refusing to return as text.");
+            return McpError.unsupported(
+                "file_appears_binary",
+                "File contains NUL bytes in its first kilobyte - refusing to return as text."
+            ).toPayload();
         }
         var text = new String(bytes, StandardCharsets.UTF_8);
         var payload = new LinkedHashMap<String, Object>();
@@ -941,7 +975,7 @@ public class LaunchpadMcpTools {
     private Map<String, Object> requireSupported(Path projectRoot) {
         var result = projectSupportDetector.detect(projectRoot);
         if (result.isSupported()) return null;
-        return errorPayload("unsupported_project", result.reason());
+        return McpError.unsupported("unsupported_project", result.reason()).toPayload();
     }
 
     private ProjectContext scanAndPersist(Path projectRoot) {
@@ -1001,25 +1035,26 @@ public class LaunchpadMcpTools {
         var available = projectRegistry.all().stream()
             .map(LaunchpadMcpTools::registryEntryToMap)
             .toList();
-        var payload = new LinkedHashMap<String, Object>();
-        payload.put("error", "no_project_specified");
-        payload.put("message", "Pass either a project name from the registry or an absolute path "
-            + "as the `project` argument.");
-        payload.put("availableProjects", available);
-        return payload;
+        return McpError.invalidArgument(
+            "no_project_specified",
+            "No project was specified and LAUNCHPAD_DEFAULT_PROJECT is not set.",
+            "Pass a project name from the registry or an absolute path as `project`."
+        ).withDetails(Map.of("availableProjects", available)).toPayload();
     }
 
     private Map<String, Object> unknownNamePayload(String requested) {
         var available = projectRegistry.all().stream()
             .map(LaunchpadMcpTools::registryEntryToMap)
             .toList();
-        var payload = new LinkedHashMap<String, Object>();
-        payload.put("error", "unknown_project");
-        payload.put("message", "No project named '" + requested + "' in the registry, and the value "
-            + "is not an absolute path. Pass an absolute path or pick one of the available names.");
-        payload.put("requested", requested);
-        payload.put("availableProjects", available);
-        return payload;
+        var details = new LinkedHashMap<String, Object>();
+        details.put("requested", requested);
+        details.put("availableProjects", available);
+        return McpError.notFound(
+            "unknown_project",
+            "No project named '" + requested + "' in the registry, and the value is not an "
+                + "absolute path.",
+            "Pass an absolute path or pick one of the available project names."
+        ).withDetails(details).toPayload();
     }
 
     private static Map<String, Object> registryEntryToMap(RegisteredProject p) {
@@ -1043,13 +1078,6 @@ public class LaunchpadMcpTools {
 
     static String nullToEmpty(String s) {
         return s == null ? "" : s;
-    }
-
-    private static Map<String, Object> errorPayload(String code, String message) {
-        var payload = new LinkedHashMap<String, Object>();
-        payload.put("error", code);
-        payload.put("message", message);
-        return payload;
     }
 
     /**

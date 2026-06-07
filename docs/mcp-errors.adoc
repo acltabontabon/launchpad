@@ -1,0 +1,99 @@
+= MCP error envelope
+
+Every `@McpTool` method in Launchpad returns a `Map<String, Object>` on success
+and a single standardised error envelope on failure. This page documents that
+envelope so MCP clients and tool authors have one place to look.
+
+== Wire shape
+
+On failure, the tool returns a payload whose only top-level key is `error`.
+The success payloads use other top-level keys (`project`, `workflows`,
+`pages`, ...), so a caller can distinguish success from failure by checking
+whether `error` is present and is an object.
+
+[source,json]
+----
+{
+  "error": {
+    "code": "no_project_model",
+    "type": "NOT_FOUND",
+    "message": "No project model found at .launchpad/project-context.json.",
+    "remediation": "Scan the project first via scan_project.",
+    "details": {
+      "project": "demo"
+    }
+  }
+}
+----
+
+Fields:
+
+[cols="1,3"]
+|===
+| `code`        | Stable machine identifier, `snake_case`. Use this when branching on a specific failure.
+| `type`        | Coarse category from the enum below. Use this when you want to branch on the kind of failure (retry vs. ask user vs. abort) without enumerating every code.
+| `message`     | Human-readable single sentence describing what went wrong.
+| `remediation` | Optional one-sentence pointer to the next action. Omitted when the failure is self-explanatory.
+| `details`     | Optional object carrying machine-readable context (e.g. `availableProjects`, `requested`). Omitted when empty.
+|===
+
+== `type` values
+
+[cols="1,3"]
+|===
+| `INVALID_ARGUMENT`   | The caller passed a malformed or missing argument. Fix the argument and retry.
+| `NOT_FOUND`          | The requested resource does not exist in this environment (project, model, doc). Often resolved by running an upstream tool first (e.g. `scan_project`).
+| `PERMISSION_DENIED`  | The operation is refused by a security boundary (path escapes the project root, path is outside the allowed docs set). Do not retry without changing the request.
+| `UNSUPPORTED`        | The target is structurally outside Launchpad's contract (non-Spring-Boot project, binary file). Choose a different target.
+| `RESOURCE_EXHAUSTED` | A bounded resource was exceeded (file size cap). Adjust the relevant limit or pick a smaller target.
+| `INTERNAL`           | An unexpected IO failure occurred. Safe to retry once; otherwise treat as a defect.
+|===
+
+== Current code registry
+
+[cols="1,1,3"]
+|===
+| code | type | meaning
+
+| `invalid_purpose`         | INVALID_ARGUMENT   | `purpose` filter is not one of the allowed values.
+| `missing_query`           | INVALID_ARGUMENT   | `query` argument was empty or blank.
+| `missing_path`            | INVALID_ARGUMENT   | `path` argument was empty or blank.
+| `invalid_path`            | INVALID_ARGUMENT   | `path` could not be normalised.
+| `not_a_file`              | INVALID_ARGUMENT   | The resolved target is not a regular file.
+| `no_project_specified`    | INVALID_ARGUMENT   | No `project` argument and `LAUNCHPAD_DEFAULT_PROJECT` is unset.
+| `no_documentation`        | NOT_FOUND          | No documentation pages were detected for this project.
+| `unknown_project`         | NOT_FOUND          | Project name is not in the registry and not an absolute path.
+| `no_project_model`        | NOT_FOUND          | No persisted project model under `.launchpad/project-context.json`.
+| `path_not_in_docs_index`  | PERMISSION_DENIED  | The path is not part of the detected docs set (prevents using doc reads as a generic file reader).
+| `path_escapes_project`    | PERMISSION_DENIED  | Resolved path is outside the project root.
+| `file_appears_binary`     | UNSUPPORTED        | First kilobyte of the file contains NUL bytes.
+| `unsupported_project`     | UNSUPPORTED        | Project failed the support gate (not a Spring Boot Maven/Gradle project).
+| `file_too_large`          | RESOURCE_EXHAUSTED | File exceeds `launchpad.scan.max-file-size-kb`.
+| `stat_failed`             | INTERNAL           | `IOException` while reading file metadata.
+| `read_failed`             | INTERNAL           | `IOException` while reading file content.
+|===
+
+== Adding a new error
+
+1. Pick a `snake_case` `code` that is unique in the registry above. Reuse an
+   existing code when the failure mode is the same.
+2. Pick the most specific `type`. When in doubt prefer the broader category -
+   clients branch on `type` and adding a new value is a wire-shape change.
+3. Construct the error through one of the `McpError` factories:
++
+[source,java]
+----
+return McpError.invalidArgument(
+    "missing_query",
+    "The `query` argument is empty.",
+    "Pass a non-empty substring to search for."
+).toPayload();
+----
+4. Attach machine-readable context with `withDetails(Map.of(...))` when the
+   client may need to act on it (e.g. listing available alternatives).
+5. Add a row to the registry table above so future tool authors see the new
+   code in one place.
+
+Tests assert the envelope shape via the nested `error.code` path - prefer
+the same pattern over `.containsEntry("error", "<code>")` so all assertions
+exercise the documented schema.
