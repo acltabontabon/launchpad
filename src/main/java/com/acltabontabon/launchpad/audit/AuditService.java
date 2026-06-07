@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.audit;
 
+import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
@@ -28,15 +29,18 @@ public class AuditService {
     private final Map<String, RuleChecker> checkersByKind;
     private final SarifWriter sarifWriter;
     private final MarkdownAuditWriter markdownWriter;
+    private final LaunchpadSettings settings;
 
     public AuditService(StandardsLoader standardsLoader,
                         List<RuleChecker> checkers,
                         SarifWriter sarifWriter,
-                        MarkdownAuditWriter markdownWriter) {
+                        MarkdownAuditWriter markdownWriter,
+                        LaunchpadSettings settings) {
         this.standardsLoader = standardsLoader;
         this.checkersByKind = checkers.stream().collect(Collectors.toMap(RuleChecker::kind, c -> c));
         this.sarifWriter = sarifWriter;
         this.markdownWriter = markdownWriter;
+        this.settings = settings;
     }
 
     /** Runs the audit. {@code progress} is invoked once per rule for TUI updates. */
@@ -47,6 +51,7 @@ public class AuditService {
             return AuditResult.empty();
         }
 
+        boolean llmChecksEnabled = settings.snapshot().enableLlmChecks();
         var findings = new ArrayList<Finding>();
         for (int i = 0; i < auditable.size(); i++) {
             var rule = auditable.get(i);
@@ -55,6 +60,11 @@ public class AuditService {
             if (checker == null) {
                 log.warn("No RuleChecker registered for kind '{}' (rule {}); skipping.",
                     rule.check().kind(), rule.id());
+                continue;
+            }
+            if ("llm".equals(rule.check().kind()) && !llmChecksEnabled) {
+                log.warn("rule {} requires LLM audit checks - enable launchpad.audit.enable-llm-checks to evaluate.",
+                    rule.id());
                 continue;
             }
             try {

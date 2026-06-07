@@ -61,13 +61,13 @@ class LaunchpadMcpToolsTest {
         copyDirectory(fixture, projectRoot);
 
         var settings = new LaunchpadSettings("auto", "http://localhost:11434",
-            "qwen2.5-coder:7b-instruct", "", event -> { });
+            "qwen2.5-coder:7b-instruct", "", false, event -> { });
         var fetcher = new RemoteStandardsFetcher(settings);
         var standardsLoader = new StandardsLoader(fetcher, settings);
         var scanner = ProjectScanner.forTesting();
         scanStore = new ScanStore();
         var auditService = new AuditService(standardsLoader, List.of(),
-            new SarifWriter(), new MarkdownAuditWriter());
+            new SarifWriter(), new MarkdownAuditWriter(), settings);
         registry = new ProjectRegistry();
         var detector = new ProjectSupportDetector(List.of(new SpringBootMavenSupportSignal()));
         var modelStore = new VirtualProjectContextStore();

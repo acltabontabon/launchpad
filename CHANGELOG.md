@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Spring Boot Gradle support**: Gradle projects (`build.gradle` / `build.gradle.kts`, Groovy or Kotlin DSL) now pass the support gate via a new `SpringBootGradleSupportSignal` and structured `GradleBuildParser`.
 
 ### Changed
+- **LLM audit checks now opt-in**: Standards rules with `check.kind: llm` no longer run by default. Each LLM rule fires one local-AI call per matched file (up to 20 per rule, 5-10s each on the default model), so the cost was a foot-gun for authors who wrote a single LLM rule. Deterministic checkers (`pattern`, `import`) still run unchanged. Enable via the new toggle in the TUI Settings screen (Audit card) or set `launchpad.audit.enable-llm-checks=true` in `~/.launchpad/config.properties`. Skipped LLM rules emit a one-line warning naming the flag (closes #40).
 - **AppState Decomposition**: Refactored monolithic `AppState` into focused state components with independent reset logic.
 - **Model-Driven Context**: `AGENTS.md` now projects operations, workflows, and risks directly from the virtualized model.
 - **Build-tool-agnostic scanner**: A `BuildSystem` abstraction now resolves the build tool, so dependencies, stack label, and build commands follow Maven or Gradle instead of assuming Maven. The unsupported-project message now reads "Maven or Gradle".

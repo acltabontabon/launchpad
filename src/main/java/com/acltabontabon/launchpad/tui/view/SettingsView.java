@@ -45,9 +45,10 @@ public class SettingsView implements View {
     private static final int FIELD_MODEL = 2;
     private static final int FIELD_API_KEY = 3;
     private static final int FIELD_REMOTE_STANDARDS = 4;
-    private static final int FIELD_PROJECTIONS = 5;
-    private static final int FIELD_CONNECT_ACTION = 6;
-    private static final int FIELD_COUNT = 7;
+    private static final int FIELD_AUDIT_LLM = 5;
+    private static final int FIELD_PROJECTIONS = 6;
+    private static final int FIELD_CONNECT_ACTION = 7;
+    private static final int FIELD_COUNT = 8;
 
     private static final int BADGE_WIDTH = "[not found]".length();
 
@@ -87,24 +88,27 @@ public class SettingsView implements View {
                 Constraint.length(8),  // 2  LLM card (4 rows + vpad + borders)
                 Constraint.length(1),  // 3  gap
                 Constraint.length(5),  // 4  Standards card
-                Constraint.length(2),  // 5  gap
-                Constraint.length(1),  // 6  Integrations label
-                Constraint.length(1),  // 7  AI tools row
-                Constraint.length(1),  // 8  MCP clients row
-                Constraint.length(1),  // 9  gap
-                Constraint.min(0)      // 10 error / fill
+                Constraint.length(1),  // 5  gap
+                Constraint.length(5),  // 6  Audit card
+                Constraint.length(2),  // 7  gap
+                Constraint.length(1),  // 8  Integrations label
+                Constraint.length(1),  // 9  AI tools row
+                Constraint.length(1),  // 10 MCP clients row
+                Constraint.length(1),  // 11 gap
+                Constraint.min(0)      // 12 error / fill
             )
             .split(area);
 
         renderHeading(frame, rows.get(1));
         renderLlmCard(frame, rows.get(2), state);
         renderStandardsCard(frame, rows.get(4), state);
-        renderIntegrationsLabel(frame, rows.get(6));
-        renderAiToolsRow(frame, rows.get(7), state);
-        renderMcpClientsRow(frame, rows.get(8), state);
+        renderAuditCard(frame, rows.get(6), state);
+        renderIntegrationsLabel(frame, rows.get(8));
+        renderAiToolsRow(frame, rows.get(9), state);
+        renderMcpClientsRow(frame, rows.get(10), state);
 
         if (state.settings.errorMessage != null) {
-            renderError(frame, rows.get(10), state.settings.errorMessage);
+            renderError(frame, rows.get(12), state.settings.errorMessage);
         }
     }
 
@@ -138,6 +142,32 @@ public class SettingsView implements View {
 
         var line = remoteStandardsRow(state, inner.width());
         frame.renderWidget(Paragraph.builder().text(Text.from(line)).build(), inner);
+    }
+
+    private void renderAuditCard(Frame frame, Rect rowArea, AppState state) {
+        var area = centeredColumn(rowArea, CARD_WIDTH);
+        boolean focused = state.settings.focusIndex == FIELD_AUDIT_LLM;
+        var card = Card.of("Audit").active(focused).padding(1, 2).build();
+        var inner = card.inner(area);
+        frame.renderWidget(card, area);
+
+        var line = auditLlmChecksRow(state, inner.width());
+        frame.renderWidget(Paragraph.builder().text(Text.from(line)).build(), inner);
+    }
+
+    private Line auditLlmChecksRow(AppState state, int innerWidth) {
+        boolean focused = state.settings.focusIndex == FIELD_AUDIT_LLM;
+        boolean enabled = settings.snapshot().enableLlmChecks();
+        String checkbox = enabled ? "[x]" : "[ ]";
+        String hint = enabled
+            ? "on - LLM rules run (1 call per file, up to 20 per rule)"
+            : "off - skip llm-kind rules (deterministic checks still run)";
+        var row = new RowBuilder(focused)
+            .label("LLM checks")
+            .value(checkbox + " ", enabled ? Styles.success() : Styles.muted())
+            .value(hint, focused ? Styles.focus() : Styles.dim())
+            .right(focused ? " space toggles " : "", focused ? Styles.activeChip() : Style.create());
+        return row.build(innerWidth);
     }
 
     private static void renderIntegrationsLabel(Frame frame, Rect rowArea) {
@@ -652,6 +682,13 @@ public class SettingsView implements View {
             // through into another field's buffer.
             return true;
         }
+        if (state.settings.focusIndex == FIELD_AUDIT_LLM) {
+            if (key.code() == KeyCode.CHAR && key.character() == ' ') {
+                toggleLlmChecks(state);
+            }
+            // Other keys swallowed - this row is a toggle, not a text input.
+            return true;
+        }
         if (state.settings.focusIndex == FIELD_CONNECT_ACTION
             || state.settings.focusIndex == FIELD_PROJECTIONS) {
             // Action rows swallow character input so stray keys don't accumulate.
@@ -775,6 +812,16 @@ public class SettingsView implements View {
         state.settings.mcpReports.set(run.reports());
         state.settings.mcpBackupDir = run.backupDir() == null ? null : run.backupDir().toString();
         state.settings.mode = SettingsMode.MCP_RESULT;
+    }
+
+    private void toggleLlmChecks(AppState state) {
+        boolean next = !settings.snapshot().enableLlmChecks();
+        try {
+            settings.updateAuditFlags(next);
+            state.settings.errorMessage = null;
+        } catch (IOException e) {
+            state.settings.errorMessage = "Could not save: " + e.getMessage();
+        }
     }
 
     private boolean save(AppState state) {

@@ -87,7 +87,7 @@ class StandardsLoaderProjectionPrecedenceTest {
         var settings = mock(LaunchpadSettings.class);
         when(settings.snapshot()).thenReturn(new Snapshot(
             LlmProvider.AUTO, "http://localhost:11434", "qwen2.5-coder:7b",
-            null, null, projections
+            null, null, projections, false
         ));
         return settings;
     }
