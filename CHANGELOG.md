@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Model-Driven Context**: `AGENTS.md` now projects operations, workflows, and risks directly from the virtualized model.
 - **Build-tool-agnostic scanner**: A `BuildSystem` abstraction now resolves the build tool, so dependencies, stack label, and build commands follow Maven or Gradle instead of assuming Maven. The unsupported-project message now reads "Maven or Gradle".
 - **TaskAdvisorService decomposed**: Broke the 1,150-line god class into focused collaborators (`StandardsSelector`, `TaskClassifier`, `InterviewQuestionPlanner`, `MarkdownPostProcessor`, `PromptFormatter`, `SynthesisPipeline`, `TaskTextSupport`); `TaskAdvisorService` is now a thin orchestrator wiring them together. Public entry points and behaviour unchanged.
+- **Standardised MCP error envelope**: All `@McpTool` methods now emit failures through a single nested envelope (`error.code`, `error.type`, `error.message`, optional `error.remediation` and `error.details`) constructed via the new `McpError` record. Clients can branch on the coarse `type` (`INVALID_ARGUMENT`, `NOT_FOUND`, `PERMISSION_DENIED`, `UNSUPPORTED`, `RESOURCE_EXHAUSTED`, `INTERNAL`) without enumerating every code. Schema and full code registry documented in `docs/mcp-errors.adoc` (closes #76).
 
 ### Removed
 - **Redundant Renderers**: Removed `BuildProfilesRenderer` and duplicate synthesis paths.

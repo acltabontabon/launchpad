@@ -92,11 +92,17 @@ class LaunchpadMcpToolsOverviewTest {
     @Test
     void reportErrorWhenNoModel(@TempDir Path tmp) {
         var tools = toolsFor(new VirtualProjectContextStore());
-        assertThat(tools.getProjectOverview(tmp.resolve("none").toString()))
-            .containsEntry("error", "no_project_model");
-        assertThat(tools.getSystems(tmp.resolve("none").toString()))
-            .containsEntry("error", "no_project_model");
-        assertThat(tools.getRisks(tmp.resolve("none").toString()))
-            .containsEntry("error", "no_project_model");
+        assertThat(errorCode(tools.getProjectOverview(tmp.resolve("none").toString())))
+            .isEqualTo("no_project_model");
+        assertThat(errorCode(tools.getSystems(tmp.resolve("none").toString())))
+            .isEqualTo("no_project_model");
+        assertThat(errorCode(tools.getRisks(tmp.resolve("none").toString())))
+            .isEqualTo("no_project_model");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String errorCode(Map<String, Object> out) {
+        var err = (Map<String, Object>) out.get("error");
+        return err == null ? null : (String) err.get("code");
     }
 }

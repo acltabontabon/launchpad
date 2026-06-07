@@ -117,15 +117,19 @@ class LaunchpadMcpToolsTest {
     @Test
     void scanProjectErrorsWhenNoProjectArgumentAndNoDefault() {
         var out = tools.scanProject(null);
-        assertThat(out).containsEntry("error", "no_project_specified");
-        assertThat(out).containsKey("availableProjects");
+        var err = errorEnvelope(out);
+        assertThat(err).containsEntry("code", "no_project_specified");
+        assertThat(err).containsEntry("type", "INVALID_ARGUMENT");
+        assertThat(details(err)).containsKey("availableProjects");
     }
 
     @Test
     void scanProjectErrorsWhenUnknownName() {
         var out = tools.scanProject("definitely-not-registered");
-        assertThat(out).containsEntry("error", "unknown_project");
-        assertThat(out).containsEntry("requested", "definitely-not-registered");
+        var err = errorEnvelope(out);
+        assertThat(err).containsEntry("code", "unknown_project");
+        assertThat(err).containsEntry("type", "NOT_FOUND");
+        assertThat(details(err)).containsEntry("requested", "definitely-not-registered");
     }
 
     @Test
@@ -133,7 +137,7 @@ class LaunchpadMcpToolsTest {
         var empty = workspace.resolve("empty");
         Files.createDirectories(empty);
         var out = tools.scanProject(empty.toString());
-        assertThat(out).containsEntry("error", "unsupported_project");
+        assertThat(errorEnvelope(out)).containsEntry("code", "unsupported_project");
     }
 
     @Test
@@ -180,7 +184,17 @@ class LaunchpadMcpToolsTest {
     @Test
     void listDocumentationRejectsUnknownPurpose() {
         var out = tools.listDocumentation(projectRoot.toString(), "no-such-purpose");
-        assertThat(out).containsEntry("error", "invalid_purpose");
+        assertThat(errorEnvelope(out)).containsEntry("code", "invalid_purpose");
+    }
+
+    @Test
+    void errorEnvelopeShapeIsStandardised() {
+        var out = tools.listDocumentation(projectRoot.toString(), "no-such-purpose");
+        assertThat(out).hasSize(1).containsOnlyKeys("error");
+        var err = errorEnvelope(out);
+        assertThat(err).containsKeys("code", "type", "message");
+        assertThat(err.get("type")).isInstanceOf(String.class);
+        assertThat(err.get("message")).asString().isNotBlank();
     }
 
     @Test
@@ -197,7 +211,7 @@ class LaunchpadMcpToolsTest {
     @Test
     void findDocumentationRejectsBlankQuery() {
         var out = tools.findDocumentation("   ", projectRoot.toString());
-        assertThat(out).containsEntry("error", "missing_query");
+        assertThat(errorEnvelope(out)).containsEntry("code", "missing_query");
     }
 
     @Test
@@ -212,7 +226,7 @@ class LaunchpadMcpToolsTest {
     @Test
     void getDocumentationRejectsPathNotInDocsIndex() {
         var out = tools.getDocumentation(projectRoot.toString(), "pom.xml");
-        assertThat(out).containsEntry("error", "path_not_in_docs_index");
+        assertThat(errorEnvelope(out)).containsEntry("code", "path_not_in_docs_index");
     }
 
     @Test
@@ -222,8 +236,20 @@ class LaunchpadMcpToolsTest {
             tools.getSystems(projectRoot.toString()),
             tools.getRisks(projectRoot.toString()),
             tools.getProjectOverview(projectRoot.toString()))) {
-            assertThat(out).containsEntry("error", "no_project_model");
+            assertThat(errorEnvelope(out)).containsEntry("code", "no_project_model");
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> errorEnvelope(Map<String, Object> out) {
+        var raw = out.get("error");
+        assertThat(raw).as("expected nested `error` envelope").isInstanceOf(Map.class);
+        return (Map<String, Object>) raw;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> details(Map<String, Object> err) {
+        return (Map<String, Object>) err.get("details");
     }
 
     @Test

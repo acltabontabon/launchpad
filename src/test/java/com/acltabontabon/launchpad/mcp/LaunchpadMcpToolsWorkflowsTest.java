@@ -61,9 +61,12 @@ class LaunchpadMcpToolsWorkflowsTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void reportsErrorWhenNoModelExists(@TempDir Path tmp) {
         var tools = toolsFor(new VirtualProjectContextStore());
         var out = tools.getWorkflows(tmp.resolve("unscanned").toString());
-        assertThat(out).containsEntry("error", "no_project_model");
+        var err = (Map<String, Object>) out.get("error");
+        assertThat(err).containsEntry("code", "no_project_model");
+        assertThat(err).containsEntry("type", "NOT_FOUND");
     }
 }
