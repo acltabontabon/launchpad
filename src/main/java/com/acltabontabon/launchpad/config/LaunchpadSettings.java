@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.config;
 
 import com.acltabontabon.launchpad.ai.LlmProvider;
+import com.acltabontabon.launchpad.standards.RemoteStandardsUrlValidator;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -101,6 +102,10 @@ public class LaunchpadSettings {
 
     public void update(LlmProvider provider, String baseUrl, String model, String apiKey,
                        String remoteStandardsUrl) throws IOException {
+        var remoteError = RemoteStandardsUrlValidator.validate(remoteStandardsUrl);
+        if (remoteError != null) {
+            throw new IllegalArgumentException(remoteError);
+        }
         var previous = current.get();
         var next = new Snapshot(
             provider == null ? LlmProvider.AUTO : provider,

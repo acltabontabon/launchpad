@@ -788,6 +788,9 @@ public class SettingsView implements View {
         }
         try {
             settings.update(state.settings.providerInput, url, model, apiKey, remoteUrl);
+        } catch (IllegalArgumentException e) {
+            state.settings.errorMessage = e.getMessage();
+            return true;
         } catch (IOException e) {
             state.settings.errorMessage = "Could not save: " + e.getMessage();
             return true;
