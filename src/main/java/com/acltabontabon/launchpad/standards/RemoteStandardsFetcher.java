@@ -73,13 +73,20 @@ public class RemoteStandardsFetcher {
     }
 
     private Optional<Path> doFetch(String url, Path cacheDir) {
+        var validationError = RemoteStandardsUrlValidator.validate(url);
+        if (validationError != null) {
+            lastStatus.set(RemoteStandardsStatus.error(validationError));
+            return Optional.empty();
+        }
         var hasCache = hasGitDir(cacheDir);
         try {
             if (hasCache) {
                 runGit(cacheDir, "git", "-C", cacheDir.toString(), "pull", "--ff-only");
             } else {
                 Files.createDirectories(cacheRoot);
-                runGit(cacheRoot, "git", "clone", "--depth", "1", url, cacheDir.toString());
+                // `--` stops git from interpreting a URL beginning with `-` as a flag,
+                // even though the validator already rejects such inputs.
+                runGit(cacheRoot, "git", "clone", "--depth", "1", "--", url, cacheDir.toString());
             }
             touch(cacheDir);
             lastStatus.set(RemoteStandardsStatus.synced(Instant.now()));
