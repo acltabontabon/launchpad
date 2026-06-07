@@ -31,7 +31,8 @@ public class LaunchpadSettings {
         String model,
         String apiKey,
         String remoteStandardsUrl,
-        Set<String> projections
+        Set<String> projections,
+        boolean enableLlmChecks
     ) {
         public boolean hasRemoteStandards() {
             return remoteStandardsUrl != null && !remoteStandardsUrl.isBlank();
@@ -54,7 +55,8 @@ public class LaunchpadSettings {
                 + ", model=" + model
                 + ", apiKey=" + (hasApiKey() ? "***" : "<unset>")
                 + ", remoteStandardsUrl=" + remoteStandardsUrl
-                + ", projections=" + projections + "]";
+                + ", projections=" + projections
+                + ", enableLlmChecks=" + enableLlmChecks + "]";
         }
     }
 
@@ -64,6 +66,8 @@ public class LaunchpadSettings {
 
     public record ProjectionsSettingsChanged(Snapshot snapshot) {}
 
+    public record AuditSettingsChanged(Snapshot snapshot) {}
+
     // New provider-neutral keys.
     private static final String PROVIDER_KEY = "launchpad.ai.provider";
     private static final String BASE_URL_KEY = "launchpad.ai.base-url";
@@ -71,6 +75,7 @@ public class LaunchpadSettings {
     private static final String API_KEY = "launchpad.ai.api-key";
     private static final String REMOTE_STANDARDS_URL_KEY = "launchpad.standards.remote.url";
     private static final String PROJECTIONS_KEY = "launchpad.projections";
+    private static final String ENABLE_LLM_CHECKS_KEY = "launchpad.audit.enable-llm-checks";
 
     // Legacy keys read on first run for backward compatibility with pre-0.2 user
     // configs that pinned Ollama explicitly. Never written back.
@@ -89,11 +94,13 @@ public class LaunchpadSettings {
         @Value("${launchpad.ai.base-url:http://localhost:11434}") String defaultBaseUrl,
         @Value("${launchpad.ai.model:qwen2.5-coder:7b-instruct}") String defaultModel,
         @Value("${launchpad.ai.api-key:}") String defaultApiKey,
+        @Value("${launchpad.audit.enable-llm-checks:false}") boolean defaultEnableLlmChecks,
         ApplicationEventPublisher events
     ) {
         this.events = events;
         this.current = new AtomicReference<>(loadOrDefault(
-            LlmProvider.parse(defaultProvider), defaultBaseUrl, defaultModel, defaultApiKey));
+            LlmProvider.parse(defaultProvider), defaultBaseUrl, defaultModel, defaultApiKey,
+            defaultEnableLlmChecks));
     }
 
     public Snapshot snapshot() {
@@ -113,7 +120,8 @@ public class LaunchpadSettings {
             model,
             normalize(apiKey),
             normalize(remoteStandardsUrl),
-            previous.projections()
+            previous.projections(),
+            previous.enableLlmChecks()
         );
         writeFile(next);
         current.set(next);
@@ -123,6 +131,24 @@ public class LaunchpadSettings {
         if (!Objects.equals(previous.remoteStandardsUrl(), next.remoteStandardsUrl())) {
             events.publishEvent(new RemoteStandardsSettingsChanged(next));
         }
+    }
+
+    /**
+     * Persist the audit LLM-checks toggle. LLM-backed rules in standards
+     * (`check.kind: llm`) are expensive (one local-AI call per matched file,
+     * up to 20 per rule); they stay opt-in until the user flips this flag.
+     */
+    public void updateAuditFlags(boolean enableLlmChecks) throws IOException {
+        var previous = current.get();
+        if (previous.enableLlmChecks() == enableLlmChecks) return;
+        var next = new Snapshot(
+            previous.provider(), previous.baseUrl(), previous.model(),
+            previous.apiKey(), previous.remoteStandardsUrl(),
+            previous.projections(), enableLlmChecks
+        );
+        writeFile(next);
+        current.set(next);
+        events.publishEvent(new AuditSettingsChanged(next));
     }
 
     /**
@@ -139,7 +165,8 @@ public class LaunchpadSettings {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         var next = new Snapshot(
             previous.provider(), previous.baseUrl(), previous.model(),
-            previous.apiKey(), previous.remoteStandardsUrl(), normalized
+            previous.apiKey(), previous.remoteStandardsUrl(), normalized,
+            previous.enableLlmChecks()
         );
         writeFile(next);
         current.set(next);
@@ -156,18 +183,21 @@ public class LaunchpadSettings {
     }
 
     private Snapshot loadOrDefault(LlmProvider defaultProvider, String defaultBaseUrl,
-                                   String defaultModel, String defaultApiKey) {
+                                   String defaultModel, String defaultApiKey,
+                                   boolean defaultEnableLlmChecks) {
         String envKey = System.getenv(API_KEY_ENV);
         if (!Files.isRegularFile(configFile)) {
             return new Snapshot(defaultProvider, defaultBaseUrl, defaultModel,
-                normalize(envKey != null ? envKey : defaultApiKey), null, null);
+                normalize(envKey != null ? envKey : defaultApiKey), null, null,
+                defaultEnableLlmChecks);
         }
         var props = new Properties();
         try (InputStream in = Files.newInputStream(configFile)) {
             props.load(in);
         } catch (IOException e) {
             return new Snapshot(defaultProvider, defaultBaseUrl, defaultModel,
-                normalize(envKey != null ? envKey : defaultApiKey), null, null);
+                normalize(envKey != null ? envKey : defaultApiKey), null, null,
+                defaultEnableLlmChecks);
         }
         // Legacy fallback: a pre-0.2 config with only `spring.ai.ollama.*` keys
         // still resolves to a usable Ollama snapshot without manual migration.
@@ -183,13 +213,16 @@ public class LaunchpadSettings {
             provider = LlmProvider.OLLAMA;
         }
         String apiKey = envKey != null ? envKey : props.getProperty(API_KEY, defaultApiKey);
+        boolean enableLlmChecks = Boolean.parseBoolean(
+            props.getProperty(ENABLE_LLM_CHECKS_KEY, String.valueOf(defaultEnableLlmChecks)));
         return new Snapshot(
             provider,
             baseUrl,
             model,
             normalize(apiKey),
             normalize(props.getProperty(REMOTE_STANDARDS_URL_KEY)),
-            parseProjections(props.getProperty(PROJECTIONS_KEY))
+            parseProjections(props.getProperty(PROJECTIONS_KEY)),
+            enableLlmChecks
         );
     }
 
@@ -224,6 +257,7 @@ public class LaunchpadSettings {
         if (snap.hasProjections()) {
             props.setProperty(PROJECTIONS_KEY, String.join(",", snap.projections()));
         }
+        props.setProperty(ENABLE_LLM_CHECKS_KEY, String.valueOf(snap.enableLlmChecks()));
         try (OutputStream out = Files.newOutputStream(configFile)) {
             props.store(out, "Launchpad user config");
         }

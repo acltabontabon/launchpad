@@ -41,7 +41,7 @@ class ProviderHealthCheckerTest {
     void ollamaReadyWhenModelListed() {
         respondAt("/api/tags", 200,
             "{\"models\":[{\"name\":\"qwen2.5-coder:7b\"},{\"name\":\"llama3.2:latest\"}]}");
-        snapshot.set(new Snapshot(LlmProvider.OLLAMA, baseUrl, "qwen2.5-coder:7b", null, null, null));
+        snapshot.set(new Snapshot(LlmProvider.OLLAMA, baseUrl, "qwen2.5-coder:7b", null, null, null, false));
 
         var status = newChecker().check();
 
@@ -52,7 +52,7 @@ class ProviderHealthCheckerTest {
     @Test
     void ollamaToleratesLatestSuffix() {
         respondAt("/api/tags", 200, "{\"models\":[{\"name\":\"llama3.2:latest\"}]}");
-        snapshot.set(new Snapshot(LlmProvider.OLLAMA, baseUrl, "llama3.2", null, null, null));
+        snapshot.set(new Snapshot(LlmProvider.OLLAMA, baseUrl, "llama3.2", null, null, null, false));
 
         var status = newChecker().check();
 
@@ -62,7 +62,7 @@ class ProviderHealthCheckerTest {
     @Test
     void ollamaReportsModelMissingWhenNotListed() {
         respondAt("/api/tags", 200, "{\"models\":[{\"name\":\"other-model\"}]}");
-        snapshot.set(new Snapshot(LlmProvider.OLLAMA, baseUrl, "qwen2.5-coder:7b", null, null, null));
+        snapshot.set(new Snapshot(LlmProvider.OLLAMA, baseUrl, "qwen2.5-coder:7b", null, null, null, false));
 
         var status = newChecker().check();
 
@@ -73,7 +73,7 @@ class ProviderHealthCheckerTest {
     void openAiReadyWhenModelIdMatches() {
         respondAt("/v1/models", 200,
             "{\"data\":[{\"id\":\"llama-3.2-3b\"},{\"id\":\"other-model\"}]}");
-        snapshot.set(new Snapshot(LlmProvider.OPENAI_COMPATIBLE, baseUrl, "llama-3.2-3b", null, null, null));
+        snapshot.set(new Snapshot(LlmProvider.OPENAI_COMPATIBLE, baseUrl, "llama-3.2-3b", null, null, null, false));
 
         var status = newChecker().check();
 
@@ -85,7 +85,7 @@ class ProviderHealthCheckerTest {
     void autoPicksOllamaWhenBothEndpointsRespond() {
         respondAt("/api/tags", 200, "{\"models\":[{\"name\":\"qwen2.5-coder:7b\"}]}");
         respondAt("/v1/models", 200, "{\"data\":[{\"id\":\"qwen2.5-coder:7b\"}]}");
-        snapshot.set(new Snapshot(LlmProvider.AUTO, baseUrl, "qwen2.5-coder:7b", null, null, null));
+        snapshot.set(new Snapshot(LlmProvider.AUTO, baseUrl, "qwen2.5-coder:7b", null, null, null, false));
 
         var status = newChecker().check();
 
@@ -95,7 +95,7 @@ class ProviderHealthCheckerTest {
     @Test
     void autoFallsThroughToOpenAiWhenOllamaEndpointMissing() {
         respondAt("/v1/models", 200, "{\"data\":[{\"id\":\"local-model\"}]}");
-        snapshot.set(new Snapshot(LlmProvider.AUTO, baseUrl, "local-model", null, null, null));
+        snapshot.set(new Snapshot(LlmProvider.AUTO, baseUrl, "local-model", null, null, null, false));
 
         var status = newChecker().check();
 
@@ -108,7 +108,7 @@ class ProviderHealthCheckerTest {
         // Stop the server so the connect fails immediately.
         server.stop(0);
         server = null;
-        snapshot.set(new Snapshot(LlmProvider.OLLAMA, baseUrl, "any", null, null, null));
+        snapshot.set(new Snapshot(LlmProvider.OLLAMA, baseUrl, "any", null, null, null, false));
 
         var status = newChecker().check();
 
@@ -133,7 +133,7 @@ class ProviderHealthCheckerTest {
     private static final class StubSettings extends LaunchpadSettings {
         private final AtomicReference<Snapshot> snap;
         StubSettings(AtomicReference<Snapshot> snap) {
-            super("auto", "http://unused", "unused", "", event -> {});
+            super("auto", "http://unused", "unused", "", false, event -> {});
             this.snap = snap;
         }
         @Override public Snapshot snapshot() { return snap.get(); }

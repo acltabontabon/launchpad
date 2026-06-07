@@ -74,6 +74,25 @@ class LaunchpadSettingsMigrationTest {
     }
 
     @Test
+    void auditLlmChecksDefaultsOffAndRoundTrips() throws IOException {
+        var settings = newSettings();
+        assertThat(settings.snapshot().enableLlmChecks()).isFalse();
+
+        settings.updateAuditFlags(true);
+        assertThat(settings.snapshot().enableLlmChecks()).isTrue();
+
+        var written = new Properties();
+        try (var in = Files.newInputStream(tempHome.resolve(".launchpad").resolve("config.properties"))) {
+            written.load(in);
+        }
+        assertThat(written.getProperty("launchpad.audit.enable-llm-checks")).isEqualTo("true");
+
+        // A fresh LaunchpadSettings instance must re-hydrate the flag from disk.
+        var reloaded = newSettings();
+        assertThat(reloaded.snapshot().enableLlmChecks()).isTrue();
+    }
+
+    @Test
     void parseFallsBackToAutoOnUnknownProviderSlug() {
         assertThat(LlmProvider.parse(null)).isEqualTo(LlmProvider.AUTO);
         assertThat(LlmProvider.parse("")).isEqualTo(LlmProvider.AUTO);
@@ -88,6 +107,7 @@ class LaunchpadSettingsMigrationTest {
             "http://localhost:11434",
             "qwen2.5-coder:7b-instruct",
             "",
+            false,
             new NoOpEvents());
     }
 
