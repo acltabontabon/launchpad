@@ -9,9 +9,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * {@link StandardsIndex} shares one source, because the loader resolves the
  * whole rule set from a single winning source directory.
  *
- * @param pack    Pack id from the {@code standards-pack.yml} manifest; {@code null}
- *                in legacy flat (manifest-less) mode.
- * @param version Pack version from the manifest; {@code null} in flat mode.
+ * @param pack    Pack id from the {@code standards-pack.yml} manifest. The whole
+ *                {@code StandardsSource} is {@code null} only when nothing resolved.
+ * @param version Pack version (content semver) from the manifest.
  * @param origin  Which source directory the rules resolved from:
  *                {@code "remote-cache"} or {@code "local-override"}.
  */

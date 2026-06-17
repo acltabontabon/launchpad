@@ -34,6 +34,7 @@ class StandardsIndexEmissionTest {
         var dir = projectRoot.resolve(".launchpad/standards");
         Files.createDirectories(dir.resolve("rules"));
         Files.writeString(dir.resolve("standards-pack.yml"), """
+            schemaVersion: 1
             id: acme-pack
             version: 1.0.0
             includes:

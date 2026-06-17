@@ -68,6 +68,7 @@ Fields:
 | `path_escapes_project`    | PERMISSION_DENIED  | Resolved path is outside the project root.
 | `file_appears_binary`     | UNSUPPORTED        | First kilobyte of the file contains NUL bytes.
 | `unsupported_project`     | UNSUPPORTED        | Project failed the support gate (not a Spring Boot Maven/Gradle project).
+| `incompatible_pack_schema`| UNSUPPORTED        | Standards-pack manifest `schemaVersion` is missing or outside the supported range. `details` carry `manifest`, `found`, and `supported`.
 | `file_too_large`          | RESOURCE_EXHAUSTED | File exceeds `launchpad.scan.max-file-size-kb`.
 | `stat_failed`             | INTERNAL           | `IOException` while reading file metadata.
 | `read_failed`             | INTERNAL           | `IOException` while reading file content.

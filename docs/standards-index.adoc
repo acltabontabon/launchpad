@@ -76,9 +76,9 @@ generated id, whereas an authored id is stable regardless of edits.
 {
   "schemaVersion": 2,
   "generatedAt": "2026-06-17T12:00:00Z",   // ISO-8601; NOT part of any content hash
-  "source": {                               // null when no rules resolve
-    "pack": "acme-standards",               // manifest id; omitted in legacy flat mode
-    "version": "1.2.0",                     // manifest version; omitted in flat mode
+  "source": {                               // the whole object is null when no rules resolve
+    "pack": "acme-standards",               // manifest id
+    "version": "1.2.0",                     // manifest content version
     "origin": "local-override"              // "remote-cache" | "local-override"
   },
   "rules": [

@@ -12,11 +12,11 @@ public final class StandardsRendering {
 
     public static final String RULES_PLACEHOLDER =
         "_No engineering rules configured. Set `launchpad.standards.remote.url` in Launchpad settings, "
-        + "or add `.launchpad/standards/rules.yml` to this project._\n";
+        + "or add a standards pack under `.launchpad/standards/` with a `standards-pack.yml` manifest._\n";
 
     public static final String SKILLS_PLACEHOLDER =
         "_No workflow skills configured. Set `launchpad.standards.remote.url` in Launchpad settings, "
-        + "or add `.launchpad/standards/skills.yml` to this project._\n";
+        + "or add a standards pack under `.launchpad/standards/` with a `standards-pack.yml` manifest._\n";
 
     private static final String SKILLS_FILE = ".ai/skills.md";
 

@@ -17,6 +17,7 @@ import com.acltabontabon.launchpad.scanner.ScanStore;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import com.acltabontabon.launchpad.standards.Checklist;
 import com.acltabontabon.launchpad.standards.ChecklistItem;
+import com.acltabontabon.launchpad.standards.IncompatiblePackSchemaException;
 import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
 import java.io.IOException;
@@ -191,36 +192,40 @@ public class LaunchpadMcpTools {
         var resolved = resolveProject(project);
         if (resolved instanceof Resolution.Error err) return err.payload();
         var projectRoot = ((Resolution.Path) resolved).value();
-        var rules = standardsLoader.loadRules(projectRoot).stream()
-            .map(r -> Map.of(
-                "id", nullToEmpty(r.id()),
-                "title", nullToEmpty(r.title()),
-                "severity", nullToEmpty(r.severity()),
-                "description", nullToEmpty(r.description()),
-                "rationale", nullToEmpty(r.rationale()),
-                "auditable", r.isAuditable()))
-            .toList();
-        var skills = standardsLoader.loadSkills(projectRoot).stream()
-            .map(s -> Map.of(
-                "id", nullToEmpty(s.id()),
-                "title", nullToEmpty(s.title()),
-                "trigger", nullToEmpty(s.trigger()),
-                "steps", s.steps() == null ? List.of() : s.steps()))
-            .toList();
-        var checklists = standardsLoader.loadChecklists(projectRoot).stream()
-            .map(c -> Map.of(
-                "id", nullToEmpty(c.id()),
-                "title", nullToEmpty(c.title()),
-                "items", c.items() == null ? List.of() : c.items().stream()
-                    .map(i -> Map.of("id", nullToEmpty(i.id()), "text", nullToEmpty(i.text()),
-                        "required", i.required()))
-                    .toList()))
-            .toList();
-        return Map.of(
-            "rules", rules,
-            "skills", skills,
-            "checklists", checklists
-        );
+        try {
+            var rules = standardsLoader.loadRules(projectRoot).stream()
+                .map(r -> Map.of(
+                    "id", nullToEmpty(r.id()),
+                    "title", nullToEmpty(r.title()),
+                    "severity", nullToEmpty(r.severity()),
+                    "description", nullToEmpty(r.description()),
+                    "rationale", nullToEmpty(r.rationale()),
+                    "auditable", r.isAuditable()))
+                .toList();
+            var skills = standardsLoader.loadSkills(projectRoot).stream()
+                .map(s -> Map.of(
+                    "id", nullToEmpty(s.id()),
+                    "title", nullToEmpty(s.title()),
+                    "trigger", nullToEmpty(s.trigger()),
+                    "steps", s.steps() == null ? List.of() : s.steps()))
+                .toList();
+            var checklists = standardsLoader.loadChecklists(projectRoot).stream()
+                .map(c -> Map.of(
+                    "id", nullToEmpty(c.id()),
+                    "title", nullToEmpty(c.title()),
+                    "items", c.items() == null ? List.of() : c.items().stream()
+                        .map(i -> Map.of("id", nullToEmpty(i.id()), "text", nullToEmpty(i.text()),
+                            "required", i.required()))
+                        .toList()))
+                .toList();
+            return Map.of(
+                "rules", rules,
+                "skills", skills,
+                "checklists", checklists
+            );
+        } catch (IncompatiblePackSchemaException e) {
+            return incompatiblePackSchema(e);
+        }
     }
 
     @McpTool(
@@ -244,26 +249,30 @@ public class LaunchpadMcpTools {
         var projectRoot = ((Resolution.Path) resolved).value();
         var unsupported = requireSupported(projectRoot);
         if (unsupported != null) return unsupported;
-        var ctx = scanStore.load(projectRoot).orElseGet(() -> scanAndPersist(projectRoot));
-        var result = auditService.run(ctx, projectRoot);
-        var findings = result.findings().stream()
-            .map(f -> Map.of(
-                "ruleId", nullToEmpty(f.ruleId()),
-                "ruleHash", nullToEmpty(f.ruleHash()),
-                "severity", nullToEmpty(f.severity()),
-                "ruleTitle", nullToEmpty(f.ruleTitle()),
-                "filePath", nullToEmpty(f.filePath()),
-                "line", f.line() == null ? 0 : f.line(),
-                "message", nullToEmpty(f.message()),
-                "evidence", nullToEmpty(f.evidence())))
-            .toList();
-        return Map.of(
-            "rulesAudited", result.rulesAudited(),
-            "totalFindings", result.findings().size(),
-            "findings", findings,
-            "sarifPath", result.sarifPath() == null ? "" : result.sarifPath().toString(),
-            "markdownPath", result.markdownPath() == null ? "" : result.markdownPath().toString()
-        );
+        try {
+            var ctx = scanStore.load(projectRoot).orElseGet(() -> scanAndPersist(projectRoot));
+            var result = auditService.run(ctx, projectRoot);
+            var findings = result.findings().stream()
+                .map(f -> Map.of(
+                    "ruleId", nullToEmpty(f.ruleId()),
+                    "ruleHash", nullToEmpty(f.ruleHash()),
+                    "severity", nullToEmpty(f.severity()),
+                    "ruleTitle", nullToEmpty(f.ruleTitle()),
+                    "filePath", nullToEmpty(f.filePath()),
+                    "line", f.line() == null ? 0 : f.line(),
+                    "message", nullToEmpty(f.message()),
+                    "evidence", nullToEmpty(f.evidence())))
+                .toList();
+            return Map.of(
+                "rulesAudited", result.rulesAudited(),
+                "totalFindings", result.findings().size(),
+                "findings", findings,
+                "sarifPath", result.sarifPath() == null ? "" : result.sarifPath().toString(),
+                "markdownPath", result.markdownPath() == null ? "" : result.markdownPath().toString()
+            );
+        } catch (IncompatiblePackSchemaException e) {
+            return incompatiblePackSchema(e);
+        }
     }
 
     @McpTool(
@@ -288,23 +297,27 @@ public class LaunchpadMcpTools {
         var rootA = ((Resolution.Path) a).value();
         var rootB = ((Resolution.Path) b).value();
 
-        var rulesDiff = diffById(
-            standardsLoader.loadRules(rootA), standardsLoader.loadRules(rootB),
-            Rule::id, LaunchpadMcpTools::ruleHash, LaunchpadMcpTools::ruleToMap);
-        var skillsDiff = diffById(
-            standardsLoader.loadSkills(rootA), standardsLoader.loadSkills(rootB),
-            Skill::id, LaunchpadMcpTools::skillHash, LaunchpadMcpTools::skillToMap);
-        var checklistsDiff = diffById(
-            standardsLoader.loadChecklists(rootA), standardsLoader.loadChecklists(rootB),
-            Checklist::id, LaunchpadMcpTools::checklistHash, LaunchpadMcpTools::checklistToMap);
+        try {
+            var rulesDiff = diffById(
+                standardsLoader.loadRules(rootA), standardsLoader.loadRules(rootB),
+                Rule::id, LaunchpadMcpTools::ruleHash, LaunchpadMcpTools::ruleToMap);
+            var skillsDiff = diffById(
+                standardsLoader.loadSkills(rootA), standardsLoader.loadSkills(rootB),
+                Skill::id, LaunchpadMcpTools::skillHash, LaunchpadMcpTools::skillToMap);
+            var checklistsDiff = diffById(
+                standardsLoader.loadChecklists(rootA), standardsLoader.loadChecklists(rootB),
+                Checklist::id, LaunchpadMcpTools::checklistHash, LaunchpadMcpTools::checklistToMap);
 
-        return Map.of(
-            "projectA", rootA.toString(),
-            "projectB", rootB.toString(),
-            "rules", rulesDiff,
-            "skills", skillsDiff,
-            "checklists", checklistsDiff
-        );
+            return Map.of(
+                "projectA", rootA.toString(),
+                "projectB", rootB.toString(),
+                "rules", rulesDiff,
+                "skills", skillsDiff,
+                "checklists", checklistsDiff
+            );
+        } catch (IncompatiblePackSchemaException e) {
+            return incompatiblePackSchema(e);
+        }
     }
 
     @McpTool(
@@ -979,6 +992,22 @@ public class LaunchpadMcpTools {
         var result = projectSupportDetector.detect(projectRoot);
         if (result.isSupported()) return null;
         return McpError.unsupported("unsupported_project", result.reason()).toPayload();
+    }
+
+    /**
+     * Canonical envelope for a standards pack whose manifest schemaVersion this
+     * Launchpad cannot read. Surfaced by every tool that resolves standards, so a
+     * format-incompatible pack returns a machine-readable error rather than a raw
+     * stack trace.
+     */
+    private static Map<String, Object> incompatiblePackSchema(IncompatiblePackSchemaException e) {
+        var details = new LinkedHashMap<String, Object>();
+        details.put("manifest", e.manifestFile().toString());
+        details.put("found", e.foundVersion());
+        details.put("supported", e.supportedRange());
+        return McpError.unsupported("incompatible_pack_schema", e.getMessage(), e.remediation())
+            .withDetails(details)
+            .toPayload();
     }
 
     private ProjectContext scanAndPersist(Path projectRoot) {

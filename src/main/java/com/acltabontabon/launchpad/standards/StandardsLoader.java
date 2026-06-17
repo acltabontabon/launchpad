@@ -24,12 +24,14 @@ import org.springframework.stereotype.Component;
  * Resolves rules, skills, checklists, prompts, and adapters from a standards source.
  * <p>
  * For each source directory in priority order [remote-cache, per-project override]:
- *   - If the dir contains {@code standards-pack.yml}, parse the manifest and walk
- *     its includes for the requested kind. First non-empty result wins.
- *   - Else (legacy flat format) read the kind's flat file (rules.yml / skills.yml)
- *     directly from the source dir. Checklists, prompts, and adapters have no
- *     flat-format equivalent - they only resolve in pack mode.
+ * a directory is a resolvable pack only when it contains a {@code standards-pack.yml}
+ * manifest; the loader parses the manifest and walks its includes for the requested
+ * kind, and the first non-empty result wins. A directory without a manifest
+ * contributes nothing.
  * <p>
+ * Every manifest is read through {@link #readManifest} so its {@code schemaVersion}
+ * is validated before any of its contents are used; an unsupported version is
+ * rejected with {@link IncompatiblePackSchemaException} rather than loaded silently.
  * Missing include paths inside a manifest are surfaced loudly so tech leads get
  * immediate feedback on typos.
  */
@@ -39,9 +41,12 @@ public class StandardsLoader {
     private static final Logger log = LoggerFactory.getLogger(StandardsLoader.class);
     private static final String OVERRIDE_DIR = ".launchpad/standards";
     private static final String MANIFEST = "standards-pack.yml";
-    private static final String RULES_FILENAME = "rules.yml";
-    private static final String SKILLS_FILENAME = "skills.yml";
     private static final String DEFAULT_PROJECTION_ID = "claude";
+
+    /** Lowest manifest {@code schemaVersion} this Launchpad can read. */
+    static final int SCHEMA_VERSION_MIN_SUPPORTED = 1;
+    /** Highest (current) manifest {@code schemaVersion}; bump when the format changes. */
+    static final int SCHEMA_VERSION_MAX_SUPPORTED = 1;
 
     private final ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
     private final RemoteStandardsFetcher remoteFetcher;
@@ -83,9 +88,8 @@ public class StandardsLoader {
     }
 
     public List<Skill> loadSkills(Path projectRoot) {
-        return StandardsIdentity.normalizeSkills(resolveWithFlatFallback(projectRoot,
-            dir -> loadPackEntries(dir, inc -> inc.skills(), SkillsFile.class, SkillsFile::skills),
-            dir -> loadFlat(dir.resolve(SKILLS_FILENAME), SkillsFile.class, SkillsFile::skills)));
+        return StandardsIdentity.normalizeSkills(resolvePackOnly(projectRoot,
+            dir -> loadPackEntries(dir, inc -> inc.skills(), SkillsFile.class, SkillsFile::skills)));
     }
 
     public List<Checklist> loadChecklists(Path projectRoot) {
@@ -103,12 +107,11 @@ public class StandardsLoader {
     private RuleResolution resolveRules(Path projectRoot) {
         for (LabeledDir labeled : labeledSourceDirs(projectRoot)) {
             Path dir = labeled.dir();
-            boolean hasManifest = Files.isRegularFile(dir.resolve(MANIFEST));
-            Optional<List<Rule>> resolved = hasManifest
-                ? loadPackEntries(dir, inc -> inc.rules(), RulesFile.class, RulesFile::rules)
-                : loadFlat(dir.resolve(RULES_FILENAME), RulesFile.class, RulesFile::rules);
+            if (!Files.isRegularFile(dir.resolve(MANIFEST))) continue;
+            Optional<List<Rule>> resolved =
+                loadPackEntries(dir, inc -> inc.rules(), RulesFile.class, RulesFile::rules);
             if (resolved.isPresent()) {
-                return new RuleResolution(resolved.get(), describeSource(labeled, hasManifest));
+                return new RuleResolution(resolved.get(), describeSource(labeled));
             }
         }
         return new RuleResolution(List.of(), null);
@@ -148,9 +151,11 @@ public class StandardsLoader {
             Path manifestFile = dir.resolve(MANIFEST);
             if (!Files.isRegularFile(manifestFile)) continue;
             try {
-                var manifest = readYaml(manifestFile, StandardsPackManifest.class);
+                var manifest = readManifest(manifestFile);
                 if (manifest.projections() == null) return Optional.empty();
                 return Optional.of(new LinkedHashSet<>(manifest.projections()));
+            } catch (IncompatiblePackSchemaException e) {
+                throw e;
             } catch (Exception e) {
                 log.warn("Failed to parse 'projections' from {}; using default {}: {}",
                     manifestFile, Set.of(DEFAULT_PROJECTION_ID), e.getMessage());
@@ -164,7 +169,7 @@ public class StandardsLoader {
         for (Path dir : sourceDirs(projectRoot)) {
             Path manifestFile = dir.resolve(MANIFEST);
             if (!Files.isRegularFile(manifestFile)) continue;
-            var manifest = readYaml(manifestFile, StandardsPackManifest.class);
+            var manifest = readManifest(manifestFile);
             if (manifest.adapters() == null) continue;
             String relativePath = manifest.adapters().get(adapterId);
             if (relativePath == null) continue;
@@ -203,40 +208,14 @@ public class StandardsLoader {
     }
 
     /**
-     * Builds the {@link StandardsSource} for a winning directory: its origin plus
-     * the manifest's {@code id}/{@code version} when a manifest is present (null in
-     * legacy flat mode). A malformed manifest degrades to origin-only rather than
-     * failing the sidecar.
+     * Builds the {@link StandardsSource} for a winning directory: its origin plus the
+     * manifest's {@code id}/{@code version}. Only ever called for a directory that just
+     * resolved entries through {@link #loadPackEntries}, so the manifest is present and
+     * its {@code schemaVersion} already validated; re-reading here cannot disagree.
      */
-    private StandardsSource describeSource(LabeledDir labeled, boolean hasManifest) {
-        if (!hasManifest) {
-            return new StandardsSource(null, null, labeled.origin());
-        }
-        try {
-            var manifest = readYaml(labeled.dir().resolve(MANIFEST), StandardsPackManifest.class);
-            return new StandardsSource(manifest.id(), manifest.version(), labeled.origin());
-        } catch (RuntimeException e) {
-            log.warn("Failed to read pack identity from {}; recording origin only: {}",
-                labeled.dir().resolve(MANIFEST), e.getMessage());
-            return new StandardsSource(null, null, labeled.origin());
-        }
-    }
-
-    private <T> List<T> resolveWithFlatFallback(
-        Path projectRoot,
-        Function<Path, Optional<List<T>>> packLoader,
-        Function<Path, Optional<List<T>>> flatLoader
-    ) {
-        for (Path dir : sourceDirs(projectRoot)) {
-            if (Files.isRegularFile(dir.resolve(MANIFEST))) {
-                Optional<List<T>> packResult = packLoader.apply(dir);
-                if (packResult.isPresent()) return packResult.get();
-            } else {
-                Optional<List<T>> flatResult = flatLoader.apply(dir);
-                if (flatResult.isPresent()) return flatResult.get();
-            }
-        }
-        return List.of();
+    private StandardsSource describeSource(LabeledDir labeled) {
+        var manifest = readManifest(labeled.dir().resolve(MANIFEST));
+        return new StandardsSource(manifest.id(), manifest.version(), labeled.origin());
     }
 
     private <T> List<T> resolvePackOnly(
@@ -259,7 +238,7 @@ public class StandardsLoader {
         Function<F, List<T>> entrySelector
     ) {
         Path manifestFile = packDir.resolve(MANIFEST);
-        var manifest = readYaml(manifestFile, StandardsPackManifest.class);
+        var manifest = readManifest(manifestFile);
         if (manifest.includes() == null) return Optional.empty();
         List<String> includes = includeSelector.apply(manifest.includes());
         if (includes == null || includes.isEmpty()) return Optional.empty();
@@ -278,15 +257,25 @@ public class StandardsLoader {
         return Optional.of(combined);
     }
 
-    private <F, T> Optional<List<T>> loadFlat(
-        Path file,
-        Class<F> fileType,
-        Function<F, List<T>> entrySelector
-    ) {
-        if (!Files.isRegularFile(file)) return Optional.empty();
-        F fileObj = readYaml(file, fileType);
-        List<T> entries = entrySelector.apply(fileObj);
-        return Optional.of(entries != null ? entries : List.of());
+    /**
+     * Reads a manifest and validates its {@code schemaVersion} before returning it.
+     * The single chokepoint every manifest read goes through, so an unsupported pack
+     * format is rejected uniformly - from the rules path, the projection path, and the
+     * adapter path alike - rather than depending on which loader happened to run first.
+     *
+     * @throws IncompatiblePackSchemaException if {@code schemaVersion} is missing or
+     *     outside {@code [SCHEMA_VERSION_MIN_SUPPORTED, SCHEMA_VERSION_MAX_SUPPORTED]}
+     */
+    private StandardsPackManifest readManifest(Path manifestFile) {
+        var manifest = readYaml(manifestFile, StandardsPackManifest.class);
+        Integer schemaVersion = manifest.schemaVersion();
+        if (schemaVersion == null
+            || schemaVersion < SCHEMA_VERSION_MIN_SUPPORTED
+            || schemaVersion > SCHEMA_VERSION_MAX_SUPPORTED) {
+            throw new IncompatiblePackSchemaException(manifestFile, schemaVersion,
+                SCHEMA_VERSION_MIN_SUPPORTED, SCHEMA_VERSION_MAX_SUPPORTED);
+        }
+        return manifest;
     }
 
     private <T> T readYaml(Path file, Class<T> type) {

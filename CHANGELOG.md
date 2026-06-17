@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP Expansion**: New tools for model access (`get_workflows`, `get_risks`, etc.) and a comprehensive integration test harness.
 - **Spring Boot Gradle support**: Gradle projects (`build.gradle` / `build.gradle.kts`, Groovy or Kotlin DSL) now pass the support gate via a new `SpringBootGradleSupportSignal` and structured `GradleBuildParser`.
 - **Canonical skills companion**: Resolved skills are now written to `.ai/skills.md`, one H2 section per skill with bounded `Trigger`/`Steps`/`Expected output`/`Notes` subsections, instead of only appearing as bullets in `.ai/index.md`. A dedicated `FileKind.SKILLS` distinguishes the aggregated companion from the per-vendor skill projection files (closes #80).
+- **Standards-pack schema version**: The `standards-pack.yml` manifest now carries a required integer `schemaVersion` (the format version, distinct from the content `version`). On load Launchpad rejects any pack whose `schemaVersion` is missing or outside the supported range (`1`), reporting the manifest path, the version found, and the supported range. The MCP standards tools (`get_standards`, `compare_standards`, `get_audit_findings`) surface this as a new `incompatible_pack_schema` error; documented in `docs/standards-packs.adoc` and `docs/mcp-errors.adoc` (closes #84).
 
 ### Changed
 - **Chunk-friendly standards companions**: The standards companion files (`.ai/engineering-rules.md`, `.ai/skills.md`, `.ai/checklists.md`) now emit one stable, descriptive heading per rule, skill, and checklist, each carrying an explicit `{#slug}` anchor derived from the record's stable `id` (not its title), so sandbox indexers chunk one item at a time with clean BM25 titles. Rule severity moved out of the heading into a `` `[must]` `` badge beneath it. Two ids that collapse to the same anchor slug now fail the scan rather than being silently de-duplicated (closes #80).
@@ -24,10 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Build-tool-agnostic scanner**: A `BuildSystem` abstraction now resolves the build tool, so dependencies, stack label, and build commands follow Maven or Gradle instead of assuming Maven. The unsupported-project message now reads "Maven or Gradle".
 - **TaskAdvisorService decomposed**: Broke the 1,150-line god class into focused collaborators (`StandardsSelector`, `TaskClassifier`, `InterviewQuestionPlanner`, `MarkdownPostProcessor`, `PromptFormatter`, `SynthesisPipeline`, `TaskTextSupport`); `TaskAdvisorService` is now a thin orchestrator wiring them together. Public entry points and behaviour unchanged.
 - **Standardised MCP error envelope**: All `@McpTool` methods now emit failures through a single nested envelope (`error.code`, `error.type`, `error.message`, optional `error.remediation` and `error.details`) constructed via the new `McpError` record. Clients can branch on the coarse `type` (`INVALID_ARGUMENT`, `NOT_FOUND`, `PERMISSION_DENIED`, `UNSUPPORTED`, `RESOURCE_EXHAUSTED`, `INTERNAL`) without enumerating every code. Schema and full code registry documented in `docs/mcp-errors.adoc` (closes #76).
+- **Manifest now required for a pack**: A standards source directory resolves only when it contains a `standards-pack.yml` manifest; the manifest must declare a supported `schemaVersion` (closes #84).
 
 ### Removed
 - **Redundant Renderers**: Removed `BuildProfilesRenderer` and duplicate synthesis paths.
 - **Legacy Artifacts**: Removed obsolete planning markers and redundant tests.
+- **Legacy flat-file standards mode**: Dropped the manifest-less fallback that read bare `rules.yml` / `skills.yml` from the root of a standards source. Every pack is now a versioned manifest, so there is no second, unversioned load path (closes #84).
 
 ### Fixed
 - **Responsive project picker on slow disks**: The on-demand live search now has a 3s wall-clock deadline; partial results render and the picker stays responsive even on slow or wide home directories (closes #77).

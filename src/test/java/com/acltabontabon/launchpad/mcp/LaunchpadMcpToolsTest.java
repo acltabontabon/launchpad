@@ -150,6 +150,28 @@ class LaunchpadMcpToolsTest {
     }
 
     @Test
+    void getStandardsRejectsIncompatiblePackSchema() throws IOException {
+        var standards = projectRoot.resolve(".launchpad/standards");
+        Files.createDirectories(standards);
+        Files.writeString(standards.resolve("standards-pack.yml"), """
+            schemaVersion: 99
+            id: future-pack
+            version: 1.0.0
+            includes:
+              rules:
+                - rules/main.yml
+            """);
+
+        var out = tools.getStandards(projectRoot.toString());
+        var err = errorEnvelope(out);
+        assertThat(err).containsEntry("code", "incompatible_pack_schema");
+        assertThat(err).containsEntry("type", "UNSUPPORTED");
+        assertThat(err).containsKey("remediation");
+        assertThat(details(err)).containsEntry("found", 99);
+        assertThat(details(err)).containsEntry("supported", "1");
+    }
+
+    @Test
     void getAuditFindingsReturnsShapeWithNoRules() {
         var out = tools.getAuditFindings(projectRoot.toString());
         assertThat(out).containsEntry("rulesAudited", 0);

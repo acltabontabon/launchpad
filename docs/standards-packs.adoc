@@ -48,10 +48,12 @@ my-standards/
 
 == The manifest
 
-`standards-pack.yml` declares the pack identity and lists every file to include:
+`standards-pack.yml` declares the pack identity and lists every file to include.
+A manifest is required: a source directory without one is not a pack and resolves nothing.
 
 [source,yaml]
 ----
+schemaVersion: 1
 id: my-team-standards
 version: 1.0.0
 name: My Team Standards
@@ -79,6 +81,24 @@ The `projections` field controls which agent-native formats are emitted alongsid
 * `windsurf` -- `.windsurfrules`
 
 Omit `projections` to use the default (`claude` only). Set it to `[]` to disable all projections.
+
+=== Schema version and compatibility
+
+`schemaVersion` is a required integer that pins the *format* of the manifest and pack layout.
+It is distinct from `version`: `version` is the semver of your team's content (bump it when you change a rule), while `schemaVersion` is bumped by Launchpad only when the pack format itself changes in a breaking way.
+
+On load, Launchpad rejects a pack whose `schemaVersion` is missing or outside the range it supports.
+The current release supports `schemaVersion: 1`.
+
+[cols="1,3"]
+|===
+|Missing `schemaVersion` |Rejected. Add `schemaVersion: 1` to the manifest.
+|`schemaVersion` higher than supported |The pack needs a newer Launchpad. Upgrade Launchpad, or lower the pack to a supported version.
+|`schemaVersion` lower than supported |The format is retired. Migrate the pack to a supported version.
+|===
+
+The rejection is loud, not silent: a scan fails with the manifest path, the version found, and the supported range, and the MCP standards tools return an `incompatible_pack_schema` error (see xref:mcp-errors.adoc[MCP errors]) instead of partial output.
+This is what gives the pack format a safe migration path -- an old Launchpad never half-reads a future format.
 
 == Rules
 
