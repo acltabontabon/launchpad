@@ -55,9 +55,11 @@ public final class ClassClassifier {
         if (!Files.isRegularFile(path)) return null;
 
         String head;
+        int totalLines;
         try {
             if (Files.size(path) > MAX_FILE_BYTES) return null;
             var lines = Files.readAllLines(path);
+            totalLines = lines.size();
             if (lines.size() > MAX_LINES_PER_FILE) lines = lines.subList(0, MAX_LINES_PER_FILE);
             head = String.join("\n", lines);
         } catch (Exception e) {
@@ -72,7 +74,10 @@ public final class ClassClassifier {
         if (kind == ClassFact.Kind.CLASS && REST_CONTROLLER_ANN.matcher(head).find()) {
             kind = ClassFact.Kind.REST_CONTROLLER;
         }
-        return new ClassFact(firstMatch.name, relativePath, leaf, kind, List.of(), List.of());
+        // startLine = 1-based line of the matched declaration; endLine = last line of the file.
+        int startLine = SourceLines.lineNumberAt(head, firstMatch.offset);
+        return new ClassFact(firstMatch.name, relativePath, leaf, kind, List.of(), List.of(),
+            startLine, totalLines);
     }
 
     private record FirstDecl(String name, ClassFact.Kind kind, int offset) {}

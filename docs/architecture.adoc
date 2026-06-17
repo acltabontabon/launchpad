@@ -22,6 +22,8 @@ This ordering is deliberate. Deterministic analysis is fast, repeatable, and doe
 
 Generated context files use a standard shape (`AGENTS.md` + `.ai/`) that any AI assistant can read. Agent-specific formats (Claude Code skills, Cursor rules, Windsurf rules) are produced as optional projections on top of the canonical output, not as replacements for it.
 
+Alongside the prose output, a deterministic machine-readable projection of the project structure is emitted as a graph sidecar (`.launchpad/project.model.json`). See xref:project-model.adoc[the project-model sidecar] for its schema and stability promise.
+
 == Pipeline
 
 [source]

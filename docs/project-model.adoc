@@ -1,0 +1,90 @@
+= Project-model sidecar (`.launchpad/project.model.json`)
+
+A deterministic, machine-readable projection of a project's structure as a
+graph. It is emitted alongside `AGENTS.md` during a scan, with no model call,
+so it is reproducible and trustworthy. Out-of-process consumers (the MCP
+server, a context-mode index, downstream tooling) can traverse the project
+semantically instead of re-reading files every session.
+
+== Why
+
+`AGENTS.md` describes the project in prose. The sidecar is the structural
+counterpart: a stable, ID-stamped graph an agent can query ("the components of
+package X", "what the project depends on") without parsing prose or walking the
+repository.
+
+== Generation
+
+Built deterministically from the project scan by `ProjectModelAssembler`, using
+only the existing deterministic extractors (build-system detection, endpoint
+extraction, structure summarization, class classification). No LLM is involved.
+Persisted by `ProjectModelStore`. Generation is best-effort: a write failure is
+logged and never blocks a run.
+
+== Schema
+
+[source,jsonc]
+----
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-17T12:00:00Z",   // ISO-8601; NOT part of any content hash
+  "projectName": "...",
+  "rootPath": "/abs/path",
+  "nodes": [
+    {
+      "id": "component/src-main-java-com-acme-userscontroller-java", // "<type>/<slug>", unique
+      "type": "component",
+      "name": "UsersController",
+      "source": { "path": "src/main/java/com/acme/UsersController.java",
+                  "startLine": 12, "endLine": 84 },  // line fields omitted when not applicable
+      "attributes": { "kind": "rest_controller", "leafPackage": "acme" },
+      "contentHash": "<sha-256 hex>"
+    }
+  ],
+  "edges": [
+    { "from": "package/...", "to": "component/...", "type": "contains" }
+  ]
+}
+----
+
+=== Node types
+
+[cols="1,3"]
+|===
+| `project`    | The single root node. Anchors the graph; all `depends-on` edges originate here.
+| `package`    | An inferred source directory (not a declared build module).
+| `component`  | A classified source declaration (class / record / enum / interface / controller).
+| `endpoint`   | An HTTP route detected from a controller.
+| `entrypoint` | An application `main` or a configuration entry point.
+| `dependency` | An external declared dependency.
+|===
+
+=== Edge types
+
+[cols="1,3"]
+|===
+| `contains`   | `project` -> `package`, and `package` -> `component` (most-specific package wins).
+| `exposes`    | `component` (controller) -> `endpoint`.
+| `implements` | `component` (implementation) -> `component` (interface).
+| `depends-on` | `project` -> `dependency`. For the MVP, external dependencies attach to the project root rather than fanning out to inferred packages.
+|===
+
+=== Source pointers
+
+Every node carries a `source` with a project-relative `path`. `startLine` /
+`endLine` (1-based) are present for source-backed nodes (components, endpoints,
+entry points) and omitted where a single source line does not apply (packages
+are directories; dependencies point at the build manifest).
+
+== Stability promise
+
+* Every node `id` is unique. Ids derive from naturally-unique keys (file path,
+  dependency name, method+path); any residual collision is resolved with a
+  deterministic numeric suffix.
+* Each node carries a `contentHash` (SHA-256 over its type, name, source, and
+  attributes) for drift detection.
+* Output is stable across re-runs of an unchanged project. `generatedAt` is the
+  only non-deterministic value and is deliberately excluded from every
+  `contentHash`, so two runs differing only by timestamp produce identical
+  nodes and edges.
+* `schemaVersion` is bumped on any breaking change to this shape.

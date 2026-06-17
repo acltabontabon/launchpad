@@ -107,7 +107,7 @@ public final class ProjectClassFacts {
         for (var f : facts) {
             if (f.kind() == ClassFact.Kind.INTERFACE && implMap.containsKey(f.name())) {
                 out.add(new ClassFact(f.name(), f.relativePath(), f.leafPackage(), f.kind(),
-                    f.routes(), List.copyOf(implMap.get(f.name()))));
+                    f.routes(), List.copyOf(implMap.get(f.name())), f.startLine(), f.endLine()));
             } else {
                 out.add(f);
             }
@@ -134,7 +134,7 @@ public final class ProjectClassFacts {
         for (var f : facts) {
             if (f.kind() == ClassFact.Kind.REST_CONTROLLER && routesByClass.containsKey(f.name())) {
                 out.add(new ClassFact(f.name(), f.relativePath(), f.leafPackage(), f.kind(),
-                    List.copyOf(routesByClass.get(f.name())), f.impls()));
+                    List.copyOf(routesByClass.get(f.name())), f.impls(), f.startLine(), f.endLine()));
             } else {
                 out.add(f);
             }

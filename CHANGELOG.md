@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - **Project Virtualization Engine**: New canonical model (`ProjectContext`) with automated persistence to `.launchpad/project-context.json` and a roadmap in `docs/roadmap.adoc`.
+- **Machine-readable project-model graph**: A deterministic, LLM-free sidecar (`.launchpad/project.model.json`) emitted alongside `AGENTS.md`. It projects the project structure as a graph of nodes (`project`, `package`, `component`, `endpoint`, `entrypoint`, `dependency`) and edges (`contains`, `exposes`, `implements`, `depends-on`), each node carrying a stable `id`, a content hash, and a `source` pointer with line ranges. Versioned via a top-level `schemaVersion`; documented in `docs/project-model.adoc` (closes #104).
 - **Intelligent Discovery**: Automated mapping of multi-trigger workflows (HTTP/Event/Scheduled) and inference of architectural risks/guardrail suggestions.
 - **Model-Grounded `/new-task`**: Task synthesis now injects execution context (impacted systems, workflows, and risks) directly from the virtualized model.
 - **MCP Expansion**: New tools for model access (`get_workflows`, `get_risks`, etc.) and a comprehensive integration test harness.
