@@ -55,12 +55,52 @@ public class StandardsLoader {
     }
 
     /**
-     * Resolves rules and their provenance in a single decision, so the returned
-     * {@code source} always describes exactly the returned {@code rules}. This is
-     * the canonical rule loader; {@link #loadRules} and {@link #describeRulesSource}
-     * are thin wrappers over it and must never resolve independently.
+     * Resolves the full standards pack - rules, skills, and checklists - plus the
+     * pack-level {@code source} in one call, with every record assigned a stable,
+     * unique id (see {@link StandardsIdentity}). The sidecar and the audit pass
+     * both consume this, so they agree on record identity and content hashes.
      */
-    public ResolvedStandards loadResolvedRules(Path projectRoot) {
+    public ResolvedStandards loadResolvedStandards(Path projectRoot) {
+        RuleResolution rules = resolveRules(projectRoot);
+        return new ResolvedStandards(
+            StandardsIdentity.normalizeRules(rules.rules()),
+            loadSkills(projectRoot),
+            loadChecklists(projectRoot),
+            rules.source());
+    }
+
+    public List<Rule> loadRules(Path projectRoot) {
+        return StandardsIdentity.normalizeRules(resolveRules(projectRoot).rules());
+    }
+
+    /**
+     * Reports where {@link #loadRules} resolved its rules from. A thin wrapper over
+     * {@link #resolveRules} - never an independent resolution path - so the source
+     * can never disagree with the rules.
+     */
+    public Optional<StandardsSource> describeRulesSource(Path projectRoot) {
+        return Optional.ofNullable(resolveRules(projectRoot).source());
+    }
+
+    public List<Skill> loadSkills(Path projectRoot) {
+        return StandardsIdentity.normalizeSkills(resolveWithFlatFallback(projectRoot,
+            dir -> loadPackEntries(dir, inc -> inc.skills(), SkillsFile.class, SkillsFile::skills),
+            dir -> loadFlat(dir.resolve(SKILLS_FILENAME), SkillsFile.class, SkillsFile::skills)));
+    }
+
+    public List<Checklist> loadChecklists(Path projectRoot) {
+        return StandardsIdentity.normalizeChecklists(resolvePackOnly(projectRoot,
+            dir -> loadPackEntries(dir, inc -> inc.checklists(), ChecklistsFile.class, ChecklistsFile::checklists)));
+    }
+
+    /**
+     * Resolves rules and their provenance in a single decision, so the returned
+     * {@code source} always describes exactly the returned {@code rules}. The
+     * canonical rule resolution; {@link #loadRules}, {@link #describeRulesSource},
+     * and {@link #loadResolvedStandards} all wrap it and must never resolve
+     * independently. Ids are normalized by the callers via {@link StandardsIdentity}.
+     */
+    private RuleResolution resolveRules(Path projectRoot) {
         for (LabeledDir labeled : labeledSourceDirs(projectRoot)) {
             Path dir = labeled.dir();
             boolean hasManifest = Files.isRegularFile(dir.resolve(MANIFEST));
@@ -68,35 +108,14 @@ public class StandardsLoader {
                 ? loadPackEntries(dir, inc -> inc.rules(), RulesFile.class, RulesFile::rules)
                 : loadFlat(dir.resolve(RULES_FILENAME), RulesFile.class, RulesFile::rules);
             if (resolved.isPresent()) {
-                return new ResolvedStandards(resolved.get(), describeSource(labeled, hasManifest));
+                return new RuleResolution(resolved.get(), describeSource(labeled, hasManifest));
             }
         }
-        return new ResolvedStandards(List.of(), null);
+        return new RuleResolution(List.of(), null);
     }
 
-    public List<Rule> loadRules(Path projectRoot) {
-        return loadResolvedRules(projectRoot).rules();
-    }
-
-    /**
-     * Reports where {@link #loadRules} resolved its rules from. A thin wrapper over
-     * {@link #loadResolvedRules} - never an independent resolution path - so the
-     * source can never disagree with the rules.
-     */
-    public Optional<StandardsSource> describeRulesSource(Path projectRoot) {
-        return Optional.ofNullable(loadResolvedRules(projectRoot).source());
-    }
-
-    public List<Skill> loadSkills(Path projectRoot) {
-        return resolveWithFlatFallback(projectRoot,
-            dir -> loadPackEntries(dir, inc -> inc.skills(), SkillsFile.class, SkillsFile::skills),
-            dir -> loadFlat(dir.resolve(SKILLS_FILENAME), SkillsFile.class, SkillsFile::skills));
-    }
-
-    public List<Checklist> loadChecklists(Path projectRoot) {
-        return resolvePackOnly(projectRoot,
-            dir -> loadPackEntries(dir, inc -> inc.checklists(), ChecklistsFile.class, ChecklistsFile::checklists));
-    }
+    /** Rules paired with the source they resolved from, before id normalization. */
+    private record RuleResolution(List<Rule> rules, StandardsSource source) {}
 
     /**
      * Resolves which {@code AgentProjection} ids are enabled for this project,

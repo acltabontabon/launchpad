@@ -1,55 +1,80 @@
 = Standards-index sidecar (`.launchpad/standards.index.json`)
 
-A deterministic, machine-readable projection of a project's resolved standards
-rules, one record per rule. It is emitted alongside `AGENTS.md` during a scan,
-with no model call, so it is reproducible and trustworthy. A runtime agent (or a
-context-mode index) can retrieve a single rule on demand instead of carrying the
-whole pack, and audit findings get a canonical registry to resolve their
-`ruleId` against.
+A deterministic, machine-readable projection of a project's resolved standards -
+rules, skills, and checklists - one record per item. It is emitted alongside
+`AGENTS.md` during a scan, with no model call, so it is reproducible and
+trustworthy. A runtime agent (or a context-mode index) can retrieve a single
+record on demand instead of carrying the whole pack, and audit findings get a
+canonical registry to resolve their `ruleId` and `ruleHash` against.
 
 == Why
 
 The standards pack reaches an agent as prose: `AGENTS.md` plus the rendered
 `.ai/engineering-rules.md`. That is good for reading, poor for querying. The
-sidecar is the structural counterpart: a stable, id-keyed list of rules an agent
-can index and fetch rule-by-rule ("give me the rule behind this audit finding",
-"the HIGH-severity rules for Java"). Each record is self-contained, so retrieving
-one rule needs nothing else from the pack.
+sidecar is the structural counterpart: a stable, id-keyed list of records an
+agent can index and fetch one at a time ("give me the rule behind this audit
+finding", "the HIGH-severity rules for Java", "the PR checklist"). Each record is
+self-contained, so retrieving one needs nothing else from the pack.
+
+The identity contract has three parts:
+
+* `id` is the stable join key across the sidecar, audit output, MCP tools, and
+  future consumers.
+* `contentHash` fingerprints the projected record version.
+* an audit finding's `ruleHash` copies the matching rule's `contentHash`, so
+  consumers can detect findings produced against stale standards text.
 
 [source]
 ----
-standards pack (rules)
+standards pack (rules, skills, checklists)
         │
         ▼
 ┌────────────────────────┐
-│ StandardsIndexAssembler│  Deterministic, LLM-free. Resolves rules and their
-│                        │  source in one decision, sorts by priority then id,
-│                        │  stamps a content hash per rule.
+│ StandardsIndexAssembler│  Deterministic, LLM-free. Resolves the pack and its
+│                        │  source in one decision, sorts records, and stamps a
+│                        │  content hash per record via StandardsContentHash.
 └───────────┬────────────┘
             │
             ▼
-   .launchpad/standards.index.json   ◄── records keyed by rule id
+   .launchpad/standards.index.json   ◄── records keyed by id
             ▲
-            │  same id is the join key
+            │  id is the join key; contentHash detects drift
             ▼
-   .launchpad/audit.sarif.json       ◄── findings reference the same ruleId
+   .launchpad/audit.sarif.json       ◄── findings reference the same ruleId + ruleHash
    .launchpad/audit.md
+----
+
+The audit pass hashes rules with the same `StandardsContentHash` the assembler
+uses, so the two artifacts agree by construction:
+
+[source]
+----
+standards.index.json.rules[*].id          <-> audit finding.ruleId
+standards.index.json.rules[*].contentHash <-> audit finding.ruleHash
 ----
 
 == Generation
 
-Built deterministically from the resolved standards by `StandardsIndexAssembler`
-and persisted by `StandardsIndexStore`. Rules and their provenance come from a
-single `StandardsLoader.loadResolvedRules` call, so the emitted `source`
-describes exactly the emitted `rules` - they can never drift. No LLM is involved.
-Generation is best-effort: a write failure is logged and never blocks a run.
+Built deterministically from the resolved pack by `StandardsIndexAssembler` and
+persisted by `StandardsIndexStore`. The rules, skills, checklists, and their
+provenance come from a single `StandardsLoader.loadResolvedStandards` call, so the
+emitted `source` describes exactly the emitted records - they can never drift. No
+LLM is involved. Generation is best-effort: a write failure is logged and never
+blocks a run.
+
+Every record carries a non-blank `id`. Ids authored in the pack are preferred and
+used verbatim. A record with a blank id is assigned a deterministic slug of its
+title (or a checklist item's text), with a numeric suffix on collision
+(`slug`, `slug-2`, `slug-3`). Authored ids are the real stability boundary:
+because generated ids are title/text-derived, changing a title can change a
+generated id, whereas an authored id is stable regardless of edits.
 
 == Schema
 
 [source,jsonc]
 ----
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedAt": "2026-06-17T12:00:00Z",   // ISO-8601; NOT part of any content hash
   "source": {                               // null when no rules resolve
     "pack": "acme-standards",               // manifest id; omitted in legacy flat mode
@@ -58,7 +83,7 @@ Generation is best-effort: a write failure is logged and never blocks a run.
   },
   "rules": [
     {
-      "id": "java.no-field-injection",      // join key; matches audit.sarif.json ruleId
+      "id": "java.no-field-injection",      // join key; matches audit ruleId
       "title": "No field injection",
       "severity": "HIGH",
       "scope": { "languages": ["java"], "frameworks": ["spring-boot"],
@@ -70,21 +95,46 @@ Generation is best-effort: a write failure is logged and never blocks a run.
       "auditable": true,                    // true when the rule carries a check
       "checkKind": "forbid-pattern",        // forbid-pattern | forbid-import | llm; omitted when not auditable
       "priority": 10,
+      "contentHash": "<sha-256 hex>"        // matches audit finding.ruleHash for this id
+    }
+  ],
+  "skills": [
+    {
+      "id": "skill.add-endpoint",
+      "title": "Add an endpoint",
+      "trigger": "When adding a REST endpoint",
+      "steps": ["Write the controller", "Add a test"],   // ordered
+      "outputExpectations": ["Tests pass"],               // ordered; omitted when unset
+      "notes": "...",                                     // omitted when unset
+      "scope": { "languages": [], "frameworks": [], "tools": [], "tasks": [], "tags": [] },
+      "source": { "pack": "acme-standards", "version": "1.2.0", "origin": "local-override" },
+      "contentHash": "<sha-256 hex>"
+    }
+  ],
+  "checklists": [
+    {
+      "id": "check.pr",
+      "title": "PR checklist",
+      "scope": { "languages": [], "frameworks": [], "tools": [], "tasks": [], "tags": [] },
+      "items": [
+        { "id": "ci-green", "text": "CI is green", "required": true }
+      ],
+      "source": { "pack": "acme-standards", "version": "1.2.0", "origin": "local-override" },
       "contentHash": "<sha-256 hex>"
     }
   ]
 }
 ----
 
-When no rules resolve, the sidecar is still written, with `rules: []` and
-`source: null`. This lets consumers tell "no standards loaded" apart from
-"sidecar never generated".
+When nothing resolves, the sidecar is still written, with `rules: []`,
+`skills: []`, `checklists: []`, and `source: null`. This lets consumers tell
+"no standards loaded" apart from "sidecar never generated".
 
-=== Fields
+=== Rule fields
 
 [cols="1,3"]
 |===
-| `id`          | Stable rule id authored in the pack. The join key shared with audit findings.
+| `id`          | Stable rule id (authored, or a deterministic slug fallback). The join key shared with audit findings.
 | `title`       | Human-readable rule name.
 | `severity`    | Rule severity (e.g. `CRITICAL`, `HIGH`); omitted when unset.
 | `scope`       | Applicability: `languages`, `frameworks`, `tools`, `tasks`, `tags`. Empty lists mean "no restriction".
@@ -94,33 +144,45 @@ When no rules resolve, the sidecar is still written, with `rules: []` and
 | `auditable`   | True when the rule carries audit-check machinery.
 | `checkKind`   | The check kind when auditable; omitted for doc-only rules.
 | `priority`    | Effective sort priority (lower = more important; defaults to 99).
-| `contentHash` | SHA-256 over the rule's content, for drift detection.
+| `contentHash` | SHA-256 over the rule's projected content, for drift detection. Equals audit `finding.ruleHash`.
 |===
+
+Skill and checklist entries follow the same shape: a stable `id`, the record's
+content, the mirrored `source`, and a `contentHash` over the projected record
+(the checklist hash includes its items in authored order).
 
 == Cross-linking with audit findings
 
-The rule `id` is the canonical join key across artifacts:
+The `id` is the canonical join key across artifacts, and `contentHash` /
+`ruleHash` is the drift signal:
 
 [source]
 ----
 standards.index.json  rules[*].id   ==   audit.sarif.json  ruleId   ==   audit.md  rule id
 ----
 
-A consumer reading an audit finding can resolve its `ruleId` against this index
-to recover the rule's full text, rationale, scope, and severity without parsing
-the pack.
+For audit findings, `ruleId` identifies the rule and `ruleHash` identifies the
+exact rule record version used when the finding was produced. Consumers can
+compare `finding.ruleHash` with `standards.index.json.rules[*].contentHash` for
+the same `ruleId`. If they differ, the finding may have been produced against
+stale standards text. `ruleHash` is carried in the SARIF result `properties`
+(and on the rule descriptor), on each `audit.md` finding as a `hash:` line, and
+in the `get_audit_findings` MCP payload.
 
 == Stability promise
 
-* Every rule `id` is unique within the index and stable across runs of an
-  unchanged pack.
-* Records are ordered deterministically by `priority` then `id`.
-* Each record carries a `contentHash` (SHA-256 over a labeled payload of its id,
-  title, severity, scope, description, rationale, audit metadata, and source) for
-  drift detection.
+* Every `id` is unique within its kind and stable across runs of an unchanged
+  pack. Authored ids are preferred; generated fallback ids are deterministic but
+  title/text-derived.
+* Records are ordered deterministically: rules by `priority` then `id`, skills
+  and checklists by `id`.
+* Each record carries a `contentHash` (SHA-256 over a labeled payload). The hash
+  fingerprints the projected record - it includes the `id` and source metadata,
+  not only the prose - so the same text under a different id hashes differently.
 * Output is stable across re-runs of an unchanged pack. `generatedAt` is the only
   non-deterministic value and is deliberately excluded from every `contentHash`,
   so two runs differing only by timestamp produce identical records.
-* In schema version 1, `rules[*].source` mirrors the top-level `source`. The
-  duplication is intentional so a single retrieved record remains self-contained.
-* `schemaVersion` is bumped on any breaking change to this shape.
+* Each record's `source` mirrors the top-level `source`. The duplication is
+  intentional so a single retrieved record remains self-contained.
+* `schemaVersion` is bumped on any breaking change to this shape. Version 2 added
+  the `skills` and `checklists` projections alongside `rules`.

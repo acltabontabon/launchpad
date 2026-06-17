@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Locks the resolve-once invariant of {@link StandardsLoader#loadResolvedRules}:
+ * Locks the resolve-once invariant of {@link StandardsLoader#loadResolvedStandards}:
  * the returned {@code source} always describes exactly the returned {@code rules},
  * resolved from a single winning source directory per the existing precedence.
  */
@@ -32,7 +32,7 @@ class StandardsLoaderSourceTest {
         Files.writeString(dir.resolve("rules/java.yml"), flatRules("java.rule-a"));
 
         var loader = new StandardsLoader(noRemote(), null);
-        var resolved = loader.loadResolvedRules(projectRoot);
+        var resolved = loader.loadResolvedStandards(projectRoot);
 
         assertThat(resolved.rules()).extracting(Rule::id).containsExactly("java.rule-a");
         assertThat(resolved.source()).isEqualTo(
@@ -46,7 +46,7 @@ class StandardsLoaderSourceTest {
         Files.writeString(dir.resolve("rules.yml"), flatRules("flat.rule"));
 
         var loader = new StandardsLoader(noRemote(), null);
-        var resolved = loader.loadResolvedRules(projectRoot);
+        var resolved = loader.loadResolvedStandards(projectRoot);
 
         assertThat(resolved.rules()).extracting(Rule::id).containsExactly("flat.rule");
         assertThat(resolved.source())
@@ -56,7 +56,7 @@ class StandardsLoaderSourceTest {
     @Test
     void noRulesReportsNullSource(@TempDir Path projectRoot) {
         var loader = new StandardsLoader(noRemote(), null);
-        var resolved = loader.loadResolvedRules(projectRoot);
+        var resolved = loader.loadResolvedStandards(projectRoot);
 
         assertThat(resolved.rules()).isEmpty();
         assertThat(resolved.source()).isNull();
@@ -73,7 +73,7 @@ class StandardsLoaderSourceTest {
         Files.writeString(override.resolve("rules.yml"), flatRules("local.rule-b"));
 
         var loader = new StandardsLoader(remoteAt(remoteCache), null);
-        var resolved = loader.loadResolvedRules(projectRoot);
+        var resolved = loader.loadResolvedStandards(projectRoot);
 
         assertThat(resolved.rules()).extracting(Rule::id).containsExactly("remote.rule-a");
         assertThat(resolved.source().origin()).isEqualTo(StandardsSource.ORIGIN_REMOTE_CACHE);

@@ -227,10 +227,12 @@ public class LaunchpadMcpTools {
         name = "get_audit_findings",
         description = "Return standards audit findings for a project (rule violations detected by "
             + "Launchpad's local-AI + pattern audit engine). Reads .launchpad/audit.sarif.json when "
-            + "present and runs a fresh audit otherwise. Each finding carries ruleId, severity, "
-            + "filePath, line, and message - clients can filter the returned list by severity "
-            + "(never|must|should|avoid) or ruleId. The `project` argument accepts either a short name "
-            + "from the registry (see list_projects) or an absolute path."
+            + "present and runs a fresh audit otherwise. Each finding carries ruleId, ruleHash, "
+            + "severity, filePath, line, and message - clients can filter the returned list by severity "
+            + "(never|must|should|avoid) or ruleId. `ruleHash` is the content hash of the rule version "
+            + "the finding was produced against; compare it with standards.index.json rules[*].contentHash "
+            + "for the same ruleId to detect findings produced against stale standards text. The `project` "
+            + "argument accepts either a short name from the registry (see list_projects) or an absolute path."
     )
     public Map<String, Object> getAuditFindings(
         @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
@@ -247,6 +249,7 @@ public class LaunchpadMcpTools {
         var findings = result.findings().stream()
             .map(f -> Map.of(
                 "ruleId", nullToEmpty(f.ruleId()),
+                "ruleHash", nullToEmpty(f.ruleHash()),
                 "severity", nullToEmpty(f.severity()),
                 "ruleTitle", nullToEmpty(f.ruleTitle()),
                 "filePath", nullToEmpty(f.filePath()),

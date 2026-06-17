@@ -407,15 +407,16 @@ public class LaunchpadRunner implements ApplicationRunner {
                 }
 
                 // Deterministic, machine-readable standards sidecar
-                // (.launchpad/standards.index.json): one record per resolved rule
-                // so an agent can retrieve a single rule and audit findings can
-                // resolve their ruleId against a canonical registry. Rules and
-                // their source come from one resolution so they never disagree.
-                // LLM-free; best-effort so a write failure cannot block the run.
+                // (.launchpad/standards.index.json): one record per resolved rule,
+                // skill, and checklist so an agent can retrieve a single record and
+                // audit findings can resolve their ruleId/ruleHash against a
+                // canonical registry. The whole pack and its source come from one
+                // resolution so they never disagree. LLM-free; best-effort so a
+                // write failure cannot block the run.
                 try {
-                    var resolved = standardsLoader.loadResolvedRules(projectRootForAudit);
+                    var resolved = standardsLoader.loadResolvedStandards(projectRootForAudit);
                     var standardsIndex = standardsIndexAssembler.assemble(
-                        resolved.rules(), resolved.source(), java.time.Instant.now().toString());
+                        resolved, java.time.Instant.now().toString());
                     standardsIndexStore.save(projectRootForAudit, standardsIndex);
                 } catch (Exception indexError) {
                     org.slf4j.LoggerFactory.getLogger(LaunchpadRunner.class)
