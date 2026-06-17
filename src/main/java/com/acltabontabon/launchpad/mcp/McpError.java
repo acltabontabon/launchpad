@@ -90,6 +90,10 @@ public record McpError(
         return new McpError(code, Type.UNSUPPORTED, message);
     }
 
+    public static McpError unsupported(String code, String message, String remediation) {
+        return new McpError(code, Type.UNSUPPORTED, message, remediation);
+    }
+
     public static McpError resourceExhausted(String code, String message) {
         return new McpError(code, Type.RESOURCE_EXHAUSTED, message);
     }

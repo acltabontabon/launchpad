@@ -106,6 +106,6 @@ class StandardsLoaderProjectionsTest {
     private static void writeManifest(Path projectRoot, String body) throws Exception {
         var dir = projectRoot.resolve(".launchpad/standards");
         Files.createDirectories(dir);
-        Files.writeString(dir.resolve("standards-pack.yml"), body);
+        Files.writeString(dir.resolve("standards-pack.yml"), "schemaVersion: 1\n" + body);
     }
 }

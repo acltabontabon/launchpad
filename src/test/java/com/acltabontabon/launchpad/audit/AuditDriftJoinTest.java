@@ -33,9 +33,16 @@ class AuditDriftJoinTest {
     @Test
     void findingRuleHashEqualsSidecarContentHash(@TempDir Path projectRoot) throws Exception {
         var standards = projectRoot.resolve(".launchpad/standards");
-        Files.createDirectories(standards);
-        Files.writeString(standards.resolve("rules.yml"), """
-            version: 1
+        Files.createDirectories(standards.resolve("rules"));
+        Files.writeString(standards.resolve("standards-pack.yml"), """
+            schemaVersion: 1
+            id: acme-pack
+            version: 1.0.0
+            includes:
+              rules:
+                - rules/main.yml
+            """);
+        Files.writeString(standards.resolve("rules/main.yml"), """
             rules:
               - id: no-autowired
                 title: No field injection
