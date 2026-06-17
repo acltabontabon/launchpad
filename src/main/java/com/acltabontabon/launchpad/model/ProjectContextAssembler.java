@@ -8,9 +8,6 @@ import com.acltabontabon.launchpad.springboot.maven.MavenProfile;
 import com.acltabontabon.launchpad.springboot.runtime.Endpoint;
 import com.acltabontabon.launchpad.standards.infer.StandardsInferer;
 import com.acltabontabon.launchpad.workflow.WorkflowDiscoverer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -173,28 +170,11 @@ public class ProjectContextAssembler {
             canonical.append("pkg:").append(pkg.path()).append(':').append(pkg.fileCount()).append('\n');
         }
         safe(scan.dependencies()).forEach(d -> canonical.append("dep:").append(d.display()).append('\n'));
-        return sha256(canonical.toString());
-    }
-
-    private static String sha256(String input) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashed = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(hashed.length * 2);
-            for (byte b : hashed) {
-                hex.append(Character.forDigit((b >> 4) & 0xF, 16));
-                hex.append(Character.forDigit(b & 0xF, 16));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-256 is mandated by the JDK; this branch is unreachable.
-            return Integer.toHexString(input.hashCode());
-        }
+        return ModelIdentity.sha256(canonical.toString());
     }
 
     private static String slug(String path) {
-        if (path == null) return "";
-        return path.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+        return ModelIdentity.slug(path);
     }
 
     private static String nullToEmpty(String s) {

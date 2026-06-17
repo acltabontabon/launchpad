@@ -13,7 +13,14 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  *                   Always starts with `/`. Empty path defaults to `/`.
  * @param handler    Short handler reference shown back to the model -
  *                   `<simple-class-name>.<method-name>` (e.g. `LoanDecisionController.decide`).
+ * @param line       1-based line of the mapping annotation in the controller source,
+ *                   or 0 when unknown (e.g. synthetic actuator routes).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record Endpoint(String method, String path, String handler) {
+public record Endpoint(String method, String path, String handler, int line) {
+
+    /** Backward-compatible constructor for callers that predate line capture. */
+    public Endpoint(String method, String path, String handler) {
+        this(method, path, handler, 0);
+    }
 }

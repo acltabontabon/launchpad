@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.springboot.parser;
 
+import com.acltabontabon.launchpad.scanner.SourceLines;
 import com.acltabontabon.launchpad.springboot.runtime.Endpoint;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -120,7 +121,8 @@ public final class EndpointExtractor {
                 ? className + (handlerName != null ? "." + handlerName : "")
                 : (handlerName != null ? handlerName : "");
 
-            out.add(new Endpoint(verb, fullPath, handler));
+            out.add(new Endpoint(verb, fullPath, handler,
+                SourceLines.lineNumberAt(content, matcher.start())));
         }
         return out;
     }

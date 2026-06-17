@@ -10,6 +10,8 @@ import com.acltabontabon.launchpad.springboot.scanner.ProjectScanner;
 import com.acltabontabon.launchpad.scanner.ScanStore;
 import com.acltabontabon.launchpad.model.ProjectContextAssembler;
 import com.acltabontabon.launchpad.model.VirtualProjectContextStore;
+import com.acltabontabon.launchpad.model.graph.ProjectModelAssembler;
+import com.acltabontabon.launchpad.model.graph.ProjectModelStore;
 import com.acltabontabon.launchpad.scanner.StackProfile;
 import com.acltabontabon.launchpad.standards.RemoteStandardsChecker;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
@@ -92,6 +94,8 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final LaunchpadSettings settings;
     private final ProjectContextAssembler projectContextAssembler;
     private final VirtualProjectContextStore virtualProjectContextStore;
+    private final ProjectModelAssembler projectModelAssembler;
+    private final ProjectModelStore projectModelStore;
 
     // Single pool for all background scan / task futures. Using a cached pool
     // (unbounded, but tasks are short-lived and serialised in practice) so each
@@ -170,7 +174,9 @@ public class LaunchpadRunner implements ApplicationRunner {
         StandardsLoader standardsLoader,
         LaunchpadSettings settings,
         ProjectContextAssembler projectContextAssembler,
-        VirtualProjectContextStore virtualProjectContextStore
+        VirtualProjectContextStore virtualProjectContextStore,
+        ProjectModelAssembler projectModelAssembler,
+        ProjectModelStore projectModelStore
     ) {
         this.welcomeView = welcomeView;
         this.projectSelectView = projectSelectView;
@@ -195,6 +201,8 @@ public class LaunchpadRunner implements ApplicationRunner {
         this.settings = settings;
         this.projectContextAssembler = projectContextAssembler;
         this.virtualProjectContextStore = virtualProjectContextStore;
+        this.projectModelAssembler = projectModelAssembler;
+        this.projectModelStore = projectModelStore;
         this.state.activeModel = settings.snapshot().model();
     }
 
@@ -377,6 +385,17 @@ public class LaunchpadRunner implements ApplicationRunner {
                 } catch (Exception modelError) {
                     org.slf4j.LoggerFactory.getLogger(LaunchpadRunner.class)
                         .warn("Failed to persist project model for {}", state.projectPath, modelError);
+                }
+
+                // Deterministic, machine-readable project-model graph sidecar
+                // (.launchpad/project.model.json). LLM-free; best-effort so a
+                // write failure cannot block the run.
+                try {
+                    var projectModel = projectModelAssembler.assemble(ctx, java.time.Instant.now().toString());
+                    projectModelStore.save(projectRootForAudit, projectModel);
+                } catch (Exception graphError) {
+                    org.slf4j.LoggerFactory.getLogger(LaunchpadRunner.class)
+                        .warn("Failed to persist project-model graph for {}", state.projectPath, graphError);
                 }
 
                 registerProjectQuietly(projectRootForAudit, ctx.stack());

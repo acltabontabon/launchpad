@@ -15,6 +15,8 @@ import java.util.List;
  *                      Empty for non-controllers.
  * @param impls         For interfaces: implementing class names found elsewhere in the project.
  *                      Empty otherwise.
+ * @param startLine     1-based line of the primary declaration, or 0 when unknown.
+ * @param endLine       1-based last line of the source file, or 0 when unknown.
  */
 public record ClassFact(
     String name,
@@ -22,7 +24,9 @@ public record ClassFact(
     String leafPackage,
     Kind kind,
     List<String> routes,
-    List<String> impls
+    List<String> impls,
+    int startLine,
+    int endLine
 ) {
 
     public enum Kind { CLASS, RECORD, ENUM, INTERFACE, REST_CONTROLLER }
@@ -30,5 +34,11 @@ public record ClassFact(
     public ClassFact {
         if (routes == null) routes = List.of();
         if (impls == null) impls = List.of();
+    }
+
+    /** Backward-compatible constructor for callers that predate line-range capture. */
+    public ClassFact(String name, String relativePath, String leafPackage, Kind kind,
+                     List<String> routes, List<String> impls) {
+        this(name, relativePath, leafPackage, kind, routes, impls, 0, 0);
     }
 }
