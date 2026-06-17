@@ -19,8 +19,16 @@ class StandardsIndexStoreTest {
             "Use constructor injection.", "Field injection hides dependencies.",
             new StandardsSource("acme-pack", "1.0.0", StandardsSource.ORIGIN_LOCAL_OVERRIDE),
             true, "forbid-pattern", 10, "deadbeef");
+        var skill = new StandardsSkillEntry(
+            "skill.add-endpoint", "Add an endpoint", "When adding a REST endpoint",
+            List.of("Write controller"), List.of("Tests pass"), "notes", Scope.empty(),
+            entry.source(), "feedface");
+        var checklist = new StandardsChecklistEntry(
+            "check.pr", "PR checklist", Scope.empty(),
+            List.of(new com.acltabontabon.launchpad.standards.ChecklistItem("ci-green", "CI is green", true)),
+            entry.source(), "cafebabe");
         return new StandardsIndex(StandardsIndex.SCHEMA_VERSION, "2026-01-01T00:00:00Z",
-            entry.source(), List.of(entry));
+            entry.source(), List.of(entry), List.of(skill), List.of(checklist));
     }
 
     @Test

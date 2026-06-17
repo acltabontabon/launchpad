@@ -67,6 +67,9 @@ public class MarkdownAuditWriter {
                 if (f.evidence() != null && !f.evidence().isBlank()) {
                     sb.append("  - `").append(f.evidence()).append("`\n");
                 }
+                if (f.ruleHash() != null && !f.ruleHash().isBlank()) {
+                    sb.append("  - hash: `").append(f.ruleHash()).append("`\n");
+                }
             }
             sb.append("\n");
         }

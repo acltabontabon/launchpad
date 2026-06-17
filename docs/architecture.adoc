@@ -22,7 +22,7 @@ This ordering is deliberate. Deterministic analysis is fast, repeatable, and doe
 
 Generated context files use a standard shape (`AGENTS.md` + `.ai/`) that any AI assistant can read. Agent-specific formats (Claude Code skills, Cursor rules, Windsurf rules) are produced as optional projections on top of the canonical output, not as replacements for it.
 
-Alongside the prose output, two deterministic machine-readable sidecars are emitted: a graph projection of the project structure (`.launchpad/project.model.json`, see xref:project-model.adoc[the project-model sidecar]) and a per-rule projection of the resolved standards (`.launchpad/standards.index.json`, see xref:standards-index.adoc[the standards-index sidecar]). Both let an agent query structured context instead of parsing prose.
+Alongside the prose output, two deterministic machine-readable sidecars are emitted: a graph projection of the project structure (`.launchpad/project.model.json`, see xref:project-model.adoc[the project-model sidecar]) and a one-record-per-item projection of the resolved standards rules, skills, and checklists (`.launchpad/standards.index.json`, see xref:standards-index.adoc[the standards-index sidecar]). Each standards record carries a stable id and a content hash, and audit findings reference the same id and hash so consumers can detect drift. Both sidecars let an agent query structured context instead of parsing prose.
 
 == Pipeline
 
@@ -47,9 +47,10 @@ Your Project
 ┌───────────────────┐
 │  Standards audit  │  Runs check-enabled rules from your standards
 │  (optional)       │  pack. Writes findings to audit.md and
-│                   │  audit.sarif.json, and projects every resolved
-│                   │  rule to standards.index.json (one record per
-│                   │  rule, keyed by the same rule id).
+│                   │  audit.sarif.json (each finding tagged with the
+│                   │  rule's id + content hash), and projects every
+│                   │  resolved rule, skill, and checklist to
+│                   │  standards.index.json keyed by the same ids.
 └────────┬──────────┘
          │
          ▼

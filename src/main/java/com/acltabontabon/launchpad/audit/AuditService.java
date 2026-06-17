@@ -2,9 +2,11 @@ package com.acltabontabon.launchpad.audit;
 
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.standards.Rule;
+import com.acltabontabon.launchpad.standards.StandardsContentHash;
 import com.acltabontabon.launchpad.standards.StandardsLoader;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -41,10 +43,19 @@ public class AuditService {
 
     /** Runs the audit. {@code progress} is invoked once per rule for TUI updates. */
     public AuditResult run(ProjectContext ctx, Path projectRoot, Consumer<RuleProgress> progress) {
-        var allRules = standardsLoader.loadRules(projectRoot);
-        var auditable = allRules.stream().filter(Rule::isAuditable).toList();
+        var resolved = standardsLoader.loadResolvedStandards(projectRoot);
+        var source = resolved.source();
+        var auditable = resolved.rules().stream().filter(Rule::isAuditable).toList();
         if (auditable.isEmpty()) {
             return AuditResult.empty();
+        }
+
+        // Precompute the canonical content hash per rule once, from the same
+        // StandardsContentHash the sidecar uses, so finding.ruleHash equals the
+        // sidecar entry's contentHash for the same ruleId (the drift-join contract).
+        var ruleHashById = new HashMap<String, String>();
+        for (var rule : auditable) {
+            ruleHashById.put(rule.id(), StandardsContentHash.hashRule(rule, source));
         }
 
         var findings = new ArrayList<Finding>();
@@ -58,13 +69,15 @@ public class AuditService {
                 continue;
             }
             try {
-                findings.addAll(checker.check(rule, ctx, projectRoot));
+                var ruleHash = ruleHashById.get(rule.id());
+                checker.check(rule, ctx, projectRoot)
+                    .forEach(f -> findings.add(f.withRuleHash(ruleHash)));
             } catch (RuntimeException e) {
                 log.warn("Rule {} failed during audit: {}", rule.id(), e.getMessage());
             }
         }
 
-        var sarifPath = sarifWriter.write(projectRoot, auditable, findings);
+        var sarifPath = sarifWriter.write(projectRoot, auditable, findings, ruleHashById);
         var markdownPath = markdownWriter.write(projectRoot, findings);
         return new AuditResult(findings, auditable.size(), sarifPath, markdownPath);
     }

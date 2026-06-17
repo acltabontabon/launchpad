@@ -30,30 +30,33 @@ public class SarifWriter {
     private final ObjectMapper json = new ObjectMapper()
         .enable(SerializationFeature.INDENT_OUTPUT);
 
-    public Path write(Path projectRoot, List<Rule> auditedRules, List<Finding> findings) {
+    public Path write(Path projectRoot, List<Rule> auditedRules, List<Finding> findings,
+                      Map<String, String> ruleHashById) {
         var target = projectRoot.resolve(".launchpad").resolve("audit.sarif.json");
         try {
             Files.createDirectories(target.getParent());
-            json.writeValue(target.toFile(), buildDocument(auditedRules, findings));
+            json.writeValue(target.toFile(), buildDocument(auditedRules, findings, ruleHashById));
             return target;
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write " + target, e);
         }
     }
 
-    private Map<String, Object> buildDocument(List<Rule> auditedRules, List<Finding> findings) {
+    private Map<String, Object> buildDocument(List<Rule> auditedRules, List<Finding> findings,
+                                              Map<String, String> ruleHashById) {
         var doc = new LinkedHashMap<String, Object>();
         doc.put("$schema", SARIF_SCHEMA);
         doc.put("version", SARIF_VERSION);
-        doc.put("runs", List.of(buildRun(auditedRules, findings)));
+        doc.put("runs", List.of(buildRun(auditedRules, findings, ruleHashById)));
         return doc;
     }
 
-    private Map<String, Object> buildRun(List<Rule> auditedRules, List<Finding> findings) {
+    private Map<String, Object> buildRun(List<Rule> auditedRules, List<Finding> findings,
+                                         Map<String, String> ruleHashById) {
         var driver = new LinkedHashMap<String, Object>();
         driver.put("name", "Launchpad");
         driver.put("informationUri", "https://github.com/acltabontabon/Launchpad");
-        driver.put("rules", auditedRules.stream().map(this::ruleDescriptor).toList());
+        driver.put("rules", auditedRules.stream().map(r -> ruleDescriptor(r, ruleHashById)).toList());
 
         var tool = Map.of("driver", driver);
 
@@ -67,7 +70,7 @@ public class SarifWriter {
         return run;
     }
 
-    private Map<String, Object> ruleDescriptor(Rule rule) {
+    private Map<String, Object> ruleDescriptor(Rule rule, Map<String, String> ruleHashById) {
         var out = new LinkedHashMap<String, Object>();
         out.put("id", rule.id());
         out.put("name", rule.title() == null ? rule.id() : rule.title());
@@ -78,6 +81,10 @@ public class SarifWriter {
             out.put("fullDescription", Map.of("text", rule.rationale()));
         }
         out.put("defaultConfiguration", Map.of("level", sarifLevel(rule.severity())));
+        String ruleHash = ruleHashById == null ? null : ruleHashById.get(rule.id());
+        if (ruleHash != null) {
+            out.put("properties", Map.of("ruleHash", ruleHash));
+        }
         return out;
     }
 
@@ -86,6 +93,9 @@ public class SarifWriter {
         result.put("ruleId", f.ruleId());
         result.put("level", sarifLevel(f.severity()));
         result.put("message", Map.of("text", f.message() + (f.evidence() == null ? "" : "  // " + f.evidence())));
+        if (f.ruleHash() != null) {
+            result.put("properties", Map.of("ruleHash", f.ruleHash()));
+        }
         if (f.filePath() != null) {
             var region = new LinkedHashMap<String, Object>();
             if (f.line() != null) region.put("startLine", f.line());

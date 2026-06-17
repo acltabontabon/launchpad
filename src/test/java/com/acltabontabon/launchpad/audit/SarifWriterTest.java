@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,10 +23,11 @@ class SarifWriterTest {
         var rule = new Rule("no-field-injection", "Constructor Injection", "must",
             "desc", "rationale", Scope.empty(), 1,
             new Check("forbid-pattern", "@Autowired", List.of(), List.of(), List.of(), List.of(), null, null));
-        var finding = new Finding("no-field-injection", "must", "Constructor Injection",
-            "src/Foo.java", 7, "Forbidden pattern matched.", "@Autowired");
+        var finding = Finding.at("no-field-injection", "must", "Constructor Injection",
+            "src/Foo.java", 7, "Forbidden pattern matched.", "@Autowired")
+            .withRuleHash("deadbeef");
 
-        var path = writer.write(root, List.of(rule), List.of(finding));
+        var path = writer.write(root, List.of(rule), List.of(finding), Map.of("no-field-injection", "deadbeef"));
         var doc = json.readTree(path.toFile());
 
         assertThat(doc.get("version").asText()).isEqualTo("2.1.0");
@@ -33,11 +35,16 @@ class SarifWriterTest {
         JsonNode result = doc.get("runs").get(0).get("results").get(0);
         assertThat(result.get("ruleId").asText()).isEqualTo("no-field-injection");
         assertThat(result.get("level").asText()).isEqualTo("error");
+        assertThat(result.get("properties").get("ruleHash").asText()).isEqualTo("deadbeef");
         assertThat(result.get("locations").get(0)
             .get("physicalLocation").get("artifactLocation").get("uri").asText())
             .isEqualTo("src/Foo.java");
         assertThat(result.get("locations").get(0)
             .get("physicalLocation").get("region").get("startLine").asInt()).isEqualTo(7);
+
+        // The rule descriptor carries the same hash for rules with zero findings too.
+        JsonNode descriptor = doc.get("runs").get(0).get("tool").get("driver").get("rules").get(0);
+        assertThat(descriptor.get("properties").get("ruleHash").asText()).isEqualTo("deadbeef");
     }
 
     @Test

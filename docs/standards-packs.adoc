@@ -273,10 +273,13 @@ Agent projections (`.claude/skills/`, `.cursor/rules/`) are generated from the s
 
 == Machine-readable sidecar
 
-Alongside the prose, every scan emits `.launchpad/standards.index.json`: a deterministic, one-record-per-rule projection of the resolved rules.
-Where the prose forms are made for reading, this sidecar is made for querying -- a runtime agent can retrieve a single rule by id instead of carrying the whole pack, and each record is self-contained (full normative text, scope, severity, rationale, and provenance).
+Alongside the prose, every scan emits `.launchpad/standards.index.json`: a deterministic, one-record-per-item projection of the resolved rules, skills, and checklists.
+Where the prose forms are made for reading, this sidecar is made for querying -- a runtime agent can retrieve a single record by id instead of carrying the whole pack, and each record is self-contained (full content, scope, provenance, and a content hash).
 
-The rule `id` is the canonical join key: it is identical across `standards.index.json`, the audit SARIF report (`audit.sarif.json` `ruleId`), and `audit.md`, so a consumer can resolve any audit finding back to the rule that produced it.
+The `id` is the canonical join key: a rule's `id` is identical across `standards.index.json`, the audit SARIF report (`audit.sarif.json` `ruleId`), and `audit.md`, so a consumer can resolve any audit finding back to the rule that produced it.
+Every record also carries a `contentHash` that fingerprints its projected version (id + content + source, not only prose). Audit findings copy the matching rule's hash into `ruleHash`, so comparing `finding.ruleHash` against `rules[*].contentHash` reveals findings produced against stale standards text.
+
+Authoring ids is preferred: an authored id is the real stability boundary. A record with no id still gets one -- a deterministic slug of its title (or item text), suffixed on collision -- but because that fallback is title/text-derived, editing the title can change the generated id, whereas an authored id is stable across edits.
 
 See xref:standards-index.adoc[the standards-index sidecar] for the full schema and stability promise.
 
