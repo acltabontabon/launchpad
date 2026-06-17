@@ -320,6 +320,7 @@ public class ReviewView implements View {
             case CONTEXT -> "context";
             case RULES -> "rules";
             case SKILL -> "skill";
+            case SKILLS -> "skills";
             case INDEX -> "index";
         };
     }

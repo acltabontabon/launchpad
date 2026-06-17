@@ -93,7 +93,31 @@ public final class StandardsIdentity {
             taken.add(candidate);
             result.add(withId.apply(item, candidate));
         }
-        return List.copyOf(result);
+        List<T> assigned = List.copyOf(result);
+        validateSlugUniqueness(assigned, idOf, emptyBase);
+        return assigned;
+    }
+
+    /**
+     * Downstream renderers anchor headings on {@link ModelIdentity#slug} of the
+     * record id. Distinct ids can still collapse to the same slug (e.g.
+     * {@code foo.bar} and {@code foo-bar} both slug to {@code foo-bar}). That is
+     * an authoring conflict, not something rendering should paper over with a
+     * suffix - so we fail loudly here, where identity is owned.
+     */
+    private static <T> void validateSlugUniqueness(
+        List<T> items, Function<T, String> idOf, String scope
+    ) {
+        Set<String> seen = new LinkedHashSet<>();
+        for (T item : items) {
+            String id = idOf.apply(item);
+            String slug = ModelIdentity.slug(id);
+            if (!seen.add(slug)) {
+                throw new IllegalStateException(
+                    "Duplicate " + scope + " heading slug '" + slug + "' from id '" + id
+                    + "'. Two ids collapse to the same anchor; give them distinct ids.");
+            }
+        }
     }
 
     private static String baseSlug(String value, String emptyBase) {

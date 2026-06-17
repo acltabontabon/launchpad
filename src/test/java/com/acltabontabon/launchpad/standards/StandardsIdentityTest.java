@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.standards;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -83,6 +84,16 @@ class StandardsIdentityTest {
         var input = List.of(rule(null, "Use explicit timeouts"), rule(null, "Use explicit timeouts"));
         assertThat(StandardsIdentity.normalizeRules(input))
             .isEqualTo(StandardsIdentity.normalizeRules(input));
+    }
+
+    @Test
+    void distinctIdsThatCollapseToTheSameHeadingSlugFailLoudly() {
+        // 'foo.bar' and 'foo-bar' are distinct ids but both slug to 'foo-bar',
+        // which would produce duplicate heading anchors downstream.
+        assertThatThrownBy(() -> StandardsIdentity.normalizeRules(List.of(
+            rule("foo.bar", "A"), rule("foo-bar", "B"))))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("foo-bar");
     }
 
     @Test

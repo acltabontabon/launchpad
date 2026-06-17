@@ -92,7 +92,20 @@ class ContextTemplateEngineTest {
         var rulesMd = contentAt(files, ".ai/engineering-rules.md");
         assertThat(rulesMd).contains(RULE_BODY_MARKER);
 
-        // Per-skill file still emitted so /<skill-id> invocation works.
+        // Skills now have a canonical companion with one stable-slug heading per skill.
+        assertThat(pathsOf(files)).contains(".ai/skills.md");
+        var skillsMd = contentAt(files, ".ai/skills.md");
+        assertThat(skillsMd).contains("## Add a Feature {#add-feature}");
+        assertThat(skillsMd).contains("Identify the entry point.");
+
+        // The index lists skills for navigation but never inlines their prose -
+        // the canonical per-skill body lives only in `.ai/skills.md`.
+        var indexMd = contentAt(files, ".ai/index.md");
+        assertThat(indexMd).contains("add-feature");
+        assertThat(indexMd).contains(".ai/skills.md");
+        assertThat(indexMd).doesNotContain("Identify the entry point.");
+
+        // Per-skill vendor file still emitted so /<skill-id> invocation works.
         assertThat(pathsOf(files)).contains(".claude/skills/add-feature/SKILL.md");
     }
 
@@ -129,6 +142,7 @@ class ContextTemplateEngineTest {
         // None of these companion files were emitted, so they must not appear
         // as pointers in the primary file.
         assertThat(primary).doesNotContain(".ai/engineering-rules.md");
+        assertThat(primary).doesNotContain(".ai/skills.md");
         assertThat(primary).doesNotContain(".ai/checklists.md");
         assertThat(primary).doesNotContain(".claude/skills/");
     }

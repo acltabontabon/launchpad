@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.template.rendering;
 
+import com.acltabontabon.launchpad.model.ModelIdentity;
 import com.acltabontabon.launchpad.scanner.ProjectContext;
 import com.acltabontabon.launchpad.standards.Checklist;
 import com.acltabontabon.launchpad.standards.ChecklistItem;
@@ -17,7 +18,22 @@ public final class StandardsRendering {
         "_No workflow skills configured. Set `launchpad.standards.remote.url` in Launchpad settings, "
         + "or add `.launchpad/standards/skills.yml` to this project._\n";
 
+    private static final String SKILLS_FILE = ".ai/skills.md";
+
     private StandardsRendering() {}
+
+    /**
+     * Renders a Markdown heading carrying a stable explicit anchor slug, e.g.
+     * {@code "## Constructor Injection {#java-no-field-injection}"}. The anchor
+     * value comes only from {@link ModelIdentity#slug} of the record's stable
+     * {@code id} - never from the display title - so the slug survives title
+     * edits and stays unique. Uniqueness is guaranteed upstream by
+     * {@code StandardsIdentity}; this renderer never invents fallback slugs or
+     * appends {@code -2}-style dedup suffixes.
+     */
+    public static String headingWithSlug(String level, String displayTitle, String id) {
+        return level + " " + displayTitle + " {#" + ModelIdentity.slug(id) + "}\n\n";
+    }
 
     public static String skillTitle(Skill skill) {
         if (skill.title() != null && !skill.title().isBlank()) return skill.title();
@@ -42,9 +58,12 @@ public final class StandardsRendering {
         sb.append("|------|---------|\n");
         sb.append("| `AGENTS.md` | Main context file - start here |\n");
         sb.append("| `.ai/engineering-rules.md` | Engineering rules for this project |\n");
+        if (!skills.isEmpty()) sb.append("| `").append(SKILLS_FILE).append("` | Workflow skills for this project |\n");
         sb.append("| `.ai/stack.md` | Stack details and dependency notes |\n");
         if (hasChecklists) sb.append("| `.ai/checklists.md` | Verification checklists |\n");
         if (!skills.isEmpty()) {
+            // Navigation only - one pointer per skill (id + trigger). The full
+            // per-skill prose lives in `.ai/skills.md`, never inlined here.
             sb.append("\n## Available Skills\n\n");
             skills.forEach(s -> sb.append("- `").append(s.id()).append("` - ").append(
                 s.trigger() == null ? "" : s.trigger()
@@ -87,11 +106,12 @@ public final class StandardsRendering {
             return sb.toString();
         }
         rules.forEach(rule -> {
-            sb.append("## ").append(rule.title());
+            // Heading stays clean for BM25/chunk titles; the anchor is stable.
+            sb.append(headingWithSlug("##", rule.title(), rule.id()));
+            // Severity stays searchable and visible as a body badge, not in the heading.
             if (rule.severity() != null && !rule.severity().isBlank()) {
-                sb.append("  ·  ").append(rule.severity());
+                sb.append("`[").append(rule.severity()).append("]`\n\n");
             }
-            sb.append("\n\n");
             if (rule.description() != null && !rule.description().isBlank()) {
                 sb.append(rule.description().strip()).append("\n\n");
             }
@@ -102,12 +122,46 @@ public final class StandardsRendering {
         return sb.toString();
     }
 
+    public static String buildSkillsMd(List<Skill> skills) {
+        var sb = new StringBuilder();
+        sb.append("# Skills\n\n");
+        sb.append("Task-scoped workflows. Each skill is its own section, anchored by a stable id.\n\n");
+        if (skills.isEmpty()) {
+            sb.append(SKILLS_PLACEHOLDER);
+            return sb.toString();
+        }
+        skills.forEach(skill -> {
+            sb.append(headingWithSlug("##", skillTitle(skill), skill.id()));
+            if (skill.trigger() != null && !skill.trigger().isBlank()) {
+                sb.append("### Trigger\n\n").append(skill.trigger().strip()).append("\n\n");
+            }
+            if (skill.steps() != null && !skill.steps().isEmpty()) {
+                sb.append("### Steps\n\n");
+                int i = 1;
+                for (var step : skill.steps()) {
+                    sb.append(i++).append(". ").append(step).append("\n");
+                }
+                sb.append("\n");
+            }
+            if (skill.outputExpectations() != null && !skill.outputExpectations().isEmpty()) {
+                sb.append("### Expected output\n\n");
+                skill.outputExpectations().forEach(o -> sb.append("- ").append(o).append("\n"));
+                sb.append("\n");
+            }
+            if (skill.notes() != null && !skill.notes().isBlank()) {
+                sb.append("### Notes\n\n").append(skill.notes().strip()).append("\n\n");
+            }
+        });
+        return sb.toString();
+    }
+
     public static String buildChecklistsMd(List<Checklist> checklists) {
         var sb = new StringBuilder();
         sb.append("# Checklists\n\n");
         sb.append("Verification gates before declaring work done. Items marked with `*` are required.\n\n");
         checklists.forEach(c -> {
-            sb.append("## ").append(c.title() != null ? c.title() : titleFromId(c.id())).append("\n\n");
+            var title = c.title() != null && !c.title().isBlank() ? c.title() : titleFromId(c.id());
+            sb.append(headingWithSlug("##", title, c.id()));
             if (c.items() != null) {
                 for (ChecklistItem item : c.items()) {
                     sb.append("- [ ] ").append(item.text());
