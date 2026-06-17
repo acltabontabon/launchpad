@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.standards;
 
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
+import com.acltabontabon.launchpad.standards.index.StandardsSource;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.io.IOException;
@@ -53,10 +54,37 @@ public class StandardsLoader {
         this.settings = settings;
     }
 
+    /**
+     * Resolves rules and their provenance in a single decision, so the returned
+     * {@code source} always describes exactly the returned {@code rules}. This is
+     * the canonical rule loader; {@link #loadRules} and {@link #describeRulesSource}
+     * are thin wrappers over it and must never resolve independently.
+     */
+    public ResolvedStandards loadResolvedRules(Path projectRoot) {
+        for (LabeledDir labeled : labeledSourceDirs(projectRoot)) {
+            Path dir = labeled.dir();
+            boolean hasManifest = Files.isRegularFile(dir.resolve(MANIFEST));
+            Optional<List<Rule>> resolved = hasManifest
+                ? loadPackEntries(dir, inc -> inc.rules(), RulesFile.class, RulesFile::rules)
+                : loadFlat(dir.resolve(RULES_FILENAME), RulesFile.class, RulesFile::rules);
+            if (resolved.isPresent()) {
+                return new ResolvedStandards(resolved.get(), describeSource(labeled, hasManifest));
+            }
+        }
+        return new ResolvedStandards(List.of(), null);
+    }
+
     public List<Rule> loadRules(Path projectRoot) {
-        return resolveWithFlatFallback(projectRoot,
-            dir -> loadPackEntries(dir, inc -> inc.rules(), RulesFile.class, RulesFile::rules),
-            dir -> loadFlat(dir.resolve(RULES_FILENAME), RulesFile.class, RulesFile::rules));
+        return loadResolvedRules(projectRoot).rules();
+    }
+
+    /**
+     * Reports where {@link #loadRules} resolved its rules from. A thin wrapper over
+     * {@link #loadResolvedRules} - never an independent resolution path - so the
+     * source can never disagree with the rules.
+     */
+    public Optional<StandardsSource> describeRulesSource(Path projectRoot) {
+        return Optional.ofNullable(loadResolvedRules(projectRoot).source());
     }
 
     public List<Skill> loadSkills(Path projectRoot) {
@@ -134,11 +162,45 @@ public class StandardsLoader {
 
     // === internals ===
 
-    private List<Path> sourceDirs(Path projectRoot) {
-        var dirs = new ArrayList<Path>();
-        remoteFetcher.ensureCache().ifPresent(dirs::add);
-        dirs.add(projectRoot.resolve(OVERRIDE_DIR));
+    /** A source directory paired with its origin label, in precedence order. */
+    private record LabeledDir(String origin, Path dir) {}
+
+    /**
+     * Source directories in precedence order, each tagged with its origin. The
+     * single home for standards-source precedence: remote cache (when configured)
+     * wins over the per-project override. {@link #sourceDirs} derives from this so
+     * every loader sees the same order.
+     */
+    private List<LabeledDir> labeledSourceDirs(Path projectRoot) {
+        var dirs = new ArrayList<LabeledDir>();
+        remoteFetcher.ensureCache()
+            .ifPresent(cache -> dirs.add(new LabeledDir(StandardsSource.ORIGIN_REMOTE_CACHE, cache)));
+        dirs.add(new LabeledDir(StandardsSource.ORIGIN_LOCAL_OVERRIDE, projectRoot.resolve(OVERRIDE_DIR)));
         return dirs;
+    }
+
+    private List<Path> sourceDirs(Path projectRoot) {
+        return labeledSourceDirs(projectRoot).stream().map(LabeledDir::dir).toList();
+    }
+
+    /**
+     * Builds the {@link StandardsSource} for a winning directory: its origin plus
+     * the manifest's {@code id}/{@code version} when a manifest is present (null in
+     * legacy flat mode). A malformed manifest degrades to origin-only rather than
+     * failing the sidecar.
+     */
+    private StandardsSource describeSource(LabeledDir labeled, boolean hasManifest) {
+        if (!hasManifest) {
+            return new StandardsSource(null, null, labeled.origin());
+        }
+        try {
+            var manifest = readYaml(labeled.dir().resolve(MANIFEST), StandardsPackManifest.class);
+            return new StandardsSource(manifest.id(), manifest.version(), labeled.origin());
+        } catch (RuntimeException e) {
+            log.warn("Failed to read pack identity from {}; recording origin only: {}",
+                labeled.dir().resolve(MANIFEST), e.getMessage());
+            return new StandardsSource(null, null, labeled.origin());
+        }
     }
 
     private <T> List<T> resolveWithFlatFallback(
