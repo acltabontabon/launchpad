@@ -233,43 +233,59 @@ Required items are marked with `*` in the rendered output.
 
 == What gets generated
 
-The standards content is embedded in `AGENTS.md` under an `## Engineering Standards` section, structured like this:
+`AGENTS.md` is the primary project-context file. It does **not** inline the standards body -- it stays focused on what the project is, how to build it, and its structure. The resolved rules, skills, and checklists are written to focused companion files under `.ai/`, one item per heading:
+
+[cols="1,3",options="header"]
+|===
+| File | Contents
+| `AGENTS.md` | Primary project context. Does not inline the standards body (may link to the companions).
+| `.ai/engineering-rules.md` | One H2 per rule. Heading carries a stable explicit anchor from the rule id.
+| `.ai/skills.md` | One H2 per skill. Heading carries a stable explicit anchor from the skill id.
+| `.ai/checklists.md` | One H2 per checklist. Heading carries a stable explicit anchor from the checklist id.
+| `.ai/index.md` | Navigation and overview only.
+|===
+
+Each item is its own section with a stable, descriptive heading. The heading text stays clean (good BM25/chunk titles) and carries an explicit `+{#slug}+` anchor derived from the record's stable `id` -- not from the title -- so the anchor survives title edits and stays unique. This is what lets sandbox indexers (context-mode, generic RAG) chunk the corpus one rule/skill/checklist at a time.
+
+Rules render like this -- the heading is anchored, and severity sits below it as a searchable badge rather than inside the heading:
 
 [source,markdown]
 ----
-## Engineering Standards
+## Constructor Injection {#java-no-field-injection}
 
-### Rules
-
-#### Constructor Injection `[must]`
+`[must]`
 
 Accept dependencies through constructors as final fields.
 Avoid field or setter injection. Makes dependencies explicit and testable without a container.
 
----
+## Avoid Static Utility Dumping Grounds {#no-util-dumping}
 
-#### Avoid Static Utility Dumping Grounds `[avoid]`
+`[avoid]`
 
 Don't create generic Utils or Helpers classes that accumulate unrelated static methods.
 
 _Why:_ Static methods with no owner are a symptom of missing domain objects.
-
----
-
-### Skills
-
-#### Add an HTTP Endpoint
-
-**Trigger:** When adding a new HTTP route or extending the API surface.
-
-**Steps:**
-1. Define a request record and a response record co-located with the controller.
-2. Add a controller method that validates input, calls one service, and shapes the response.
-...
 ----
 
-The same content is split into `.ai/engineering-rules.md` and `.ai/checklists.md` for tools that prefer smaller focused files.
-Agent projections (`.claude/skills/`, `.cursor/rules/`) are generated from the same source -- editing the YAML updates all outputs on the next scan.
+Skills render one H2 per skill with bounded subsections:
+
+[source,markdown]
+----
+## Add an HTTP Endpoint {#add-endpoint}
+
+### Trigger
+
+When adding a new HTTP route or extending the API surface.
+
+### Steps
+
+1. Define a request record and a response record co-located with the controller.
+2. Add a controller method that validates input, calls one service, and shapes the response.
+----
+
+Anchor slugs must be unique: two ids that collapse to the same slug (e.g. `foo.bar` and `foo-bar`) are an authoring conflict and fail the scan, rather than being silently de-duplicated in the output.
+
+Agent projections (`.claude/skills/`, `.cursor/rules/`, `.windsurf/`) are generated from the same source -- editing the YAML updates all outputs on the next scan.
 
 == Machine-readable sidecar
 

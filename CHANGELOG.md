@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Model-Grounded `/new-task`**: Task synthesis now injects execution context (impacted systems, workflows, and risks) directly from the virtualized model.
 - **MCP Expansion**: New tools for model access (`get_workflows`, `get_risks`, etc.) and a comprehensive integration test harness.
 - **Spring Boot Gradle support**: Gradle projects (`build.gradle` / `build.gradle.kts`, Groovy or Kotlin DSL) now pass the support gate via a new `SpringBootGradleSupportSignal` and structured `GradleBuildParser`.
+- **Canonical skills companion**: Resolved skills are now written to `.ai/skills.md`, one H2 section per skill with bounded `Trigger`/`Steps`/`Expected output`/`Notes` subsections, instead of only appearing as bullets in `.ai/index.md`. A dedicated `FileKind.SKILLS` distinguishes the aggregated companion from the per-vendor skill projection files (closes #80).
 
 ### Changed
+- **Chunk-friendly standards companions**: The standards companion files (`.ai/engineering-rules.md`, `.ai/skills.md`, `.ai/checklists.md`) now emit one stable, descriptive heading per rule, skill, and checklist, each carrying an explicit `{#slug}` anchor derived from the record's stable `id` (not its title), so sandbox indexers chunk one item at a time with clean BM25 titles. Rule severity moved out of the heading into a `` `[must]` `` badge beneath it. Two ids that collapse to the same anchor slug now fail the scan rather than being silently de-duplicated (closes #80).
 - **AppState Decomposition**: Refactored monolithic `AppState` into focused state components with independent reset logic.
 - **Model-Driven Context**: `AGENTS.md` now projects operations, workflows, and risks directly from the virtualized model.
 - **Build-tool-agnostic scanner**: A `BuildSystem` abstraction now resolves the build tool, so dependencies, stack label, and build commands follow Maven or Gradle instead of assuming Maven. The unsupported-project message now reads "Maven or Gradle".

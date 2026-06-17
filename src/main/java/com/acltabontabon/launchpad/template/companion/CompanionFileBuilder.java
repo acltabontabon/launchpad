@@ -25,6 +25,11 @@ public class CompanionFileBuilder {
                 StandardsRendering.buildEngineeringRulesMd(rules),
                 GeneratedFile.FileKind.RULES));
         }
+        if (!skills.isEmpty()) {
+            out.add(new GeneratedFile(".ai/skills.md",
+                StandardsRendering.buildSkillsMd(skills),
+                GeneratedFile.FileKind.SKILLS));
+        }
         out.add(new GeneratedFile(".ai/stack.md",
             StandardsRendering.buildStackMd(ctx),
             GeneratedFile.FileKind.CONTEXT));

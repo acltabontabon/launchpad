@@ -9,7 +9,8 @@ public record GeneratedFile(
     public enum FileKind {
         CONTEXT,    // AGENTS.md (the primary agent-instructions file)
         RULES,      // engineering rules files
-        SKILL,      // skill / command definitions
+        SKILL,      // one skill, vendor-native projection file (e.g. .claude/skills/<id>/SKILL.md)
+        SKILLS,     // canonical aggregated skills companion (.ai/skills.md)
         INDEX       // .ai/index.md, directory indexes
     }
 
