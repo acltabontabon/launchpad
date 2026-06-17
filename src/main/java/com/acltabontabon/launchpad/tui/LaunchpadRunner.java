@@ -12,6 +12,8 @@ import com.acltabontabon.launchpad.model.ProjectContextAssembler;
 import com.acltabontabon.launchpad.model.VirtualProjectContextStore;
 import com.acltabontabon.launchpad.model.graph.ProjectModelAssembler;
 import com.acltabontabon.launchpad.model.graph.ProjectModelStore;
+import com.acltabontabon.launchpad.standards.index.StandardsIndexAssembler;
+import com.acltabontabon.launchpad.standards.index.StandardsIndexStore;
 import com.acltabontabon.launchpad.scanner.StackProfile;
 import com.acltabontabon.launchpad.standards.RemoteStandardsChecker;
 import com.acltabontabon.launchpad.standards.RemoteStandardsStatus;
@@ -96,6 +98,8 @@ public class LaunchpadRunner implements ApplicationRunner {
     private final VirtualProjectContextStore virtualProjectContextStore;
     private final ProjectModelAssembler projectModelAssembler;
     private final ProjectModelStore projectModelStore;
+    private final StandardsIndexAssembler standardsIndexAssembler;
+    private final StandardsIndexStore standardsIndexStore;
 
     // Single pool for all background scan / task futures. Using a cached pool
     // (unbounded, but tasks are short-lived and serialised in practice) so each
@@ -176,7 +180,9 @@ public class LaunchpadRunner implements ApplicationRunner {
         ProjectContextAssembler projectContextAssembler,
         VirtualProjectContextStore virtualProjectContextStore,
         ProjectModelAssembler projectModelAssembler,
-        ProjectModelStore projectModelStore
+        ProjectModelStore projectModelStore,
+        StandardsIndexAssembler standardsIndexAssembler,
+        StandardsIndexStore standardsIndexStore
     ) {
         this.welcomeView = welcomeView;
         this.projectSelectView = projectSelectView;
@@ -203,6 +209,8 @@ public class LaunchpadRunner implements ApplicationRunner {
         this.virtualProjectContextStore = virtualProjectContextStore;
         this.projectModelAssembler = projectModelAssembler;
         this.projectModelStore = projectModelStore;
+        this.standardsIndexAssembler = standardsIndexAssembler;
+        this.standardsIndexStore = standardsIndexStore;
         this.state.activeModel = settings.snapshot().model();
     }
 
@@ -396,6 +404,22 @@ public class LaunchpadRunner implements ApplicationRunner {
                 } catch (Exception graphError) {
                     org.slf4j.LoggerFactory.getLogger(LaunchpadRunner.class)
                         .warn("Failed to persist project-model graph for {}", state.projectPath, graphError);
+                }
+
+                // Deterministic, machine-readable standards sidecar
+                // (.launchpad/standards.index.json): one record per resolved rule
+                // so an agent can retrieve a single rule and audit findings can
+                // resolve their ruleId against a canonical registry. Rules and
+                // their source come from one resolution so they never disagree.
+                // LLM-free; best-effort so a write failure cannot block the run.
+                try {
+                    var resolved = standardsLoader.loadResolvedRules(projectRootForAudit);
+                    var standardsIndex = standardsIndexAssembler.assemble(
+                        resolved.rules(), resolved.source(), java.time.Instant.now().toString());
+                    standardsIndexStore.save(projectRootForAudit, standardsIndex);
+                } catch (Exception indexError) {
+                    org.slf4j.LoggerFactory.getLogger(LaunchpadRunner.class)
+                        .warn("Failed to persist standards index for {}", state.projectPath, indexError);
                 }
 
                 registerProjectQuietly(projectRootForAudit, ctx.stack());

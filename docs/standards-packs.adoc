@@ -271,6 +271,15 @@ _Why:_ Static methods with no owner are a symptom of missing domain objects.
 The same content is split into `.ai/engineering-rules.md` and `.ai/checklists.md` for tools that prefer smaller focused files.
 Agent projections (`.claude/skills/`, `.cursor/rules/`) are generated from the same source -- editing the YAML updates all outputs on the next scan.
 
+== Machine-readable sidecar
+
+Alongside the prose, every scan emits `.launchpad/standards.index.json`: a deterministic, one-record-per-rule projection of the resolved rules.
+Where the prose forms are made for reading, this sidecar is made for querying -- a runtime agent can retrieve a single rule by id instead of carrying the whole pack, and each record is self-contained (full normative text, scope, severity, rationale, and provenance).
+
+The rule `id` is the canonical join key: it is identical across `standards.index.json`, the audit SARIF report (`audit.sarif.json` `ruleId`), and `audit.md`, so a consumer can resolve any audit finding back to the rule that produced it.
+
+See xref:standards-index.adoc[the standards-index sidecar] for the full schema and stability promise.
+
 == Path containment guarantee
 
 Every file plan produced from a standards pack is written through a single component that enforces project-root containment.
