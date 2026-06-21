@@ -442,7 +442,8 @@ public class LaunchpadRunner implements ApplicationRunner {
                 beginPhase(AppState.Phase.ASSEMBLE, 30, "Assembling output files...");
                 state.scan.pushActivity("assemble", "rendering vendor-neutral output set");
                 if (checkCancelled()) return;
-                var files = templateEngine.buildFiles(ctx, model);
+                var files = templateEngine.buildFiles(
+                    ctx, model, state.activeModel, java.time.Instant.now().toString());
                 state.gen.files = files;
                 var projectRoot = java.nio.file.Path.of(state.projectPath).toAbsolutePath();
                 var plans = new java.util.ArrayList<com.acltabontabon.launchpad.template.FilePlan>();

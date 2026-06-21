@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.tui.components;
 
+import com.acltabontabon.launchpad.support.LaunchpadVersion;
 import com.acltabontabon.launchpad.tui.AppState;
 import com.acltabontabon.launchpad.tui.theme.Icons;
 import com.acltabontabon.launchpad.tui.theme.Styles;
@@ -13,11 +14,8 @@ import dev.tamboui.text.Span;
 import dev.tamboui.text.Text;
 import dev.tamboui.widgets.paragraph.Paragraph;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
 
 /**
  * Persistent single-row header rendered above every view. Composes the
@@ -133,23 +131,6 @@ public final class Header {
     }
 
     private static String readVersion() {
-        var v = readBuildInfoVersion();
-        if (v == null) {
-            var pkg = Header.class.getPackage();
-            v = pkg == null ? null : pkg.getImplementationVersion();
-        }
-        return "v" + (v == null ? "dev" : v);
-    }
-
-    private static String readBuildInfoVersion() {
-        try (InputStream in = Header.class.getResourceAsStream("/META-INF/build-info.properties")) {
-            if (in == null) return null;
-            var props = new Properties();
-            props.load(in);
-            var v = props.getProperty("build.version");
-            return (v == null || v.isBlank()) ? null : v;
-        } catch (IOException e) {
-            return null;
-        }
+        return "v" + LaunchpadVersion.current();
     }
 }

@@ -57,8 +57,12 @@ class ContextTemplateEngineTest {
 
         var primary = contentAt(files, "AGENTS.md");
 
-        // Round-4 shape: title + tagline.
-        assertThat(primary).startsWith("<!-- launchpad:managed:start -->\n# sample-project");
+        // Round-4 shape: title + tagline. The provenance stamp sits inside the
+        // managed block, ahead of the title, so a re-run's merge refreshes it.
+        assertThat(primary).startsWith(
+            "<!-- launchpad:managed:start -->\n<!-- " + ProvenanceHeader.MARKER);
+        assertThat(primary).contains(ProvenanceHeader.DETERMINISTIC_ONLY);
+        assertThat(primary).contains("\n# sample-project");
         assertThat(primary).doesNotContain("Launchpad prepares. Paid agents execute.");
 
         // Every required heading is emitted by the template engine, in order.
@@ -107,6 +111,29 @@ class ContextTemplateEngineTest {
 
         // Per-skill vendor file still emitted so /<skill-id> invocation works.
         assertThat(pathsOf(files)).contains(".claude/skills/add-feature/SKILL.md");
+    }
+
+    @Test
+    void stampsProvenanceHeaderOnPrimaryAndCompanions() {
+        var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
+            List.of(SAMPLE_CHECKLIST),
+            agentsAdapterIncluding("rules", "skills", "checklists"));
+
+        var ctx = sampleContext();
+        var files = engine.buildFiles(ctx, modelFor(ctx), "qwen2.5-coder", "2026-06-22T14:30:45Z");
+
+        var marker = "<!-- " + ProvenanceHeader.MARKER;
+        var primary = contentAt(files, "AGENTS.md");
+        // Stamp lives inside the managed block, and exactly once.
+        assertThat(primary).contains("<!-- launchpad:managed:start -->\n" + marker);
+        assertThat(primary.split(java.util.regex.Pattern.quote(marker), -1)).hasSize(2);
+        assertThat(primary).contains("2026-06-22T14:30:45Z");
+        // No generator wired in these tests, so AI is off regardless of the model arg.
+        assertThat(primary).contains(ProvenanceHeader.DETERMINISTIC_ONLY);
+
+        // Companions open with the stamp too.
+        assertThat(contentAt(files, ".ai/index.md")).startsWith(marker);
+        assertThat(contentAt(files, ".ai/stack.md")).startsWith(marker);
     }
 
     @Test
