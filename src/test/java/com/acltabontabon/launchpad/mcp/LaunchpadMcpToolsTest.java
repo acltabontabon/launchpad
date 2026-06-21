@@ -47,6 +47,14 @@ class LaunchpadMcpToolsTest {
     private ScanStore scanStore;
     private Path projectRoot;
 
+    // Kept so individual tests can rebuild a tool instance in a forced response
+    // mode (the default is references; some assertions need inline).
+    private ProjectScanner scanner;
+    private AuditService auditService;
+    private StandardsLoader standardsLoader;
+    private ProjectSupportDetector detector;
+    private VirtualProjectContextStore modelStore;
+
     @BeforeEach
     void setUp() throws IOException {
         // ProjectRegistry / LaunchpadSettings derive their on-disk paths from
@@ -63,19 +71,25 @@ class LaunchpadMcpToolsTest {
         var settings = new LaunchpadSettings("auto", "http://localhost:11434",
             "qwen2.5-coder:7b-instruct", "", event -> { });
         var fetcher = new RemoteStandardsFetcher(settings);
-        var standardsLoader = new StandardsLoader(fetcher, settings);
-        var scanner = ProjectScanner.forTesting();
+        standardsLoader = new StandardsLoader(fetcher, settings);
+        scanner = ProjectScanner.forTesting();
         scanStore = new ScanStore();
-        var auditService = new AuditService(standardsLoader, List.of(),
+        auditService = new AuditService(standardsLoader, List.of(),
             new SarifWriter(), new MarkdownAuditWriter());
         registry = new ProjectRegistry();
-        var detector = new ProjectSupportDetector(List.of(new SpringBootMavenSupportSignal()));
-        var modelStore = new VirtualProjectContextStore();
+        detector = new ProjectSupportDetector(List.of(new SpringBootMavenSupportSignal()));
+        modelStore = new VirtualProjectContextStore();
 
-        tools = new LaunchpadMcpTools(scanner, scanStore, auditService, standardsLoader,
-            registry, detector, modelStore, 512L);
+        // Default instance: no override, so references mode is active by default.
+        tools = toolsWith(null);
 
         registry.register(projectRoot, "Spring Boot");
+    }
+
+    /** Build a tool instance with the given response-mode property (null = default). */
+    private LaunchpadMcpTools toolsWith(String responseModeProperty) {
+        return new LaunchpadMcpTools(scanner, scanStore, auditService, standardsLoader,
+            registry, detector, modelStore, 512L, responseModeProperty);
     }
 
     @Test
@@ -237,12 +251,144 @@ class LaunchpadMcpToolsTest {
     }
 
     @Test
-    void getDocumentationReadsKnownDocPage() {
-        var out = tools.getDocumentation(projectRoot.toString(), "docs/index.md");
+    void getDocumentationReadsKnownDocPageInInlineMode() {
+        var out = toolsWith("inline").getDocumentation(projectRoot.toString(), "docs/index.md");
         assertThat(out).containsEntry("path", "docs/index.md");
         assertThat(out.get("content")).asInstanceOf(
             org.assertj.core.api.InstanceOfAssertFactories.STRING).isNotEmpty();
         assertThat(out).containsKey("purpose");
+        // Inline mode must not leak references-envelope fields.
+        assertThat(out).doesNotContainKeys("responseMode", "contentHash", "hint");
+    }
+
+    @Test
+    void getDocumentationReturnsReferenceByDefault() {
+        var out = tools.getDocumentation(projectRoot.toString(), "docs/index.md");
+        assertThat(out).containsEntry("responseMode", "references");
+        assertThat(out).containsEntry("path", "docs/index.md");
+        assertThat(out).containsEntry("ref", "docs/index.md");
+        assertThat(out).containsKeys("title", "format", "purpose", "sizeBytes", "contentHash", "hint");
+        assertThat(out.get("contentHash").toString()).startsWith("sha256:");
+        // The body itself is omitted - that is the whole point of references mode.
+        assertThat(out).doesNotContainKey("content");
+    }
+
+    @Test
+    void defaultResponseModeIsReferences() {
+        assertThat(tools.responseMode()).isEqualTo(McpResponseMode.REFERENCES);
+        assertThat(toolsWith("inline").responseMode()).isEqualTo(McpResponseMode.INLINE);
+        // Unknown value falls back to the references default rather than erroring.
+        assertThat(toolsWith("nonsense").responseMode()).isEqualTo(McpResponseMode.REFERENCES);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getStandardsReturnsReferencesByDefault() throws IOException {
+        writeStandardsPack();
+
+        var out = tools.getStandards(projectRoot.toString());
+        assertThat(out).containsEntry("responseMode", "references");
+        assertThat(out).containsEntry("index", ".launchpad/standards.index.json");
+        assertThat(out).containsKey("hint");
+        var companions = (Map<String, Object>) out.get("companions");
+        assertThat(companions).containsEntry("rules", ".ai/engineering-rules.md")
+            .containsEntry("skills", ".ai/skills.md")
+            .containsEntry("checklists", ".ai/checklists.md");
+
+        var rule = ((List<Map<String, Object>>) out.get("rules")).get(0);
+        assertThat(rule).containsKeys("id", "title", "severity", "auditable", "contentHash",
+            "summary", "ref", "path", "anchor");
+        assertThat(rule).doesNotContainKeys("description", "rationale");
+        assertThat(rule.get("anchor")).isEqualTo("java-no-field-injection");
+        assertThat(rule.get("ref")).isEqualTo(".ai/engineering-rules.md#java-no-field-injection");
+        assertThat(rule.get("path")).isEqualTo(".ai/engineering-rules.md");
+
+        var skill = ((List<Map<String, Object>>) out.get("skills")).get(0);
+        assertThat(skill).containsKeys("id", "title", "triggerSummary", "contentHash", "summary",
+            "ref", "path", "anchor");
+        assertThat(skill).doesNotContainKey("steps");
+
+        var checklist = ((List<Map<String, Object>>) out.get("checklists")).get(0);
+        assertThat(checklist).containsKeys("id", "title", "itemCount", "contentHash", "summary",
+            "ref", "path", "anchor");
+        assertThat(checklist).containsEntry("itemCount", 1);
+        assertThat(checklist).doesNotContainKey("items");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getStandardsInlineModePreservesLegacyShape() throws IOException {
+        writeStandardsPack();
+
+        var out = toolsWith("inline").getStandards(projectRoot.toString());
+        assertThat(out).containsOnlyKeys("rules", "skills", "checklists");
+        var rule = ((List<Map<String, Object>>) out.get("rules")).get(0);
+        assertThat(rule).containsKeys("id", "title", "severity", "description", "rationale",
+            "auditable");
+        assertThat(rule).doesNotContainKeys("ref", "contentHash", "summary");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void compareStandardsReferencesCarryHashesNotBodies() throws IOException {
+        writeStandardsPack();
+
+        var out = tools.compareStandards(projectRoot.toString(), projectRoot.toString());
+        assertThat(out).containsEntry("responseMode", "references");
+        var bucket = (Map<String, Object>) out.get("rules");
+        // Same project on both sides -> every rule is common, none divergent.
+        var common = (List<Map<String, Object>>) bucket.get("common");
+        assertThat(common).isNotEmpty();
+        assertThat(common.get(0)).containsKeys("id", "contentHash", "ref", "path", "anchor");
+        assertThat(common.get(0)).doesNotContainKeys("description", "rationale", "items", "steps");
+    }
+
+    /** Write a minimal valid standards pack (one rule, skill, checklist) under the project. */
+    private void writeStandardsPack() throws IOException {
+        var dir = projectRoot.resolve(".launchpad/standards");
+        Files.createDirectories(dir.resolve("rules"));
+        Files.writeString(dir.resolve("standards-pack.yml"), """
+            schemaVersion: 1
+            id: acme-pack
+            version: 1.0.0
+            includes:
+              rules:
+                - rules/rules.yml
+              skills:
+                - rules/skills.yml
+              checklists:
+                - rules/checklists.yml
+            """);
+        Files.writeString(dir.resolve("rules/rules.yml"), """
+            version: 1
+            rules:
+              - id: java.no-field-injection
+                title: No field injection
+                severity: HIGH
+                content: Use constructor injection. It keeps dependencies explicit.
+                rationale: Field injection hides dependencies.
+                priority: 10
+            """);
+        Files.writeString(dir.resolve("rules/skills.yml"), """
+            version: 1
+            skills:
+              - id: skill.add-endpoint
+                title: Add an endpoint
+                trigger: When adding a REST endpoint
+                steps:
+                  - Write the controller
+                  - Add a test
+            """);
+        Files.writeString(dir.resolve("rules/checklists.yml"), """
+            version: 1
+            checklists:
+              - id: check.pr
+                title: PR checklist
+                items:
+                  - id: ci-green
+                    text: CI is green
+                    required: true
+            """);
     }
 
     @Test

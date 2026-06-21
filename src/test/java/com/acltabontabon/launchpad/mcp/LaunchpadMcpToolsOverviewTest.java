@@ -25,7 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
 class LaunchpadMcpToolsOverviewTest {
 
     private LaunchpadMcpTools toolsFor(VirtualProjectContextStore store) {
-        return new LaunchpadMcpTools(null, null, null, null, new ProjectRegistry(), null, store, 512);
+        return new LaunchpadMcpTools(null, null, null, null, new ProjectRegistry(), null, store, 512, null);
     }
 
     private VirtualProjectContext richModel(Path root) {

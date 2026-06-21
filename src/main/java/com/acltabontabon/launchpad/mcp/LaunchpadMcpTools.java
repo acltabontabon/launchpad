@@ -3,6 +3,7 @@ package com.acltabontabon.launchpad.mcp;
 import com.acltabontabon.launchpad.audit.AuditService;
 import com.acltabontabon.launchpad.config.ProjectRegistry;
 import com.acltabontabon.launchpad.config.RegisteredProject;
+import com.acltabontabon.launchpad.model.ModelIdentity;
 import com.acltabontabon.launchpad.model.Risk;
 import com.acltabontabon.launchpad.model.SystemComponent;
 import com.acltabontabon.launchpad.model.VirtualProjectContextStore;
@@ -34,6 +35,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.annotation.McpArg;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.beans.factory.annotation.Value;
@@ -64,12 +67,32 @@ import org.springframework.stereotype.Component;
 @Component
 public class LaunchpadMcpTools {
 
+    private static final Logger log = LoggerFactory.getLogger(LaunchpadMcpTools.class);
+
     private static final Duration SCAN_FRESH_WINDOW = Duration.ofHours(24);
 
     // Per-page and per-project caps on find_documentation results. Keep MCP
     // responses bounded even when a query happens to hit every paragraph.
     private static final int FIND_MATCHES_PER_PAGE = 5;
     private static final int FIND_HITS_PER_PROJECT = 50;
+
+    // Project-relative pointers used by references-mode payloads. The standards
+    // companions carry one stable {#slug} anchor per item, so an agent can fetch
+    // a single body via path + anchor; the sidecars are the machine-readable
+    // projections of the same content.
+    private static final String STANDARDS_INDEX = ".launchpad/standards.index.json";
+    private static final String PROJECT_MODEL = ".launchpad/project.model.json";
+    private static final String RULES_COMPANION = ".ai/engineering-rules.md";
+    private static final String SKILLS_COMPANION = ".ai/skills.md";
+    private static final String CHECKLISTS_COMPANION = ".ai/checklists.md";
+    private static final String STANDARDS_FETCH_HINT =
+        "Fetch full bodies by reading the cited project-relative path and anchor via the sandbox.";
+    private static final String DOC_FETCH_HINT =
+        "Read this project-relative path via the sandbox when full content is needed.";
+
+    // Cap on the references-mode summary so a pointer payload never re-floods the
+    // body it is meant to replace.
+    private static final int SUMMARY_MAX_CHARS = 160;
 
     private final ProjectScanner scanner;
     private final ScanStore scanStore;
@@ -79,6 +102,7 @@ public class LaunchpadMcpTools {
     private final ProjectSupportDetector projectSupportDetector;
     private final VirtualProjectContextStore modelStore;
     private final long maxFileSizeBytes;
+    private final McpResponseMode responseMode;
 
     public LaunchpadMcpTools(ProjectScanner scanner,
                              ScanStore scanStore,
@@ -87,7 +111,8 @@ public class LaunchpadMcpTools {
                              ProjectRegistry projectRegistry,
                              ProjectSupportDetector projectSupportDetector,
                              VirtualProjectContextStore modelStore,
-                             @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb) {
+                             @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb,
+                             @Value("${launchpad.mcp.response-mode:}") String responseModeProperty) {
         this.scanner = scanner;
         this.scanStore = scanStore;
         this.auditService = auditService;
@@ -96,6 +121,40 @@ public class LaunchpadMcpTools {
         this.projectSupportDetector = projectSupportDetector;
         this.modelStore = modelStore;
         this.maxFileSizeBytes = maxFileSizeKb * 1024L;
+        // Read the env var explicitly so precedence (env > property > default) is
+        // ours, not Spring's relaxed-binding. Warn once here, never per call.
+        var rawEnv = System.getenv(McpResponseMode.ENV_VAR);
+        if (McpResponseMode.isUnrecognized(rawEnv)) {
+            log.warn("Ignoring unrecognized {}='{}' - using references/inline only.",
+                McpResponseMode.ENV_VAR, rawEnv);
+        } else if (McpResponseMode.isUnrecognized(responseModeProperty)) {
+            log.warn("Ignoring unrecognized {}='{}' - using references/inline only.",
+                McpResponseMode.PROPERTY, responseModeProperty);
+        }
+        this.responseMode = McpResponseMode.resolve(rawEnv, responseModeProperty);
+    }
+
+    /** Visible for tests: the response mode this instance resolved at construction. */
+    McpResponseMode responseMode() {
+        return responseMode;
+    }
+
+    private boolean inline() {
+        return responseMode.isInline();
+    }
+
+    /**
+     * Prepend the references-mode pointer to a model-backed tool payload. These
+     * tools already return summaries (not prose bodies), so references mode only
+     * adds a top-level pointer to the project-model sidecar where the full graph
+     * lives - no fields are removed. A no-op in inline mode, preserving the legacy
+     * shape exactly.
+     */
+    private void putModelPointer(Map<String, Object> out) {
+        if (!inline()) {
+            out.put("responseMode", "references");
+            out.put("model", PROJECT_MODEL);
+        }
     }
 
     @McpTool(
@@ -181,7 +240,12 @@ public class LaunchpadMcpTools {
         description = "Return the engineering rules, skills, and checklists from the standards pack that "
             + "applies to a project. These are the same standards Launchpad embeds in AGENTS.md and the "
             + "`.ai/` companion tree, but as structured data so MCP clients can reason about them "
-            + "programmatically. The `project` argument accepts either a short name from the registry "
+            + "programmatically. By default this returns references - each item's stable id, title, "
+            + "content hash, a short summary, and a project-relative path + anchor into the `.ai/` "
+            + "companion - so an in-session sandbox/indexer fetches full bodies on demand instead of "
+            + "re-flooding context. Set LAUNCHPAD_MCP_RESPONSE_MODE=inline (or "
+            + "launchpad.mcp.response-mode=inline) to inline full descriptions, rationales, steps, and "
+            + "checklist items. The `project` argument accepts either a short name from the registry "
             + "(see list_projects) or an absolute path."
     )
     public Map<String, Object> getStandards(
@@ -193,36 +257,56 @@ public class LaunchpadMcpTools {
         if (resolved instanceof Resolution.Error err) return err.payload();
         var projectRoot = ((Resolution.Path) resolved).value();
         try {
-            var rules = standardsLoader.loadRules(projectRoot).stream()
-                .map(r -> Map.of(
-                    "id", nullToEmpty(r.id()),
-                    "title", nullToEmpty(r.title()),
-                    "severity", nullToEmpty(r.severity()),
-                    "description", nullToEmpty(r.description()),
-                    "rationale", nullToEmpty(r.rationale()),
-                    "auditable", r.isAuditable()))
-                .toList();
-            var skills = standardsLoader.loadSkills(projectRoot).stream()
-                .map(s -> Map.of(
-                    "id", nullToEmpty(s.id()),
-                    "title", nullToEmpty(s.title()),
-                    "trigger", nullToEmpty(s.trigger()),
-                    "steps", s.steps() == null ? List.of() : s.steps()))
-                .toList();
-            var checklists = standardsLoader.loadChecklists(projectRoot).stream()
-                .map(c -> Map.of(
-                    "id", nullToEmpty(c.id()),
-                    "title", nullToEmpty(c.title()),
-                    "items", c.items() == null ? List.of() : c.items().stream()
-                        .map(i -> Map.of("id", nullToEmpty(i.id()), "text", nullToEmpty(i.text()),
-                            "required", i.required()))
-                        .toList()))
-                .toList();
-            return Map.of(
-                "rules", rules,
-                "skills", skills,
-                "checklists", checklists
-            );
+            var loadedRules = standardsLoader.loadRules(projectRoot);
+            var loadedSkills = standardsLoader.loadSkills(projectRoot);
+            var loadedChecklists = standardsLoader.loadChecklists(projectRoot);
+            if (inline()) {
+                var rules = loadedRules.stream()
+                    .map(r -> Map.of(
+                        "id", nullToEmpty(r.id()),
+                        "title", nullToEmpty(r.title()),
+                        "severity", nullToEmpty(r.severity()),
+                        "description", nullToEmpty(r.description()),
+                        "rationale", nullToEmpty(r.rationale()),
+                        "auditable", r.isAuditable()))
+                    .toList();
+                var skills = loadedSkills.stream()
+                    .map(s -> Map.of(
+                        "id", nullToEmpty(s.id()),
+                        "title", nullToEmpty(s.title()),
+                        "trigger", nullToEmpty(s.trigger()),
+                        "steps", s.steps() == null ? List.of() : s.steps()))
+                    .toList();
+                var checklists = loadedChecklists.stream()
+                    .map(c -> Map.of(
+                        "id", nullToEmpty(c.id()),
+                        "title", nullToEmpty(c.title()),
+                        "items", c.items() == null ? List.of() : c.items().stream()
+                            .map(i -> Map.of("id", nullToEmpty(i.id()), "text", nullToEmpty(i.text()),
+                                "required", i.required()))
+                            .toList()))
+                    .toList();
+                return Map.of(
+                    "rules", rules,
+                    "skills", skills,
+                    "checklists", checklists
+                );
+            }
+            var rules = loadedRules.stream().map(LaunchpadMcpTools::ruleRef).toList();
+            var skills = loadedSkills.stream().map(LaunchpadMcpTools::skillRef).toList();
+            var checklists = loadedChecklists.stream().map(LaunchpadMcpTools::checklistRef).toList();
+            var out = new LinkedHashMap<String, Object>();
+            out.put("responseMode", "references");
+            out.put("index", STANDARDS_INDEX);
+            out.put("companions", Map.of(
+                "rules", RULES_COMPANION,
+                "skills", SKILLS_COMPANION,
+                "checklists", CHECKLISTS_COMPANION));
+            out.put("hint", STANDARDS_FETCH_HINT);
+            out.put("rules", rules);
+            out.put("skills", skills);
+            out.put("checklists", checklists);
+            return out;
         } catch (IncompatiblePackSchemaException e) {
             return incompatiblePackSchema(e);
         }
@@ -282,7 +366,10 @@ public class LaunchpadMcpTools {
             + "sides), `divergent` (same id, different content - both sides included for inspection), "
             + "`aOnly`, `bOnly`. Useful for spotting whether a recommendation that holds for project "
             + "A also holds for project B - especially after one project has overridden the shared "
-            + "remote standards pack."
+            + "remote standards pack. By default each bucket entry is a reference (stable id, content "
+            + "hash, short summary, and a project-relative path + anchor into the `.ai/` companion) "
+            + "rather than the full body; set LAUNCHPAD_MCP_RESPONSE_MODE=inline (or "
+            + "launchpad.mcp.response-mode=inline) to inline full rule/skill/checklist bodies."
     )
     public Map<String, Object> compareStandards(
         @McpArg(name = "projectA", description = "First project (name or absolute path)", required = true)
@@ -298,23 +385,48 @@ public class LaunchpadMcpTools {
         var rootB = ((Resolution.Path) b).value();
 
         try {
+            // Only the per-entry projection differs between modes; the bucketing
+            // (hash-based equality) is identical, so diffById is unchanged.
+            Function<Rule, Map<String, Object>> ruleRender =
+                inline() ? LaunchpadMcpTools::ruleToMap : LaunchpadMcpTools::ruleCompareRef;
+            Function<Skill, Map<String, Object>> skillRender =
+                inline() ? LaunchpadMcpTools::skillToMap : LaunchpadMcpTools::skillCompareRef;
+            Function<Checklist, Map<String, Object>> checklistRender =
+                inline() ? LaunchpadMcpTools::checklistToMap : LaunchpadMcpTools::checklistCompareRef;
+
             var rulesDiff = diffById(
                 standardsLoader.loadRules(rootA), standardsLoader.loadRules(rootB),
-                Rule::id, LaunchpadMcpTools::ruleHash, LaunchpadMcpTools::ruleToMap);
+                Rule::id, LaunchpadMcpTools::ruleHash, ruleRender);
             var skillsDiff = diffById(
                 standardsLoader.loadSkills(rootA), standardsLoader.loadSkills(rootB),
-                Skill::id, LaunchpadMcpTools::skillHash, LaunchpadMcpTools::skillToMap);
+                Skill::id, LaunchpadMcpTools::skillHash, skillRender);
             var checklistsDiff = diffById(
                 standardsLoader.loadChecklists(rootA), standardsLoader.loadChecklists(rootB),
-                Checklist::id, LaunchpadMcpTools::checklistHash, LaunchpadMcpTools::checklistToMap);
+                Checklist::id, LaunchpadMcpTools::checklistHash, checklistRender);
 
-            return Map.of(
-                "projectA", rootA.toString(),
-                "projectB", rootB.toString(),
-                "rules", rulesDiff,
-                "skills", skillsDiff,
-                "checklists", checklistsDiff
-            );
+            if (inline()) {
+                return Map.of(
+                    "projectA", rootA.toString(),
+                    "projectB", rootB.toString(),
+                    "rules", rulesDiff,
+                    "skills", skillsDiff,
+                    "checklists", checklistsDiff
+                );
+            }
+            var out = new LinkedHashMap<String, Object>();
+            out.put("responseMode", "references");
+            out.put("index", STANDARDS_INDEX);
+            out.put("companions", Map.of(
+                "rules", RULES_COMPANION,
+                "skills", SKILLS_COMPANION,
+                "checklists", CHECKLISTS_COMPANION));
+            out.put("hint", STANDARDS_FETCH_HINT);
+            out.put("projectA", rootA.toString());
+            out.put("projectB", rootB.toString());
+            out.put("rules", rulesDiff);
+            out.put("skills", skillsDiff);
+            out.put("checklists", checklistsDiff);
+            return out;
         } catch (IncompatiblePackSchemaException e) {
             return incompatiblePackSchema(e);
         }
@@ -342,12 +454,13 @@ public class LaunchpadMcpTools {
         var workflows = model.workflows().stream()
             .map(LaunchpadMcpTools::workflowToMap)
             .toList();
-        return Map.of(
-            "project", model.identity().name(),
-            "rootPath", projectRoot.toString(),
-            "workflowCount", workflows.size(),
-            "workflows", workflows
-        );
+        var out = new LinkedHashMap<String, Object>();
+        putModelPointer(out);
+        out.put("project", model.identity().name());
+        out.put("rootPath", projectRoot.toString());
+        out.put("workflowCount", workflows.size());
+        out.put("workflows", workflows);
+        return out;
     }
 
     private static Map<String, Object> workflowToMap(Workflow w) {
@@ -381,12 +494,13 @@ public class LaunchpadMcpTools {
         var model = modelStore.load(projectRoot).orElse(null);
         if (model == null) return noModelPayload(projectRoot);
         var systems = model.systems().stream().map(LaunchpadMcpTools::systemToMap).toList();
-        return Map.of(
-            "project", model.identity().name(),
-            "rootPath", projectRoot.toString(),
-            "systemCount", systems.size(),
-            "systems", systems
-        );
+        var out = new LinkedHashMap<String, Object>();
+        putModelPointer(out);
+        out.put("project", model.identity().name());
+        out.put("rootPath", projectRoot.toString());
+        out.put("systemCount", systems.size());
+        out.put("systems", systems);
+        return out;
     }
 
     @McpTool(
@@ -408,12 +522,13 @@ public class LaunchpadMcpTools {
         var model = modelStore.load(projectRoot).orElse(null);
         if (model == null) return noModelPayload(projectRoot);
         var risks = model.risks().stream().map(LaunchpadMcpTools::riskToMap).toList();
-        return Map.of(
-            "project", model.identity().name(),
-            "rootPath", projectRoot.toString(),
-            "riskCount", risks.size(),
-            "risks", risks
-        );
+        var out = new LinkedHashMap<String, Object>();
+        putModelPointer(out);
+        out.put("project", model.identity().name());
+        out.put("rootPath", projectRoot.toString());
+        out.put("riskCount", risks.size());
+        out.put("risks", risks);
+        return out;
     }
 
     @McpTool(
@@ -437,6 +552,7 @@ public class LaunchpadMcpTools {
         if (model == null) return noModelPayload(projectRoot);
 
         var overview = new LinkedHashMap<String, Object>();
+        putModelPointer(overview);
         overview.put("project", model.identity().name());
         overview.put("rootPath", projectRoot.toString());
         overview.put("stack", nullToEmpty(model.identity().primaryStack()));
@@ -643,9 +759,12 @@ public class LaunchpadMcpTools {
             + "`path` must match a page surfaced by list_documentation - reads outside the "
             + "detected docs set are rejected, even when the file exists, so the AI cannot use "
             + "this tool as a generic file reader. Inherits the binary, size, and traversal guards "
-            + "from the file-read path. The returned payload carries the page's purpose tag so "
-            + "callers don't have to round-trip back to list_documentation. The `project` argument "
-            + "accepts either a short name or an absolute path."
+            + "from the file-read path. By default this returns a reference - the page's "
+            + "project-relative path, title, format, purpose, size, and content hash - and omits the "
+            + "body, so a sandbox reads the file directly instead of paying for it twice. Set "
+            + "LAUNCHPAD_MCP_RESPONSE_MODE=inline (or launchpad.mcp.response-mode=inline) to inline "
+            + "the full page content. The `project` argument accepts either a short name or an "
+            + "absolute path."
     )
     public Map<String, Object> getDocumentation(
         @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
@@ -745,8 +864,21 @@ public class LaunchpadMcpTools {
                 "File contains NUL bytes in its first kilobyte - refusing to return as text."
             ).toPayload();
         }
-        var text = new String(bytes, StandardCharsets.UTF_8);
         var payload = new LinkedHashMap<String, Object>();
+        if (!inline()) {
+            payload.put("responseMode", "references");
+            payload.put("project", projectRoot.toString());
+            payload.put("path", page.path());
+            payload.put("title", nullToEmpty(page.title()));
+            payload.put("format", page.format().name());
+            payload.put("purpose", page.purpose().name());
+            payload.put("sizeBytes", size);
+            payload.put("contentHash", "sha256:" + ModelIdentity.sha256(new String(bytes, StandardCharsets.UTF_8)));
+            payload.put("ref", page.path());
+            payload.put("hint", DOC_FETCH_HINT);
+            return payload;
+        }
+        var text = new String(bytes, StandardCharsets.UTF_8);
         payload.put("project", projectRoot.toString());
         payload.put("path", page.path());
         payload.put("title", nullToEmpty(page.title()));
@@ -949,6 +1081,118 @@ public class LaunchpadMcpTools {
             }
         }
         return sha256Hex(sb.toString());
+    }
+
+    /**
+     * Build the combined + split reference triple for a companion anchor. The
+     * combined {@code ref} is human-friendly ({@code path#anchor}); the split
+     * {@code path} and {@code anchor} are easier for tools to consume. The anchor
+     * is {@link ModelIdentity#slug(String)} of the record's stable id, matching
+     * the {@code {#slug}} headings the companions emit.
+     */
+    private static void putReference(Map<String, Object> target, String companion, String id) {
+        var anchor = ModelIdentity.slug(nullToEmpty(id));
+        target.put("ref", companion + "#" + anchor);
+        target.put("path", companion);
+        target.put("anchor", anchor);
+    }
+
+    /**
+     * First-sentence (or {@value #SUMMARY_MAX_CHARS}-char) summary of a body, so a
+     * references payload carries enough to decide what to fetch without re-flooding
+     * the body it replaces. Collapses whitespace; empty in, empty out.
+     */
+    private static String summarize(String body) {
+        if (body == null) return "";
+        var text = body.strip().replaceAll("\\s+", " ");
+        if (text.isEmpty()) return "";
+        int dot = text.indexOf(". ");
+        if (dot > 0 && dot + 1 <= SUMMARY_MAX_CHARS) {
+            return text.substring(0, dot + 1);
+        }
+        if (text.length() <= SUMMARY_MAX_CHARS) return text;
+        return text.substring(0, SUMMARY_MAX_CHARS).stripTrailing() + "...";
+    }
+
+    /** References-mode projection of a rule: metadata + hash + companion anchor, no body. */
+    private static Map<String, Object> ruleRef(Rule r) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(r.id()));
+        m.put("title", nullToEmpty(r.title()));
+        m.put("severity", nullToEmpty(r.severity()));
+        m.put("auditable", r.isAuditable());
+        m.put("contentHash", ruleHash(r));
+        m.put("summary", summarize(r.description()));
+        putReference(m, RULES_COMPANION, r.id());
+        return m;
+    }
+
+    /** References-mode projection of a skill: metadata + hash + companion anchor, no steps. */
+    private static Map<String, Object> skillRef(Skill s) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(s.id()));
+        m.put("title", nullToEmpty(s.title()));
+        if (s.trigger() != null && !s.trigger().isBlank()) {
+            m.put("triggerSummary", summarize(s.trigger()));
+        }
+        m.put("contentHash", skillHash(s));
+        m.put("summary", summarize(skillSummarySource(s)));
+        putReference(m, SKILLS_COMPANION, s.id());
+        return m;
+    }
+
+    /** References-mode projection of a checklist: metadata + hash + companion anchor, no items. */
+    private static Map<String, Object> checklistRef(Checklist c) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(c.id()));
+        m.put("title", nullToEmpty(c.title()));
+        m.put("itemCount", c.items() == null ? 0 : c.items().size());
+        m.put("contentHash", checklistHash(c));
+        m.put("summary", summarize(c.title()));
+        putReference(m, CHECKLISTS_COMPANION, c.id());
+        return m;
+    }
+
+    /** Best body source for a skill summary: trigger first, then the first step, then title. */
+    private static String skillSummarySource(Skill s) {
+        if (s.trigger() != null && !s.trigger().isBlank()) return s.trigger();
+        if (s.steps() != null && !s.steps().isEmpty()) return s.steps().get(0);
+        return s.title();
+    }
+
+    /**
+     * Compact reference used in every {@code compare_standards} bucket in
+     * references mode: id + hash + summary + companion anchor, no body. The id is
+     * carried so {@code aOnly}/{@code bOnly}/{@code common} entries stay
+     * identifiable; in the {@code divergent} pair it is redundant with the pair's
+     * own id but harmless. This lets {@link #diffById} stay byte-for-byte unchanged
+     * - only the render function differs between inline and references modes.
+     */
+    private static Map<String, Object> ruleCompareRef(Rule r) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(r.id()));
+        m.put("contentHash", ruleHash(r));
+        m.put("summary", summarize(r.description()));
+        putReference(m, RULES_COMPANION, r.id());
+        return m;
+    }
+
+    private static Map<String, Object> skillCompareRef(Skill s) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(s.id()));
+        m.put("contentHash", skillHash(s));
+        m.put("summary", summarize(skillSummarySource(s)));
+        putReference(m, SKILLS_COMPANION, s.id());
+        return m;
+    }
+
+    private static Map<String, Object> checklistCompareRef(Checklist c) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(c.id()));
+        m.put("contentHash", checklistHash(c));
+        m.put("summary", summarize(c.title()));
+        putReference(m, CHECKLISTS_COMPANION, c.id());
+        return m;
     }
 
     private static Map<String, Object> ruleToMap(Rule r) {
