@@ -84,4 +84,62 @@ Your Project
 
 == MCP Server
 
-TBA
+Launchpad ships a runtime MCP server (`launchpad mcp`, stdio transport) that exposes its project intelligence -- scan results, applicable standards, audit findings, and the synthesized project model -- to any MCP client (Claude Code, Cursor, Cline, Continue, Zed, ...). The tools are deliberately scoped to what is *unique* to Launchpad, so they do not duplicate a generic filesystem or git server.
+
+=== Response modes: references vs inline
+
+Body-heavy tools support two response modes:
+
+* *references* (the default) -- the tool returns pointers, not prose: each item's stable id, title, content hash, a short summary, and a project-relative `path` + `anchor` into the chunk-friendly `.ai/` companion. The agent fetches the full body on demand through its own sandbox/indexer.
+* *inline* -- the tool inlines the full body (rule descriptions and rationales, skill steps, checklist items, document content), preserving the legacy response shape for clients with no sandbox.
+
+The motivation is composition with an in-session context layer (for example a general-purpose sandbox/indexer MCP). When such a layer is connected, inlining full bodies wastes the very tokens Launchpad's offline pass saved -- the host either re-floods its context or re-indexes bytes it already received. References hand byte-management off to the layer that does it best: Launchpad is the offline reference-producing context compiler; the sandbox fetches and indexes bodies only when needed.
+
+[NOTE]
+====
+Launchpad cannot auto-detect a sibling context layer. An MCP server only sees the host's own `clientInfo` and capabilities during the `initialize` handshake -- never the other servers connected to the same host. The mode is therefore an explicit opt-out, not something sniffed at startup: references is the default, and inline is selected deliberately.
+====
+
+=== Selecting the mode
+
+Resolution precedence is explicit -- environment variable, then property, then the references default:
+
+[cols="1,2"]
+|===
+| Source | Value
+
+| Env var `LAUNCHPAD_MCP_RESPONSE_MODE`
+| `inline` or `references`
+
+| Property `launchpad.mcp.response-mode`
+| `inline` or `references`
+
+| Default
+| `references`
+|===
+
+Parsing is case-insensitive; a blank or unrecognized value falls through to the next source (and an unrecognized value is logged once at startup). To restore the legacy full-body behavior, launch the server with `LAUNCHPAD_MCP_RESPONSE_MODE=inline` (or set `launchpad.mcp.response-mode=inline`).
+
+=== What changes per tool
+
+[cols="1,3"]
+|===
+| Tool | Behavior in references mode
+
+| `get_standards`
+| Per rule/skill/checklist: id, title, content hash, short summary, and an anchor into `.ai/engineering-rules.md`, `.ai/skills.md`, or `.ai/checklists.md`. Heavy bodies (descriptions, rationales, steps, items) are omitted. Top level points at `.launchpad/standards.index.json` and the three companions.
+
+| `compare_standards`
+| The `common` / `divergent` / `aOnly` / `bOnly` buckets carry compact references (id, content hash, summary, anchor) instead of full bodies. The hash-based diff itself is unchanged.
+
+| `get_documentation`
+| Returns the page's path, title, format, purpose, size, and content hash, plus a hint to read the file via the sandbox. The page body is omitted. All read guards (docs-index membership, traversal, binary, size) still apply.
+
+| `get_workflows`, `get_systems`, `get_risks`, `get_project_overview`
+| Already summaries, not prose -- no fields are removed. References mode only adds a top-level pointer to `.launchpad/project.model.json`.
+
+| `find_documentation`
+| Unchanged. It already returns bounded search hits (capped per page and per project), not full document dumps.
+|===
+
+The references point at artifacts the offline pass already emits: the `.ai/` companions carry one stable `{#slug}` anchor per item (derived from the record's id), and the two machine-readable sidecars -- `.launchpad/standards.index.json` and `.launchpad/project.model.json` -- are the structured projections an indexer chunks one record at a time.
