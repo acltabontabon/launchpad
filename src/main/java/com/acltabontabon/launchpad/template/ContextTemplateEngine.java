@@ -8,6 +8,7 @@ import com.acltabontabon.launchpad.template.projection.AgentProjection;
 import com.acltabontabon.launchpad.template.synthesis.SectionSynthesizer;
 
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,7 +50,23 @@ public class ContextTemplateEngine {
         this.projections = projections;
     }
 
+    /**
+     * Convenience overload that stamps the current instant and reports
+     * {@code deterministic-only} provenance. Used by tests and any caller without
+     * an active-model handle.
+     */
     public List<GeneratedFile> buildFiles(ProjectContext ctx, VirtualProjectContext model) {
+        return buildFiles(ctx, model, "", Instant.now().toString());
+    }
+
+    /**
+     * @param activeModel configured model name; stamped into provenance when AI
+     *                    synthesis is enabled, otherwise {@code deterministic-only}.
+     * @param generatedAt ISO-8601 timestamp stamped into provenance (passed in so
+     *                    tests can assert a fixed value).
+     */
+    public List<GeneratedFile> buildFiles(ProjectContext ctx, VirtualProjectContext model,
+                                          String activeModel, String generatedAt) {
         var projectRoot = Path.of(ctx.rootPath());
         var rules = standardsLoader.loadRules(projectRoot);
         var skills = standardsLoader.loadSkills(projectRoot);
@@ -57,7 +74,15 @@ public class ContextTemplateEngine {
         var resolved = adapterResolver.resolve(projectRoot);
         var synthesis = sectionSynthesizer.synthesize(ctx);
 
-        var companions = companionFileBuilder.build(ctx, rules, skills, checklists);
+        var source = standardsLoader.describeRulesSource(projectRoot).orElse(null);
+        var aiModel = sectionSynthesizer.isAiEnabled() && activeModel != null && !activeModel.isBlank()
+            ? activeModel
+            : ProvenanceHeader.DETERMINISTIC_ONLY;
+        var provenance = ProvenanceHeader.of(generatedAt, source, aiModel).render();
+
+        var companions = companionFileBuilder.build(ctx, rules, skills, checklists).stream()
+            .map(c -> new GeneratedFile(c.relativePath(), provenance + c.content(), c.kind()))
+            .toList();
         var companionPaths = new LinkedHashSet<String>();
         for (var c : companions) companionPaths.add(c.relativePath());
 
@@ -65,8 +90,10 @@ public class ContextTemplateEngine {
         var primaryBody = primaryBuilder.build(ctx, model, plan, resolved, synthesis, companionPaths);
 
         var files = new ArrayList<GeneratedFile>();
+        // Provenance sits inside the managed block so a re-run's merge refreshes it
+        // in place; outside the markers it would go stale on every MERGE.
         files.add(new GeneratedFile(resolved.primaryPath(),
-            MergeMarkers.wrap(primaryBody),
+            MergeMarkers.wrap(provenance + primaryBody),
             GeneratedFile.FileKind.CONTEXT));
         files.addAll(companions);
 

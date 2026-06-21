@@ -36,6 +36,15 @@ public class SectionSynthesizer {
         this.generator = generator;
     }
 
+    /**
+     * Whether an LLM generator is wired in. When false, every section falls back
+     * to deterministic output and generated files are stamped
+     * {@code deterministic-only} in their provenance header.
+     */
+    public boolean isAiEnabled() {
+        return generator != null;
+    }
+
     public SynthesisOutputs synthesize(ProjectContext ctx) {
         var classFacts = ProjectClassFacts.collect(
             Path.of(ctx.rootPath()), ctx.sourceFiles(), ctx.endpoints());
