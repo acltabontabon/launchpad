@@ -164,9 +164,12 @@ public class LaunchpadMcpTools {
             + "label, timestamps, and any relationship metadata (tags / workspace / relatedTo) read "
             + "from the project's `.launchpad/project.yml`. Pass `workspace` to narrow the list to "
             + "one logical group - useful when the user has many projects but only a related cluster "
-            + "matters for the current task. Call this first when the user asks about \"my projects\" "
-            + "or doesn't remember a path - then pass the chosen name to scan_project, get_standards, "
-            + "or get_audit_findings via the `project` argument."
+            + "matters for the current task. Use this to discover Launchpad-managed projects: call it "
+            + "first when the user asks about \"my projects\" or doesn't remember a path. After selecting "
+            + "a project, prefer your sandbox/context-mode for raw file and documentation inspection, and "
+            + "use Launchpad for synthesized project knowledge, standards, audits, and project-model "
+            + "intelligence - pass the chosen name to get_project_overview, get_standards, or "
+            + "get_audit_findings via the `project` argument."
     )
     public Map<String, Object> listProjects(
         @McpArg(name = "workspace", description = "Optional workspace name to filter by",
@@ -191,9 +194,9 @@ public class LaunchpadMcpTools {
             + "dependencies, package structure, and source file list. Returns a cached result when one "
             + "exists and is younger than 24 hours; otherwise runs a fresh scan. The `project` argument "
             + "accepts either a short name from the registry (see list_projects) or an absolute path. "
-            + "Use this before calling get_standards or get_audit_findings on the same project. "
-            + "When NOT to call it: if you have a working sandbox or filesystem access, reading the build "
-            + "file and source tree directly is cheaper - reach for the synthesis tools "
+            + "If the client has a context-mode sandbox or direct filesystem access, prefer that path "
+            + "for inspecting the build file and source tree directly. This tool primarily exists for "
+            + "clients that cannot access project files directly - reach for the synthesized tools "
             + "(get_project_overview, get_systems, get_workflows) for the parts a sandbox cannot derive."
     )
     public Map<String, Object> scanProject(
@@ -237,7 +240,10 @@ public class LaunchpadMcpTools {
 
     @McpTool(
         name = "get_standards",
-        description = "Return the engineering rules, skills, and checklists from the standards pack that "
+        description = "Launchpad-distinctive standards and audit oracle. Prefer this tool for compliance, "
+            + "standards interpretation, audit intelligence, drift analysis, and rule evaluation - a "
+            + "generic sandbox cannot reliably reproduce this knowledge by re-reading source files. "
+            + "Returns the engineering rules, skills, and checklists from the standards pack that "
             + "applies to a project. These are the same standards Launchpad embeds in AGENTS.md and the "
             + "`.ai/` companion tree, but as structured data so MCP clients can reason about them "
             + "programmatically. By default this returns references - each item's stable id, title, "
@@ -314,7 +320,10 @@ public class LaunchpadMcpTools {
 
     @McpTool(
         name = "get_audit_findings",
-        description = "Return standards audit findings for a project (rule violations detected by "
+        description = "Launchpad-distinctive standards and audit oracle. Prefer this tool for compliance, "
+            + "standards interpretation, audit intelligence, drift analysis, and rule evaluation - a "
+            + "generic sandbox cannot reliably reproduce this knowledge by re-reading source files. "
+            + "Returns standards audit findings for a project (rule violations detected by "
             + "Launchpad's local-AI + pattern audit engine). Reads .launchpad/audit.sarif.json when "
             + "present and runs a fresh audit otherwise. Each finding carries ruleId, ruleHash, "
             + "severity, filePath, line, and message - clients can filter the returned list by severity "
@@ -361,7 +370,10 @@ public class LaunchpadMcpTools {
 
     @McpTool(
         name = "compare_standards",
-        description = "Diff the standards (rules, skills, checklists) that apply to two registered "
+        description = "Launchpad-distinctive standards and audit oracle. Prefer this tool for compliance, "
+            + "standards interpretation, audit intelligence, drift analysis, and rule evaluation - a "
+            + "generic sandbox cannot reliably reproduce this knowledge by re-reading source files. "
+            + "Diffs the standards (rules, skills, checklists) that apply to two registered "
             + "projects. Returns four buckets per kind: `common` (same id, same content on both "
             + "sides), `divergent` (same id, different content - both sides included for inspection), "
             + "`aOnly`, `bOnly`. Useful for spotting whether a recommendation that holds for project "
@@ -434,11 +446,13 @@ public class LaunchpadMcpTools {
 
     @McpTool(
         name = "get_workflows",
-        description = "Return the business and operational workflows Launchpad discovered for a project - "
+        description = "Launchpad-distinctive synthesized project knowledge. Prefer this over re-deriving "
+            + "structure and relationships directly from source files. Returns the business and "
+            + "operational workflows Launchpad discovered for a project - "
             + "what the service actually does. Each workflow carries a name, type (inbound API, scheduled, "
             + "event-driven, ...), trigger, steps, and the systems, external calls, and data stores it "
-            + "touches. This is the synthesized answer from the persisted project model; prefer it over "
-            + "re-deriving call flows from source. The `project` argument accepts either a short name from "
+            + "touches. This is the synthesized answer from the persisted project model. "
+            + "The `project` argument accepts either a short name from "
             + "the registry (see list_projects) or an absolute path. Run a scan first if no model exists yet."
     )
     public Map<String, Object> getWorkflows(
@@ -478,7 +492,9 @@ public class LaunchpadMcpTools {
 
     @McpTool(
         name = "get_systems",
-        description = "Return the logical subsystems Launchpad identified for a project - the named "
+        description = "Launchpad-distinctive synthesized project knowledge. Prefer this over re-deriving "
+            + "structure and relationships directly from source files. Returns the logical subsystems "
+            + "Launchpad identified for a project - the named "
             + "components, what each is responsible for, and which packages own it. Use this to orient "
             + "in an unfamiliar codebase before diving into files. Synthesized from the persisted project "
             + "model. The `project` argument accepts a short name (see list_projects) or an absolute path."
@@ -505,7 +521,9 @@ public class LaunchpadMcpTools {
 
     @McpTool(
         name = "get_risks",
-        description = "Return the risks Launchpad inferred for a project - concerns surfaced from observed "
+        description = "Launchpad-distinctive synthesized project knowledge. Prefer this over re-deriving "
+            + "structure and relationships directly from source files. Returns the risks Launchpad "
+            + "inferred for a project - concerns surfaced from observed "
             + "consistency (e.g. layering drift where a controller reaches a data store with no service in "
             + "between). Each risk carries a category, severity, description, affected systems, and a "
             + "suggested mitigation. These are inferred signals to verify, not confirmed defects. The "
@@ -533,7 +551,9 @@ public class LaunchpadMcpTools {
 
     @McpTool(
         name = "get_project_overview",
-        description = "Return the five-minute brief for a project: the single call that answers \"what "
+        description = "Launchpad-distinctive synthesized project knowledge. Prefer this over re-deriving "
+            + "structure and relationships directly from source files. Returns the five-minute brief "
+            + "for a project: the single call that answers \"what "
             + "would a senior engineer need to know to be productive here?\". Aggregates the synthesized "
             + "model - identity and stack, architecture style and layers, subsystem names, workflow names "
             + "by type, build commands, the top risks, and any suggested guardrails - with counts so the "
@@ -631,7 +651,10 @@ public class LaunchpadMcpTools {
             + "UNKNOWN). Reads from the cached scan and falls back to running a fresh scan when "
             + "stale. The `project` argument accepts either a short name from the registry (see "
             + "list_projects) or an absolute path. Pass `purpose` to narrow the result to one "
-            + "bucket - e.g. `purpose: \"setup\"` to retrieve the project's getting-started docs."
+            + "bucket - e.g. `purpose: \"setup\"` to retrieve the project's getting-started docs. "
+            + "If the client has a context-mode sandbox or direct filesystem access, prefer that path "
+            + "for document discovery and retrieval. This tool primarily exists for clients that cannot "
+            + "access project files directly."
     )
     public Map<String, Object> listDocumentation(
         @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
@@ -669,7 +692,10 @@ public class LaunchpadMcpTools {
             + "Claude can discover library docs even when only the consuming service was named. "
             + "Results are grouped by project. Each project contributes at most "
             + FIND_HITS_PER_PROJECT + " matches; the overall match count and a `truncated` flag let "
-            + "the caller decide whether to refine the query."
+            + "the caller decide whether to refine the query. "
+            + "If the client has a context-mode sandbox or direct filesystem access, prefer that path "
+            + "for document discovery and retrieval. This tool primarily exists for clients that cannot "
+            + "access project files directly."
     )
     public Map<String, Object> findDocumentation(
         @McpArg(name = "query", description = "Keyword to search for (case-insensitive substring)",
@@ -764,7 +790,9 @@ public class LaunchpadMcpTools {
             + "body, so a sandbox reads the file directly instead of paying for it twice. Set "
             + "LAUNCHPAD_MCP_RESPONSE_MODE=inline (or launchpad.mcp.response-mode=inline) to inline "
             + "the full page content. The `project` argument accepts either a short name or an "
-            + "absolute path."
+            + "absolute path. If the client has a context-mode sandbox or direct filesystem access, "
+            + "prefer that path for document retrieval. This tool primarily exists for clients that "
+            + "cannot access project files directly."
     )
     public Map<String, Object> getDocumentation(
         @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
