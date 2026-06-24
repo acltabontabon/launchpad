@@ -3,9 +3,9 @@
 The runtime MCP server (`launchpad mcp`) exposes the project *model* so an agent
 can traverse a codebase semantically instead of re-reading files. This page
 documents the model-query tools that read the deterministic project graph
-(`.launchpad/project.model.json`, see xref:project-model.adoc[]) and the standards
-oracle, with input/output examples. It complements the response-mode rules in
-xref:architecture.adoc[] (the MCP Server section).
+(`.launchpad/project.model.json`, see xref:project-model.adoc[]), the standards
+oracle, and the task-interview tools, with input/output examples. It complements
+the response-mode rules in xref:architecture.adoc[] (the MCP Server section).
 
 These tools deliberately do *not* duplicate generic `find_files` / `read_file` /
 `search_code` - an agent already has those natively. Each tool's description
@@ -154,6 +154,54 @@ available ids so a typo costs no second round trip. The `ruleId` matches the
   "details": { "requested": "does.not.exist",
     "availableRuleIds": ["java.no-field-injection"] } } }
 ----
+
+== Task interview (`ask_task_question`, `finalize_task`, `regenerate_section`)
+
+These expose the local-AI `/new-task` interview over MCP so a cloud agent can
+reduce ambiguity in a task *before* it starts work, with the project's own
+engineering standards as the question source. They require a local AI provider
+(e.g. Ollama) to be running. The interview is *stateless*: the caller owns the
+loop and carries the transcript as a JSON `history` array of `{question, answer}`
+objects.
+
+The loop: call `ask_task_question` with the transcript so far; if it returns
+`done: false`, present the `question`, capture the answer, append the turn, and
+call again; when it returns `done: true`, call `finalize_task`. A server-side cap
+of 8 rounds and a second-opinion critic (after 2 rounds) mirror the TUI runner.
+
+*When not to call:* trivial or unambiguous tasks - the interview adds
+round-trips. `finalize_task` is scoped to the transcript and the project's
+standards, not arbitrary text. `regenerate_section` only re-rolls the
+model-authored sections (`goal`, `acceptance`, `out_of_scope`); the Constraints
+and Standards-consulted sections are generated deterministically from the pack.
+
+[source,jsonc]
+----
+// ask_task_question({ project: "orders-service", task: "Add a refund endpoint",
+//                     history: [] })
+{ "done": false, "question": "Should refunds be full-only or support partial amounts?",
+  "round": 1, "maxRounds": 8, "source": "interview",
+  "hint": "Answer the question, append {question, answer} to history, then call ask_task_question again - or finalize_task when you have enough context." }
+
+// ...after the model (and critic) are satisfied:
+{ "done": true, "round": 4, "reason": "interview complete",
+  "hint": "Call finalize_task with the same task and history to synthesise the brief." }
+
+// finalize_task({ project: "orders-service", task: "Add a refund endpoint",
+//                 history: [ {"question":"...","answer":"..."} ] })
+{ "project": "orders-service", "rootPath": "/abs/orders-service", "turnCount": 4,
+  "markdown": "## Goal\n…\n## Constraints\n…\n## Acceptance criteria\n…",
+  "warnings": [] }
+
+// regenerate_section({ project: "orders-service", section: "acceptance",
+//                      task: "Add a refund endpoint", history: [ … ] })
+{ "project": "orders-service", "section": "acceptance", "heading": "## Acceptance criteria",
+  "markdown": "- A refund can be issued for a settled order\n- …", "warnings": [] }
+----
+
+When the local provider is unreachable these tools return an
+`llm_interview_failed` / `llm_synthesis_failed` error with a hint to start the
+provider, rather than a stack trace.
 
 == Stubs pending dependencies
 

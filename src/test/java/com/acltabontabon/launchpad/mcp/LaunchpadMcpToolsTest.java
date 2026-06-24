@@ -90,7 +90,7 @@ class LaunchpadMcpToolsTest {
     /** Build a tool instance with the given response-mode property (null = default). */
     private LaunchpadMcpTools toolsWith(String responseModeProperty) {
         return new LaunchpadMcpTools(scanner, scanStore, auditService, standardsLoader,
-            registry, detector, modelStore, new ProjectModelStore(), 512L, responseModeProperty);
+            registry, detector, modelStore, new ProjectModelStore(), null, 512L, responseModeProperty);
     }
 
     @Test
@@ -503,6 +503,53 @@ class LaunchpadMcpToolsTest {
         var err = errorEnvelope(out);
         assertThat(err).containsEntry("code", "not_yet_available");
         assertThat(details(err)).containsEntry("trackingIssue", 21);
+    }
+
+    @Test
+    void askTaskQuestionFinishesWhenNoStandardsApply() {
+        // No standards pack in the fixture -> nothing standards-driven to ask,
+        // so the tool finishes without ever calling the (null) advisor / LLM.
+        var out = tools.askTaskQuestion(projectRoot.toString(), "Add a health endpoint", null);
+        assertThat(out).containsEntry("done", true);
+        assertThat((String) out.get("reason")).contains("no engineering standards");
+    }
+
+    @Test
+    void askTaskQuestionStopsAtRoundCapWithoutCallingModel() {
+        var history = new StringBuilder("[");
+        for (int i = 0; i < 8; i++) {
+            if (i > 0) history.append(",");
+            history.append("{\"question\":\"q").append(i).append("\",\"answer\":\"a").append(i).append("\"}");
+        }
+        history.append("]");
+        var out = tools.askTaskQuestion(projectRoot.toString(), "Add a health endpoint", history.toString());
+        assertThat(out).containsEntry("done", true);
+        assertThat((String) out.get("reason")).contains("round cap");
+        assertThat(out).containsEntry("round", 8);
+    }
+
+    @Test
+    void askTaskQuestionRejectsBlankTask() {
+        var out = tools.askTaskQuestion(projectRoot.toString(), "  ", null);
+        assertThat(errorEnvelope(out)).containsEntry("code", "missing_task");
+    }
+
+    @Test
+    void askTaskQuestionRejectsMalformedHistory() {
+        var out = tools.askTaskQuestion(projectRoot.toString(), "Add a health endpoint", "{ not json");
+        assertThat(errorEnvelope(out)).containsEntry("code", "malformed_history");
+    }
+
+    @Test
+    void finalizeTaskRejectsBlankTask() {
+        var out = tools.finalizeTask(projectRoot.toString(), "", null);
+        assertThat(errorEnvelope(out)).containsEntry("code", "missing_task");
+    }
+
+    @Test
+    void regenerateSectionRejectsUnknownSection() {
+        var out = tools.regenerateSection(projectRoot.toString(), "constraints", "Add an endpoint", null);
+        assertThat(errorEnvelope(out)).containsEntry("code", "invalid_section");
     }
 
     private static void copyDirectory(Path source, Path target) throws IOException {

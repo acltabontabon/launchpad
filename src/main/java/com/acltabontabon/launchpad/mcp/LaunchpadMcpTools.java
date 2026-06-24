@@ -27,6 +27,11 @@ import com.acltabontabon.launchpad.standards.ChecklistItem;
 import com.acltabontabon.launchpad.standards.IncompatiblePackSchemaException;
 import com.acltabontabon.launchpad.standards.Rule;
 import com.acltabontabon.launchpad.standards.Skill;
+import com.acltabontabon.launchpad.task.RelevantStandards;
+import com.acltabontabon.launchpad.task.TaskAdvisorService;
+import com.acltabontabon.launchpad.task.TaskTurn;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -111,8 +116,17 @@ public class LaunchpadMcpTools {
     private final ProjectSupportDetector projectSupportDetector;
     private final VirtualProjectContextStore modelStore;
     private final ProjectModelStore graphStore;
+    private final TaskAdvisorService taskAdvisor;
     private final long maxFileSizeBytes;
     private final McpResponseMode responseMode;
+
+    // Server-side safety net for the stateless interview loop, mirroring the TUI
+    // runner: the model returning DONE is the primary stop signal; these bound a
+    // misbehaving model. The MCP client owns the loop and carries the transcript.
+    private static final int MAX_INTERVIEW_ROUNDS = 8;
+    private static final int MIN_ROUNDS_BEFORE_CRITIC = 2;
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     public LaunchpadMcpTools(ProjectScanner scanner,
                              ScanStore scanStore,
@@ -122,6 +136,7 @@ public class LaunchpadMcpTools {
                              ProjectSupportDetector projectSupportDetector,
                              VirtualProjectContextStore modelStore,
                              ProjectModelStore graphStore,
+                             TaskAdvisorService taskAdvisor,
                              @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb,
                              @Value("${launchpad.mcp.response-mode:}") String responseModeProperty) {
         this.scanner = scanner;
@@ -132,6 +147,7 @@ public class LaunchpadMcpTools {
         this.projectSupportDetector = projectSupportDetector;
         this.modelStore = modelStore;
         this.graphStore = graphStore;
+        this.taskAdvisor = taskAdvisor;
         this.maxFileSizeBytes = maxFileSizeKb * 1024L;
         // Read the env var explicitly so precedence (env > property > default) is
         // ours, not Spring's relaxed-binding. Warn once here, never per call.
@@ -989,6 +1005,302 @@ public class LaunchpadMcpTools {
             "audit_findings_diff is not yet available; it is tracked in issue #21.",
             "Watch issue #21 for availability."
         ).withDetails(Map.of("trackingIssue", 21)).toPayload();
+    }
+
+    @McpTool(
+        name = "ask_task_question",
+        description = "Launchpad-distinctive task interview. Exposes the local-AI `/new-task` "
+            + "interview over MCP so a cloud agent can reduce ambiguity in a task BEFORE it starts "
+            + "work, using the project's own engineering standards as the question source. Returns the "
+            + "next clarifying question (`done: false`) or signals the interview is complete "
+            + "(`done: true`), at which point you call finalize_task. The interview is stateless: pass "
+            + "the full transcript so far as `history` (a JSON array of {question, answer} objects) and "
+            + "append each answered turn before the next call. Do NOT call this for trivial or "
+            + "unambiguous tasks - it adds round-trips; use it when a task is underspecified. Requires "
+            + "a local AI provider (e.g. Ollama) to be running. The `project` argument accepts a short "
+            + "name (see list_projects) or an absolute path."
+    )
+    public Map<String, Object> askTaskQuestion(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project,
+        @McpArg(name = "task", description = "The task description the user wants to scope", required = true)
+        String task,
+        @McpArg(name = "history", description = "Interview transcript so far as a JSON array of "
+            + "{\"question\":..., \"answer\":...} objects; omit or pass [] for the first question",
+            required = false)
+        String history
+    ) {
+        if (task == null || task.isBlank()) return missingTask();
+        var prep = prepareTask(project);
+        if (prep.error() != null) return prep.error();
+        List<TaskTurn> turns;
+        try {
+            turns = parseHistory(history);
+        } catch (RuntimeException e) {
+            return malformedHistory(e);
+        }
+        try {
+            var standards = selectStandards(prep.root(), prep.ctx(), task, turns);
+            // Server-side runaway guard: past the cap, stop asking and let the
+            // caller finalize even if the model would keep probing.
+            if (turns.size() >= MAX_INTERVIEW_ROUNDS) {
+                return donePayload(turns, "round cap reached (" + MAX_INTERVIEW_ROUNDS + ")");
+            }
+            // No applicable standards means there is nothing standards-driven to
+            // interview about; the synthesised brief still benefits from the scan.
+            if (standards.rules().isEmpty() && standards.skills().isEmpty()
+                    && standards.checklists().isEmpty()) {
+                return donePayload(turns, "no engineering standards apply to this task");
+            }
+            var stack = prep.ctx().stack();
+            var response = taskAdvisor.askNextQuestion(stack, task, turns,
+                standards.rules(), standards.skills(), standards.checklists());
+            if (response.equals(TaskAdvisorService.DONE_TOKEN)
+                    || response.contains(TaskAdvisorService.DONE_TOKEN)) {
+                // The interview model declared the brief done. Run the second-opinion
+                // critic once the transcript is substantial enough; a surfaced gap
+                // becomes the next question. Near-duplicate follow-ups collapse to
+                // READY inside the planner, so this converges.
+                if (turns.size() >= MIN_ROUNDS_BEFORE_CRITIC) {
+                    var verdict = taskAdvisor.critiqueReadiness(stack, task, turns,
+                        standards.rules(), standards.skills(), standards.checklists());
+                    if (!verdict.equals(TaskAdvisorService.READY_TOKEN)) {
+                        return questionPayload(verdict, turns, "critic");
+                    }
+                }
+                return donePayload(turns, "interview complete");
+            }
+            return questionPayload(response, turns, "interview");
+        } catch (IncompatiblePackSchemaException e) {
+            return incompatiblePackSchema(e);
+        } catch (RuntimeException e) {
+            return llmError("interview", e);
+        }
+    }
+
+    @McpTool(
+        name = "finalize_task",
+        description = "Launchpad-distinctive task interview. Synthesises the final, standards-grounded "
+            + "task brief from a `/new-task` interview transcript: a markdown document with Goal, "
+            + "Constraints (drawn deterministically from the applicable rules), Acceptance criteria, "
+            + "Out of scope, and Standards consulted. Call this once ask_task_question returns "
+            + "`done: true` (or immediately for a well-specified task with an empty `history`). Returns "
+            + "the markdown plus any validator warnings. Do NOT use this to summarise arbitrary text - "
+            + "it is scoped to the interview transcript and the project's standards. Requires a local "
+            + "AI provider to be running."
+    )
+    public Map<String, Object> finalizeTask(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project,
+        @McpArg(name = "task", description = "The task description being scoped", required = true)
+        String task,
+        @McpArg(name = "history", description = "Interview transcript as a JSON array of "
+            + "{\"question\":..., \"answer\":...} objects; omit or pass [] to synthesise from the task "
+            + "description alone", required = false)
+        String history
+    ) {
+        if (task == null || task.isBlank()) return missingTask();
+        var prep = prepareTask(project);
+        if (prep.error() != null) return prep.error();
+        List<TaskTurn> turns;
+        try {
+            turns = parseHistory(history);
+        } catch (RuntimeException e) {
+            return malformedHistory(e);
+        }
+        try {
+            var standards = selectStandards(prep.root(), prep.ctx(), task, turns);
+            var result = taskAdvisor.synthesise(prep.ctx(), task, turns,
+                standards.rules(), standards.skills(), standards.checklists(), null);
+            var out = new LinkedHashMap<String, Object>();
+            out.put("project", prep.ctx().name());
+            out.put("rootPath", prep.root().toString());
+            out.put("turnCount", turns.size());
+            out.put("markdown", result.markdown());
+            out.put("warnings", result.warnings() == null ? List.of() : result.warnings());
+            return out;
+        } catch (IncompatiblePackSchemaException e) {
+            return incompatiblePackSchema(e);
+        } catch (RuntimeException e) {
+            return llmError("synthesis", e);
+        }
+    }
+
+    /** Heading rendered by {@link com.acltabontabon.launchpad.task.MarkdownPostProcessor} per section key. */
+    private static final Map<String, String> SECTION_HEADINGS = Map.of(
+        "goal", "## Goal",
+        "acceptance", "## Acceptance criteria",
+        "out_of_scope", "## Out of scope");
+
+    @McpTool(
+        name = "regenerate_section",
+        description = "Launchpad-distinctive task interview. Re-rolls a single section of the "
+            + "synthesised task brief - `goal`, `acceptance`, or `out_of_scope` - without re-running "
+            + "the whole interview, so a caller can refine one weak section in isolation. Returns the "
+            + "regenerated section's markdown. Do NOT call this before finalize_task has produced a "
+            + "brief, and do not use it to edit the Constraints / Standards-consulted sections - those "
+            + "are generated deterministically from the standards pack, not the model. Requires a "
+            + "local AI provider to be running."
+    )
+    public Map<String, Object> regenerateSection(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project,
+        @McpArg(name = "section", description = "Which section to regenerate: goal, acceptance, or "
+            + "out_of_scope", required = true)
+        String section,
+        @McpArg(name = "task", description = "The task description being scoped", required = true)
+        String task,
+        @McpArg(name = "history", description = "Interview transcript as a JSON array of "
+            + "{\"question\":..., \"answer\":...} objects", required = false)
+        String history
+    ) {
+        if (task == null || task.isBlank()) return missingTask();
+        var key = section == null ? "" : section.trim().toLowerCase(java.util.Locale.ROOT).replace('-', '_');
+        var heading = SECTION_HEADINGS.get(key);
+        if (heading == null) {
+            return McpError.invalidArgument(
+                "invalid_section",
+                "Unknown section `" + section + "`.",
+                "Allowed values: goal, acceptance, out_of_scope."
+            ).toPayload();
+        }
+        var prep = prepareTask(project);
+        if (prep.error() != null) return prep.error();
+        List<TaskTurn> turns;
+        try {
+            turns = parseHistory(history);
+        } catch (RuntimeException e) {
+            return malformedHistory(e);
+        }
+        try {
+            var standards = selectStandards(prep.root(), prep.ctx(), task, turns);
+            var result = taskAdvisor.synthesise(prep.ctx(), task, turns,
+                standards.rules(), standards.skills(), standards.checklists(), null);
+            var extracted = extractMarkdownSection(result.markdown(), heading);
+            var out = new LinkedHashMap<String, Object>();
+            out.put("project", prep.ctx().name());
+            out.put("section", key);
+            out.put("heading", heading);
+            out.put("markdown", extracted);
+            out.put("warnings", result.warnings() == null ? List.of() : result.warnings());
+            return out;
+        } catch (IncompatiblePackSchemaException e) {
+            return incompatiblePackSchema(e);
+        } catch (RuntimeException e) {
+            return llmError("synthesis", e);
+        }
+    }
+
+    // ---- interview tool shared helpers -------------------------------------
+
+    /** Resolved project root + a loaded/scanned context, or a ready-to-return error payload. */
+    private record TaskPrep(Path root, ProjectContext ctx, Map<String, Object> error) {}
+
+    /**
+     * Resolve the project, gate on Spring Boot support, and load (or run) the
+     * scan the interview/synthesis needs for stack and constraints. Returns a
+     * {@link TaskPrep} whose {@code error} is non-null when any step failed.
+     */
+    private TaskPrep prepareTask(String project) {
+        var resolved = resolveProject(project);
+        if (resolved instanceof Resolution.Error err) return new TaskPrep(null, null, err.payload());
+        var projectRoot = ((Resolution.Path) resolved).value();
+        var unsupported = requireSupported(projectRoot);
+        if (unsupported != null) return new TaskPrep(null, null, unsupported);
+        return new TaskPrep(projectRoot, loadOrScan(projectRoot), null);
+    }
+
+    /** Load the full standards pack and scope-filter it for this task (shared by all three tools). */
+    private RelevantStandards selectStandards(Path projectRoot, ProjectContext ctx,
+                                              String task, List<TaskTurn> turns) {
+        var rules = standardsLoader.loadRules(projectRoot);
+        var skills = standardsLoader.loadSkills(projectRoot);
+        var checklists = standardsLoader.loadChecklists(projectRoot);
+        return TaskAdvisorService.selectRelevantStandards(
+            ctx == null ? null : ctx.stack(), task, turns, rules, skills, checklists);
+    }
+
+    /** Deserialize the `history` JSON array into turns; empty list for null/blank. */
+    private static List<TaskTurn> parseHistory(String historyJson) {
+        if (historyJson == null || historyJson.isBlank()) return List.of();
+        try {
+            var turns = JSON.readValue(historyJson, new TypeReference<List<TaskTurn>>() {});
+            return turns == null ? List.of() : turns;
+        } catch (IOException e) {
+            throw new IllegalArgumentException(e.getMessage(), e);
+        }
+    }
+
+    private static Map<String, Object> missingTask() {
+        return McpError.invalidArgument(
+            "missing_task",
+            "The `task` argument is empty.",
+            "Pass the task description to scope."
+        ).toPayload();
+    }
+
+    private static Map<String, Object> malformedHistory(RuntimeException e) {
+        return McpError.invalidArgument(
+            "malformed_history",
+            "Could not parse `history` as a JSON array of {question, answer} objects: " + e.getMessage(),
+            "Pass a JSON array like [{\"question\":\"...\",\"answer\":\"...\"}], or omit it for the "
+                + "first turn."
+        ).toPayload();
+    }
+
+    /** Uniform error when a local-model call fails (provider down, model missing, timeout). */
+    private static Map<String, Object> llmError(String phase, RuntimeException e) {
+        return McpError.internal(
+            "llm_" + phase + "_failed",
+            "The local model call failed during " + phase + ": " + e.getMessage()
+        ).withDetails(Map.of("hint", "Ensure the local AI provider (e.g. Ollama at "
+            + "http://localhost:11434) is running and the configured model is pulled.")).toPayload();
+    }
+
+    private static Map<String, Object> donePayload(List<TaskTurn> turns, String reason) {
+        var out = new LinkedHashMap<String, Object>();
+        out.put("done", true);
+        out.put("round", turns.size());
+        out.put("reason", reason);
+        out.put("hint", "Call finalize_task with the same task and history to synthesise the brief.");
+        return out;
+    }
+
+    private static Map<String, Object> questionPayload(String question, List<TaskTurn> turns,
+                                                       String source) {
+        var out = new LinkedHashMap<String, Object>();
+        out.put("done", false);
+        out.put("question", question);
+        out.put("round", turns.size() + 1);
+        out.put("maxRounds", MAX_INTERVIEW_ROUNDS);
+        out.put("source", source);
+        out.put("hint", "Answer the question, append {question, answer} to history, then call "
+            + "ask_task_question again - or finalize_task when you have enough context.");
+        return out;
+    }
+
+    /**
+     * Slice one {@code ## Heading} section out of the assembled brief: the lines
+     * after the heading up to the next {@code ## } heading (or end). Empty string
+     * when the section is absent (e.g. an empty Out-of-scope is omitted entirely).
+     */
+    private static String extractMarkdownSection(String markdown, String heading) {
+        if (markdown == null || markdown.isBlank()) return "";
+        var lines = markdown.split("\\R", -1);
+        var sb = new StringBuilder();
+        boolean inSection = false;
+        for (var line : lines) {
+            if (line.strip().equals(heading)) {
+                inSection = true;
+                continue;
+            }
+            if (inSection && line.startsWith("## ")) break;
+            if (inSection) sb.append(line).append("\n");
+        }
+        return sb.toString().strip();
     }
 
     @McpTool(
