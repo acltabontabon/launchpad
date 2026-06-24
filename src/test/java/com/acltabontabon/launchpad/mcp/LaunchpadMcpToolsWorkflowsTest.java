@@ -29,6 +29,7 @@ class LaunchpadMcpToolsWorkflowsTest {
             new ProjectRegistry(),
             null,
             store,
+            null,
             512,
             null);
     }

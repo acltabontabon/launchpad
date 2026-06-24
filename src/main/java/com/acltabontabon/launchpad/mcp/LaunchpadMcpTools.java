@@ -8,6 +8,12 @@ import com.acltabontabon.launchpad.model.Risk;
 import com.acltabontabon.launchpad.model.SystemComponent;
 import com.acltabontabon.launchpad.model.VirtualProjectContextStore;
 import com.acltabontabon.launchpad.model.Workflow;
+import com.acltabontabon.launchpad.model.graph.EdgeType;
+import com.acltabontabon.launchpad.model.graph.NodeType;
+import com.acltabontabon.launchpad.model.graph.ProjectEdge;
+import com.acltabontabon.launchpad.model.graph.ProjectModel;
+import com.acltabontabon.launchpad.model.graph.ProjectModelStore;
+import com.acltabontabon.launchpad.model.graph.ProjectNode;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationIndex;
 import com.acltabontabon.launchpad.scanner.doc.DocumentationPage;
 import com.acltabontabon.launchpad.scanner.doc.Purpose;
@@ -29,10 +35,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -101,6 +110,7 @@ public class LaunchpadMcpTools {
     private final ProjectRegistry projectRegistry;
     private final ProjectSupportDetector projectSupportDetector;
     private final VirtualProjectContextStore modelStore;
+    private final ProjectModelStore graphStore;
     private final long maxFileSizeBytes;
     private final McpResponseMode responseMode;
 
@@ -111,6 +121,7 @@ public class LaunchpadMcpTools {
                              ProjectRegistry projectRegistry,
                              ProjectSupportDetector projectSupportDetector,
                              VirtualProjectContextStore modelStore,
+                             ProjectModelStore graphStore,
                              @Value("${launchpad.scan.max-file-size-kb:512}") long maxFileSizeKb,
                              @Value("${launchpad.mcp.response-mode:}") String responseModeProperty) {
         this.scanner = scanner;
@@ -120,6 +131,7 @@ public class LaunchpadMcpTools {
         this.projectRegistry = projectRegistry;
         this.projectSupportDetector = projectSupportDetector;
         this.modelStore = modelStore;
+        this.graphStore = graphStore;
         this.maxFileSizeBytes = maxFileSizeKb * 1024L;
         // Read the env var explicitly so precedence (env > property > default) is
         // ours, not Spring's relaxed-binding. Warn once here, never per call.
@@ -252,18 +264,27 @@ public class LaunchpadMcpTools {
             + "re-flooding context. Set LAUNCHPAD_MCP_RESPONSE_MODE=inline (or "
             + "launchpad.mcp.response-mode=inline) to inline full descriptions, rationales, steps, and "
             + "checklist items. The `project` argument accepts either a short name from the registry "
-            + "(see list_projects) or an absolute path."
+            + "(see list_projects) or an absolute path. Pass `ruleId` to fetch a single rule by its "
+            + "stable id (as returned by a prior get_standards call or an audit finding's `ruleId`) "
+            + "instead of the whole pack - an unknown id returns the list of available rule ids."
     )
     public Map<String, Object> getStandards(
         @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
             + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
-        String project
+        String project,
+        @McpArg(name = "ruleId", description = "Optional stable rule id; when present, return only "
+            + "that rule (reference or inline per response mode) instead of the full pack",
+            required = false)
+        String ruleId
     ) {
         var resolved = resolveProject(project);
         if (resolved instanceof Resolution.Error err) return err.payload();
         var projectRoot = ((Resolution.Path) resolved).value();
         try {
             var loadedRules = standardsLoader.loadRules(projectRoot);
+            if (ruleId != null && !ruleId.isBlank()) {
+                return singleRule(loadedRules, ruleId.trim());
+            }
             var loadedSkills = standardsLoader.loadSkills(projectRoot);
             var loadedChecklists = standardsLoader.loadChecklists(projectRoot);
             if (inline()) {
@@ -316,6 +337,43 @@ public class LaunchpadMcpTools {
         } catch (IncompatiblePackSchemaException e) {
             return incompatiblePackSchema(e);
         }
+    }
+
+    /**
+     * Single-rule projection for {@code get_standards(project, ruleId)}. Returns
+     * the one rule (reference or inline per mode) or a not-found error that lists
+     * the available rule ids so the caller can correct a typo without a second
+     * round trip.
+     */
+    private Map<String, Object> singleRule(List<Rule> rules, String ruleId) {
+        var match = rules.stream()
+            .filter(r -> ruleId.equals(r.id()))
+            .findFirst()
+            .orElse(null);
+        if (match == null) {
+            var availableRuleIds = rules.stream()
+                .map(Rule::id)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+            return McpError.notFound(
+                "unknown_rule_id",
+                "No rule with id '" + ruleId + "' in the standards that apply to this project.",
+                "Call get_standards without ruleId to list every applicable rule, or pick an "
+                    + "available id.")
+                .withDetails(Map.of("requested", ruleId, "availableRuleIds", availableRuleIds))
+                .toPayload();
+        }
+        var out = new LinkedHashMap<String, Object>();
+        if (inline()) {
+            out.put("rule", ruleToMap(match));
+            return out;
+        }
+        out.put("responseMode", "references");
+        out.put("index", STANDARDS_INDEX);
+        out.put("companions", Map.of("rules", RULES_COMPANION));
+        out.put("hint", STANDARDS_FETCH_HINT);
+        out.put("rule", ruleRef(match));
+        return out;
     }
 
     @McpTool(
@@ -640,6 +698,297 @@ public class LaunchpadMcpTools {
                 + "/project-context.json.",
             "Scan the project first via scan_project."
         ).toPayload();
+    }
+
+    /**
+     * Shared no-graph error for the deterministic-graph tools (get_repo_map /
+     * get_architecture / get_task_context). Parallel to {@link #noModelPayload}
+     * but points at {@code project.model.json} rather than the synthesized
+     * {@code project-context.json}.
+     */
+    private Map<String, Object> noGraphPayload(Path projectRoot) {
+        return McpError.notFound(
+            "no_project_graph",
+            "No project graph found at " + projectRoot.resolve(".launchpad")
+                + "/project.model.json.",
+            "Scan the project first via scan_project."
+        ).toPayload();
+    }
+
+    /** Node types that form the module/package containment tree (get_repo_map). */
+    private static final Set<NodeType> REPO_MAP_NODES = EnumSet.of(NodeType.PROJECT, NodeType.PACKAGE);
+    /** Edge types that form the containment tree. */
+    private static final Set<EdgeType> REPO_MAP_EDGES = EnumSet.of(EdgeType.CONTAINS);
+    /** Node types that form the component/endpoint/dependency wiring (get_architecture). */
+    private static final Set<NodeType> ARCH_NODES =
+        EnumSet.of(NodeType.COMPONENT, NodeType.ENDPOINT, NodeType.ENTRYPOINT, NodeType.DEPENDENCY);
+    /** Edge types that form the architecture wiring. */
+    private static final Set<EdgeType> ARCH_EDGES =
+        EnumSet.of(EdgeType.EXPOSES, EdgeType.DEPENDS_ON, EdgeType.IMPLEMENTS);
+    /** Upper bound on the nodes a single get_task_context slice returns. */
+    private static final int TASK_CONTEXT_NODE_CAP = 100;
+
+    @McpTool(
+        name = "get_repo_map",
+        description = "Launchpad-distinctive semantic graph. Returns the module/package containment "
+            + "tree from the deterministic project-model graph (.launchpad/project.model.json): the "
+            + "`project` and `package` nodes and the `contains` edges that nest them. Each node carries "
+            + "a stable id, a human-readable name, and a source ref (project-relative path, optional "
+            + "line range). Use this to learn how the codebase is partitioned into modules before "
+            + "drilling into files. Do NOT call this to list a directory or read files - your sandbox "
+            + "does that natively and more cheaply; this returns the pre-derived semantic structure a "
+            + "generic file walk cannot reproduce. The `project` argument accepts a short name (see "
+            + "list_projects) or an absolute path. Run a scan first if no graph exists yet."
+    )
+    public Map<String, Object> getRepoMap(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project
+    ) {
+        return graphSlice(project, REPO_MAP_NODES, REPO_MAP_EDGES);
+    }
+
+    @McpTool(
+        name = "get_architecture",
+        description = "Launchpad-distinctive semantic graph. Returns the component wiring from the "
+            + "deterministic project-model graph (.launchpad/project.model.json): the `component`, "
+            + "`endpoint`, `entrypoint`, and `dependency` nodes and the `exposes` / `depends-on` / "
+            + "`implements` edges between them. Each node carries a stable id, a name, and a source "
+            + "ref. Use this to see which components expose which endpoints and what the project "
+            + "depends on. Do NOT call this to read source files or grep for annotations - your "
+            + "sandbox does that natively; this returns the pre-derived architecture graph. The "
+            + "`project` argument accepts a short name (see list_projects) or an absolute path. Run a "
+            + "scan first if no graph exists yet."
+    )
+    public Map<String, Object> getArchitecture(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project
+    ) {
+        return graphSlice(project, ARCH_NODES, ARCH_EDGES);
+    }
+
+    /**
+     * Shared body for {@link #getRepoMap} and {@link #getArchitecture}: resolve
+     * the project, load the deterministic graph, and project the nodes and edges
+     * whose types fall in the requested sets. References mode adds the top-level
+     * pointer to {@code project.model.json} (the nodes/edges are already compact
+     * structured records, so no body is stripped - parity with get_systems et al).
+     */
+    private Map<String, Object> graphSlice(String project, Set<NodeType> nodeTypes,
+                                           Set<EdgeType> edgeTypes) {
+        var resolved = resolveProject(project);
+        if (resolved instanceof Resolution.Error err) return err.payload();
+        var projectRoot = ((Resolution.Path) resolved).value();
+        var graph = graphStore.load(projectRoot).orElse(null);
+        if (graph == null) return noGraphPayload(projectRoot);
+
+        var nodes = graph.nodes().stream()
+            .filter(n -> n.type() != null && nodeTypes.contains(n.type()))
+            .map(LaunchpadMcpTools::nodeToMap)
+            .toList();
+        var edges = graph.edges().stream()
+            .filter(e -> e.type() != null && edgeTypes.contains(e.type()))
+            .map(LaunchpadMcpTools::edgeToMap)
+            .toList();
+
+        var out = new LinkedHashMap<String, Object>();
+        putModelPointer(out);
+        out.put("project", nullToEmpty(graph.projectName()));
+        out.put("rootPath", projectRoot.toString());
+        out.put("nodeCount", nodes.size());
+        out.put("nodes", nodes);
+        out.put("edgeCount", edges.size());
+        out.put("edges", edges);
+        return out;
+    }
+
+    @McpTool(
+        name = "get_task_context",
+        description = "Launchpad-distinctive semantic graph. Returns a focused slice of the "
+            + "project-model graph for a task: the nodes whose id, name, or attributes match `query` "
+            + "(case-insensitive), each of their direct (one-hop) neighbors, the edges connecting "
+            + "them, and any standards rules whose title matches the query (as references). Use this "
+            + "to pull just the relevant subgraph and applicable rules for a unit of work instead of "
+            + "loading the whole model. Matched nodes are flagged `matched: true`; neighbors are "
+            + "`matched: false`. The result is capped at " + TASK_CONTEXT_NODE_CAP + " nodes with a "
+            + "`truncated` flag. Do NOT call this to full-text search source files - your sandbox "
+            + "does that; this searches the derived graph and standards, not file contents. The "
+            + "`project` argument accepts a short name or an absolute path."
+    )
+    public Map<String, Object> getTaskContext(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project,
+        @McpArg(name = "query", description = "Keywords describing the task; matched case-insensitively "
+            + "against node ids, names, and attribute values, and against standards rule titles",
+            required = true)
+        String query
+    ) {
+        if (query == null || query.isBlank()) {
+            return McpError.invalidArgument(
+                "missing_query",
+                "The `query` argument is empty.",
+                "Pass a non-empty task description or keywords to slice the graph by."
+            ).toPayload();
+        }
+        var resolved = resolveProject(project);
+        if (resolved instanceof Resolution.Error err) return err.payload();
+        var projectRoot = ((Resolution.Path) resolved).value();
+        var graph = graphStore.load(projectRoot).orElse(null);
+        if (graph == null) return noGraphPayload(projectRoot);
+
+        var needle = query.toLowerCase(java.util.Locale.ROOT);
+
+        // 1. Direct matches against the graph nodes.
+        var matchedIds = new LinkedHashSet<String>();
+        for (var n : graph.nodes()) {
+            if (nodeMatches(n, needle)) matchedIds.add(nullToEmpty(n.id()));
+        }
+
+        // 2. One-hop neighbors plus the edges that connect them to a match.
+        var keepIds = new LinkedHashSet<String>(matchedIds);
+        var keptEdges = new ArrayList<ProjectEdge>();
+        for (var e : graph.edges()) {
+            var fromMatched = matchedIds.contains(e.from());
+            var toMatched = matchedIds.contains(e.to());
+            if (fromMatched || toMatched) {
+                keptEdges.add(e);
+                keepIds.add(e.from());
+                keepIds.add(e.to());
+            }
+        }
+
+        // 3. Project the kept nodes (capped), flagging which were direct matches.
+        var nodesById = new LinkedHashMap<String, ProjectNode>();
+        for (var n : graph.nodes()) nodesById.put(nullToEmpty(n.id()), n);
+        var nodes = new ArrayList<Map<String, Object>>();
+        boolean truncated = false;
+        for (var id : keepIds) {
+            if (nodes.size() >= TASK_CONTEXT_NODE_CAP) { truncated = true; break; }
+            var n = nodesById.get(id);
+            if (n == null) continue;
+            var m = nodeToMap(n);
+            m.put("matched", matchedIds.contains(id));
+            nodes.add(m);
+        }
+        var keptNodeIds = nodes.stream().map(m -> (String) m.get("id")).collect(
+            java.util.stream.Collectors.toSet());
+        var edges = keptEdges.stream()
+            .filter(e -> keptNodeIds.contains(e.from()) && keptNodeIds.contains(e.to()))
+            .map(LaunchpadMcpTools::edgeToMap)
+            .toList();
+
+        // 4. Related standards: rules whose title matches the query, as references.
+        List<Map<String, Object>> relatedStandards;
+        try {
+            relatedStandards = standardsLoader.loadRules(projectRoot).stream()
+                .filter(r -> r.title() != null
+                    && r.title().toLowerCase(java.util.Locale.ROOT).contains(needle))
+                .map(LaunchpadMcpTools::ruleRef)
+                .toList();
+        } catch (IncompatiblePackSchemaException e) {
+            // Standards are a best-effort enrichment here; a format-incompatible
+            // pack must not sink the graph slice the caller actually asked for.
+            relatedStandards = List.of();
+        }
+
+        var out = new LinkedHashMap<String, Object>();
+        putModelPointer(out);
+        out.put("project", nullToEmpty(graph.projectName()));
+        out.put("rootPath", projectRoot.toString());
+        out.put("query", query);
+        out.put("matchedCount", matchedIds.size());
+        out.put("nodeCount", nodes.size());
+        out.put("nodes", nodes);
+        out.put("edgeCount", edges.size());
+        out.put("edges", edges);
+        out.put("relatedStandards", relatedStandards);
+        out.put("truncated", truncated);
+        return out;
+    }
+
+    /** Case-insensitive match of a node's id, name, and attribute values against {@code needle}. */
+    private static boolean nodeMatches(ProjectNode n, String needle) {
+        if (n.id() != null && n.id().toLowerCase(java.util.Locale.ROOT).contains(needle)) return true;
+        if (n.name() != null && n.name().toLowerCase(java.util.Locale.ROOT).contains(needle)) return true;
+        if (n.attributes() != null) {
+            for (var v : n.attributes().values()) {
+                if (v != null && v.toLowerCase(java.util.Locale.ROOT).contains(needle)) return true;
+            }
+        }
+        return false;
+    }
+
+    /** JSON-friendly projection of a graph node: stable id, type, name, source ref, attributes. */
+    private static Map<String, Object> nodeToMap(ProjectNode n) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("id", nullToEmpty(n.id()));
+        m.put("type", n.type() == null ? "" : n.type().json());
+        m.put("name", nullToEmpty(n.name()));
+        if (n.source() != null) {
+            var s = new LinkedHashMap<String, Object>();
+            s.put("path", nullToEmpty(n.source().path()));
+            if (n.source().startLine() != null) s.put("startLine", n.source().startLine());
+            if (n.source().endLine() != null) s.put("endLine", n.source().endLine());
+            m.put("source", s);
+        }
+        if (n.attributes() != null && !n.attributes().isEmpty()) {
+            m.put("attributes", n.attributes());
+        }
+        return m;
+    }
+
+    /** JSON-friendly projection of a graph edge: from id, to id, kebab-cased type. */
+    private static Map<String, Object> edgeToMap(ProjectEdge e) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("from", nullToEmpty(e.from()));
+        m.put("to", nullToEmpty(e.to()));
+        m.put("type", e.type() == null ? "" : e.type().json());
+        return m;
+    }
+
+    @McpTool(
+        name = "lint_standards",
+        description = "STUB - not yet available (tracked in issue #16). When implemented, this will "
+            + "validate a standards-pack YAML file against the schema and report errors before the "
+            + "pack is published, so a malformed pack never reaches a project. Do not call this yet; "
+            + "it returns a `not_yet_available` error. The surface is registered so it lights up the "
+            + "moment the dependency lands."
+    )
+    public Map<String, Object> lintStandards(
+        @McpArg(name = "path", description = "Path to the standards-pack file or directory to lint",
+            required = false)
+        String path
+    ) {
+        return McpError.unsupported(
+            "not_yet_available",
+            "lint_standards is not yet available; it is tracked in issue #16.",
+            "Watch issue #16 for availability."
+        ).withDetails(Map.of("trackingIssue", 16)).toPayload();
+    }
+
+    @McpTool(
+        name = "audit_findings_diff",
+        description = "STUB - not yet available (tracked in issue #21). When implemented, this will "
+            + "diff the current audit findings against a saved baseline so a caller sees only the "
+            + "new or resolved violations (with per-finding suppression). Do not call this yet; it "
+            + "returns a `not_yet_available` error. The surface is registered so it lights up the "
+            + "moment the dependency lands."
+    )
+    public Map<String, Object> auditFindingsDiff(
+        @McpArg(name = "project", description = "Project name (from list_projects) or absolute path; "
+            + "falls back to LAUNCHPAD_DEFAULT_PROJECT", required = false)
+        String project,
+        @McpArg(name = "baseline", description = "Optional path to a baseline audit snapshot to diff "
+            + "against", required = false)
+        String baseline
+    ) {
+        return McpError.unsupported(
+            "not_yet_available",
+            "audit_findings_diff is not yet available; it is tracked in issue #21.",
+            "Watch issue #21 for availability."
+        ).withDetails(Map.of("trackingIssue", 21)).toPayload();
     }
 
     @McpTool(
