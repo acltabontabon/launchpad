@@ -1,0 +1,183 @@
+= Semantic-model MCP tools
+
+The runtime MCP server (`launchpad mcp`) exposes the project *model* so an agent
+can traverse a codebase semantically instead of re-reading files. This page
+documents the model-query tools that read the deterministic project graph
+(`.launchpad/project.model.json`, see xref:project-model.adoc[]) and the standards
+oracle, with input/output examples. It complements the response-mode rules in
+xref:architecture.adoc[] (the MCP Server section).
+
+These tools deliberately do *not* duplicate generic `find_files` / `read_file` /
+`search_code` - an agent already has those natively. Each tool's description
+states when *not* to call it. They return structured records (stable id, type,
+name, source ref), never free-form prose, and honor
+`LAUNCHPAD_MCP_RESPONSE_MODE` (references is the default; inline drops the
+top-level `model` pointer).
+
+== `get_repo_map`
+
+The module/package containment tree: `project` and `package` nodes joined by
+`contains` edges.
+
+*Arguments:* `project` (optional name or absolute path; falls back to
+`LAUNCHPAD_DEFAULT_PROJECT`).
+
+*When not to call:* to list a directory or read files - the sandbox does that
+natively and more cheaply.
+
+[source,jsonc]
+----
+// get_repo_map({ project: "orders-service" })
+{
+  "responseMode": "references",
+  "model": ".launchpad/project.model.json",
+  "project": "orders-service",
+  "rootPath": "/abs/orders-service",
+  "nodeCount": 3,
+  "nodes": [
+    { "id": "project/orders-service", "type": "project", "name": "orders-service" },
+    { "id": "package/orders", "type": "package", "name": "com.example.orders",
+      "source": { "path": "src/main/java/com/example/orders" } }
+  ],
+  "edgeCount": 2,
+  "edges": [ { "from": "project/orders-service", "to": "package/orders", "type": "contains" } ]
+}
+----
+
+== `get_architecture`
+
+The component wiring: `component`, `endpoint`, `entrypoint`, and `dependency`
+nodes joined by `exposes` / `depends-on` / `implements` edges.
+
+*Arguments:* `project` (optional).
+
+*When not to call:* to grep source for annotations - this returns the
+pre-derived architecture graph instead.
+
+[source,jsonc]
+----
+// get_architecture({ project: "orders-service" })
+{
+  "responseMode": "references",
+  "model": ".launchpad/project.model.json",
+  "project": "orders-service",
+  "nodeCount": 3,
+  "nodes": [
+    { "id": "component/ordercontroller", "type": "component", "name": "OrderController",
+      "source": { "path": "src/main/java/com/example/orders/OrderController.java",
+        "startLine": 10, "endLine": 40 }, "attributes": { "kind": "controller" } },
+    { "id": "endpoint/get-orders", "type": "endpoint", "name": "GET /orders",
+      "attributes": { "method": "GET" } },
+    { "id": "dependency/spring-web", "type": "dependency", "name": "spring-web",
+      "attributes": { "version": "6.1.0" } }
+  ],
+  "edgeCount": 2,
+  "edges": [
+    { "from": "component/ordercontroller", "to": "endpoint/get-orders", "type": "exposes" },
+    { "from": "project/orders-service", "to": "dependency/spring-web", "type": "depends-on" }
+  ]
+}
+----
+
+== `get_task_context`
+
+A focused slice of the graph for a unit of work: nodes whose id, name, or
+attributes match `query` (case-insensitive), their one-hop neighbors, the
+connecting edges, and any standards rules whose title matches the query. Matched
+nodes are flagged `matched: true`; neighbors `matched: false`. Capped at 100
+nodes with a `truncated` flag.
+
+*Arguments:* `project` (optional), `query` (required).
+
+*When not to call:* to full-text search file *contents* - this searches the
+derived graph and standards titles, not source bytes.
+
+[source,jsonc]
+----
+// get_task_context({ project: "orders-service", query: "ordercontroller" })
+{
+  "responseMode": "references",
+  "model": ".launchpad/project.model.json",
+  "project": "orders-service",
+  "query": "ordercontroller",
+  "matchedCount": 1,
+  "nodeCount": 3,
+  "nodes": [
+    { "id": "component/ordercontroller", "type": "component", "name": "OrderController",
+      "matched": true },
+    { "id": "package/orders", "type": "package", "name": "com.example.orders",
+      "matched": false },
+    { "id": "endpoint/get-orders", "type": "endpoint", "name": "GET /orders",
+      "matched": false }
+  ],
+  "edgeCount": 2,
+  "edges": [
+    { "from": "package/orders", "to": "component/ordercontroller", "type": "contains" },
+    { "from": "component/ordercontroller", "to": "endpoint/get-orders", "type": "exposes" }
+  ],
+  "relatedStandards": [],
+  "truncated": false
+}
+----
+
+== `get_standards` with `ruleId`
+
+`get_standards` gains an optional `ruleId` argument. When present it returns just
+that one rule (reference or inline per mode) instead of the whole pack; omitting
+it is unchanged. An unknown id returns an `unknown_rule_id` error that lists the
+available ids so a typo costs no second round trip. The `ruleId` matches the
+`ruleId` carried by `get_audit_findings`.
+
+[source,jsonc]
+----
+// get_standards({ project: "orders-service", ruleId: "java.no-field-injection" })
+{
+  "responseMode": "references",
+  "index": ".launchpad/standards.index.json",
+  "companions": { "rules": ".ai/engineering-rules.md" },
+  "hint": "Fetch full bodies by reading the cited project-relative path and anchor via the sandbox.",
+  "rule": {
+    "id": "java.no-field-injection",
+    "title": "No field injection",
+    "severity": "HIGH",
+    "auditable": false,
+    "contentHash": "…",
+    "summary": "Use constructor injection. It keeps dependencies explicit.",
+    "ref": ".ai/engineering-rules.md#java-no-field-injection",
+    "path": ".ai/engineering-rules.md",
+    "anchor": "java-no-field-injection"
+  }
+}
+
+// get_standards({ project: "orders-service", ruleId: "does.not.exist" })
+{ "error": { "code": "unknown_rule_id", "type": "NOT_FOUND",
+  "details": { "requested": "does.not.exist",
+    "availableRuleIds": ["java.no-field-injection"] } } }
+----
+
+== Stubs pending dependencies
+
+These tools are registered so the surface lights up the moment their dependency
+lands. Until then they return a `not_yet_available` error naming the tracking
+issue.
+
+[cols="1,3"]
+|===
+| Tool | Status
+
+| `lint_standards(path)`
+| Stub. When available, validates a standards-pack YAML against the schema before
+publish. Tracked in issue #16.
+
+| `audit_findings_diff(project, baseline?)`
+| Stub. When available, diffs current audit findings against a saved baseline
+(with per-finding suppression). Tracked in issue #21.
+|===
+
+[source,jsonc]
+----
+// lint_standards({ path: "…" })
+{ "error": { "code": "not_yet_available", "type": "UNSUPPORTED",
+  "message": "lint_standards is not yet available; it is tracked in issue #16.",
+  "details": { "trackingIssue": 16 } } }
+----

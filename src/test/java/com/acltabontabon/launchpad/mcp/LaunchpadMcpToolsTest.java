@@ -8,6 +8,7 @@ import com.acltabontabon.launchpad.audit.SarifWriter;
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.config.ProjectRegistry;
 import com.acltabontabon.launchpad.model.VirtualProjectContextStore;
+import com.acltabontabon.launchpad.model.graph.ProjectModelStore;
 import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
 import com.acltabontabon.launchpad.scanner.ScanStore;
 import com.acltabontabon.launchpad.springboot.detectors.SpringBootMavenSupportSignal;
@@ -89,7 +90,7 @@ class LaunchpadMcpToolsTest {
     /** Build a tool instance with the given response-mode property (null = default). */
     private LaunchpadMcpTools toolsWith(String responseModeProperty) {
         return new LaunchpadMcpTools(scanner, scanStore, auditService, standardsLoader,
-            registry, detector, modelStore, 512L, responseModeProperty);
+            registry, detector, modelStore, new ProjectModelStore(), 512L, responseModeProperty);
     }
 
     @Test
@@ -156,7 +157,7 @@ class LaunchpadMcpToolsTest {
 
     @Test
     void getStandardsReturnsEmptyCollectionsWhenNoStandardsPack() {
-        var out = tools.getStandards(projectRoot.toString());
+        var out = tools.getStandards(projectRoot.toString(), null);
         assertThat(out).containsKeys("rules", "skills", "checklists");
         assertThat((List<?>) out.get("rules")).isEmpty();
         assertThat((List<?>) out.get("skills")).isEmpty();
@@ -176,7 +177,7 @@ class LaunchpadMcpToolsTest {
                 - rules/main.yml
             """);
 
-        var out = tools.getStandards(projectRoot.toString());
+        var out = tools.getStandards(projectRoot.toString(), null);
         var err = errorEnvelope(out);
         assertThat(err).containsEntry("code", "incompatible_pack_schema");
         assertThat(err).containsEntry("type", "UNSUPPORTED");
@@ -286,7 +287,7 @@ class LaunchpadMcpToolsTest {
     void getStandardsReturnsReferencesByDefault() throws IOException {
         writeStandardsPack();
 
-        var out = tools.getStandards(projectRoot.toString());
+        var out = tools.getStandards(projectRoot.toString(), null);
         assertThat(out).containsEntry("responseMode", "references");
         assertThat(out).containsEntry("index", ".launchpad/standards.index.json");
         assertThat(out).containsKey("hint");
@@ -320,7 +321,7 @@ class LaunchpadMcpToolsTest {
     void getStandardsInlineModePreservesLegacyShape() throws IOException {
         writeStandardsPack();
 
-        var out = toolsWith("inline").getStandards(projectRoot.toString());
+        var out = toolsWith("inline").getStandards(projectRoot.toString(), null);
         assertThat(out).containsOnlyKeys("rules", "skills", "checklists");
         var rule = ((List<Map<String, Object>>) out.get("rules")).get(0);
         assertThat(rule).containsKeys("id", "title", "severity", "description", "rationale",
@@ -447,6 +448,61 @@ class LaunchpadMcpToolsTest {
         assertThat((Integer) third.get("sourceFileCount"))
             .as("expired cache must trigger a fresh scan")
             .isLessThan(firstSourceCount);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getStandardsByRuleIdReturnsSingleRuleReference() throws IOException {
+        writeStandardsPack();
+
+        var out = tools.getStandards(projectRoot.toString(), "java.no-field-injection");
+        assertThat(out).doesNotContainKeys("rules", "skills", "checklists");
+        assertThat(out).containsEntry("responseMode", "references");
+        var rule = (Map<String, Object>) out.get("rule");
+        assertThat(rule).containsEntry("id", "java.no-field-injection");
+        assertThat(rule).containsKeys("contentHash", "summary", "ref", "path", "anchor");
+        assertThat(rule).doesNotContainKeys("description", "rationale");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getStandardsByRuleIdInlineReturnsFullBody() throws IOException {
+        writeStandardsPack();
+
+        var out = toolsWith("inline").getStandards(projectRoot.toString(), "java.no-field-injection");
+        assertThat(out).containsOnlyKeys("rule");
+        var rule = (Map<String, Object>) out.get("rule");
+        assertThat(rule).containsKeys("id", "title", "severity", "description", "rationale");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getStandardsUnknownRuleIdListsAvailableIds() throws IOException {
+        writeStandardsPack();
+
+        var out = tools.getStandards(projectRoot.toString(), "does.not.exist");
+        var err = errorEnvelope(out);
+        assertThat(err).containsEntry("code", "unknown_rule_id");
+        assertThat(details(err)).containsEntry("requested", "does.not.exist");
+        assertThat((List<String>) details(err).get("availableRuleIds"))
+            .contains("java.no-field-injection");
+    }
+
+    @Test
+    void lintStandardsStubReportsTrackingIssue() {
+        var out = tools.lintStandards("some/path");
+        var err = errorEnvelope(out);
+        assertThat(err).containsEntry("code", "not_yet_available");
+        assertThat(err).containsEntry("type", "UNSUPPORTED");
+        assertThat(details(err)).containsEntry("trackingIssue", 16);
+    }
+
+    @Test
+    void auditFindingsDiffStubReportsTrackingIssue() {
+        var out = tools.auditFindingsDiff(projectRoot.toString(), null);
+        var err = errorEnvelope(out);
+        assertThat(err).containsEntry("code", "not_yet_available");
+        assertThat(details(err)).containsEntry("trackingIssue", 21);
     }
 
     private static void copyDirectory(Path source, Path target) throws IOException {
