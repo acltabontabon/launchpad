@@ -41,6 +41,7 @@ class LaunchpadMcpToolsGraphTest {
             null,
             new VirtualProjectContextStore(),
             graphStore,
+            null,
             512L,
             responseModeProperty);
     }

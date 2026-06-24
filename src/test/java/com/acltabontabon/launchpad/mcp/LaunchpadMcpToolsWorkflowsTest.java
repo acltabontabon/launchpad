@@ -30,6 +30,7 @@ class LaunchpadMcpToolsWorkflowsTest {
             null,
             store,
             null,
+            null,
             512,
             null);
     }
