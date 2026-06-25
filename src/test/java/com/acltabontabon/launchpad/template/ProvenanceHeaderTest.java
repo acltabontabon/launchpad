@@ -23,7 +23,7 @@ class ProvenanceHeaderTest {
         assertThat(rendered).startsWith("<!-- " + ProvenanceHeader.MARKER + " {");
 
         var node = parsePayload(rendered);
-        assertThat(node.get("schema").asInt()).isEqualTo(ProvenanceHeader.SCHEMA_VERSION);
+        assertThat(node.get("schemaVersion").asInt()).isEqualTo(ProvenanceHeader.SCHEMA_VERSION);
         assertThat(node.get("launchpadVersion").asText()).isNotBlank();
         assertThat(node.get("generatedAt").asText()).isEqualTo("2026-06-22T14:30:45Z");
         assertThat(node.get("aiModel").asText()).isEqualTo("qwen2.5-coder");

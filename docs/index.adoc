@@ -1,0 +1,37 @@
+= Launchpad documentation
+
+Launchpad prepares a project's context and engineering standards locally so a
+cloud AI agent starts with the cheap, repeatable cognitive work already done.
+This is the documentation index.
+
+== Guides
+
+[cols="1,2"]
+|===
+| Document | What it covers
+
+| xref:getting-started.adoc[Getting Started]   | Install, scan a project, and set up a standards pack.
+| xref:architecture.adoc[Architecture]         | The generation pipeline and the runtime MCP server design.
+| xref:standards-packs.adoc[Standards Packs]   | Structure of a standards pack and how to author one.
+|===
+
+== Output and schemas
+
+[cols="1,2"]
+|===
+| Document | What it covers
+
+| xref:output-contract.adoc[Output Contract]   | The contract for every file a scan writes - layout, sections, provenance stamp, stability tiers, versioning policy.
+| xref:project-model.adoc[Project-model sidecar] | The deterministic `.launchpad/project.model.json` structure graph.
+| xref:standards-index.adoc[Standards-index sidecar] | The deterministic `.launchpad/standards.index.json` records.
+|===
+
+== MCP server
+
+[cols="1,2"]
+|===
+| Document | What it covers
+
+| xref:mcp-tools.adoc[Semantic-model MCP tools] | Tools a cloud agent calls to query the project model and standards.
+| xref:mcp-errors.adoc[MCP error envelope]      | The error envelope schema and code registry.
+|===
