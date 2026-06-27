@@ -323,9 +323,9 @@ public class LaunchpadRunner implements ApplicationRunner {
     private void triggerHealthCheckIfNeeded() {
         if (!state.healthCheckRequested) return;
         state.healthCheckRequested = false;
-        state.ollamaStatus.set(LlmProviderStatus.checking());
+        state.llmProviderStatus.set(LlmProviderStatus.checking());
 
-        backgroundExecutor.submit(() -> state.ollamaStatus.set(healthChecker.check()));
+        backgroundExecutor.submit(() -> state.llmProviderStatus.set(healthChecker.check()));
     }
 
     private void triggerRemoteStandardsCheckIfNeeded() {
@@ -448,10 +448,10 @@ public class LaunchpadRunner implements ApplicationRunner {
                 // degrades to deterministic output instead of stalling on three
                 // stream timeouts. Reuse the background result when it is
                 // terminal; otherwise probe synchronously (bounded ~2s).
-                var status = state.ollamaStatus.get();
+                var status = state.llmProviderStatus.get();
                 if (status == null || status.state() == LlmProviderStatus.State.CHECKING) {
                     status = healthChecker.check();
-                    state.ollamaStatus.set(status);
+                    state.llmProviderStatus.set(status);
                 }
                 // The deterministic provider reports READY but performs no
                 // synthesis, so it yields deterministic-only output just like an
@@ -502,7 +502,7 @@ public class LaunchpadRunner implements ApplicationRunner {
                     return;
                 }
                 state.scan.error = true;
-                state.scan.message.set(buildLlmErrorMessage("generation", e));
+                state.scan.message.set(buildLlmErrorMessage("generation", e, resolvedProviderName(state)));
                 state.scan.complete = true;
             }
         });
@@ -617,7 +617,7 @@ public class LaunchpadRunner implements ApplicationRunner {
             } catch (Exception e) {
                 if (state.cancelRequested) return;
                 state.task.error = true;
-                state.task.status.set(buildLlmErrorMessage("interview", e));
+                state.task.status.set(buildLlmErrorMessage("interview", e, resolvedProviderName(state)));
             } finally {
                 state.task.thinking = false;
                 state.task.opStartedAtMs = 0L;
@@ -725,7 +725,7 @@ public class LaunchpadRunner implements ApplicationRunner {
             } catch (Exception e) {
                 if (state.cancelRequested) return;
                 state.task.error = true;
-                state.task.status.set(buildLlmErrorMessage("synthesise", e));
+                state.task.status.set(buildLlmErrorMessage("synthesise", e, resolvedProviderName(state)));
                 // Clear any partial stream so the user sees the error instead of a half-prompt.
                 state.task.finalPrompt = "";
             } finally {
@@ -737,28 +737,35 @@ public class LaunchpadRunner implements ApplicationRunner {
     }
 
     /**
-     * Heuristic error formatter. Local models behind Ollama fail in two distinctive
-     * ways worth calling out to the user: context-window truncation (the prompt was
+     * Heuristic error formatter. Local model servers fail in two distinctive ways
+     * worth calling out to the user: context-window truncation (the prompt was
      * bigger than the model's loaded `num_ctx`, often manifests as a 500), and the
      * daemon being unreachable. Anything else passes through as-is.
      */
-    private static String buildLlmErrorMessage(String phase, Throwable e) {
+    private static String buildLlmErrorMessage(String phase, Throwable e, String providerName) {
         var msg = e.getMessage() == null ? e.toString() : e.getMessage();
         var lower = msg.toLowerCase();
         var base = phase + " failed: " + msg;
         if (isTimeout(e)) {
-            return phase + " timed out: the local model stalled. Check that Ollama is "
-                + "responsive, or raise `launchpad.ai.read-timeout` in settings.";
+            return phase + " timed out: the local model stalled. Check that " + providerName
+                + " is responsive, or raise `launchpad.ai.read-timeout` in settings.";
         }
         if (lower.contains("500") || lower.contains("truncat") || lower.contains("context")) {
-            return base + "  -  hint: the prompt may have exceeded Ollama's loaded context window "
-                + "(check the Ollama log for 'truncating input prompt'). Try a model with a larger "
+            return base + "  -  hint: the prompt may have exceeded the loaded context window "
+                + "(check the " + providerName + " log for 'truncating input prompt'). Try a model with a larger "
                 + "num_ctx, or simplify the task.";
         }
         if (lower.contains("connect") || lower.contains("refused") || lower.contains("unreachable")) {
-            return base + "  -  hint: Ollama may not be running. Check the Welcome screen's status badge.";
+            return base + "  -  hint: " + providerName + " may not be running. Check the Welcome screen's status badge.";
         }
         return base;
+    }
+
+    private static String resolvedProviderName(AppState state) {
+        var status = state.llmProviderStatus.get();
+        if (status == null) return "the local model server";
+        var provider = status.resolvedProvider();
+        return provider != null ? provider.displayName() : "the local model server";
     }
 
     /** True if any cause in the chain is a {@link java.util.concurrent.TimeoutException}. */

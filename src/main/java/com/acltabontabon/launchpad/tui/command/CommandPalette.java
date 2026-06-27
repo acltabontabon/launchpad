@@ -41,7 +41,7 @@ public final class CommandPalette {
         new Command(
             "/settings",
             "Settings",
-            "Configure Ollama and remote standards repo",
+            "Configure LLM provider and remote standards repo",
             (state, runner) -> state.nav.currentScreen = AppState.Screen.SETTINGS
         ),
         new Command(
