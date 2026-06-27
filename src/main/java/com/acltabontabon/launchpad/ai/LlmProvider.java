@@ -11,6 +11,7 @@ package com.acltabontabon.launchpad.ai;
 public enum LlmProvider {
     OLLAMA("ollama"),
     OPENAI_COMPATIBLE("openai-compatible"),
+    ANTHROPIC("anthropic"),
     DETERMINISTIC("deterministic"),
     AUTO("auto");
 
@@ -39,6 +40,7 @@ public enum LlmProvider {
         return switch (this) {
             case OLLAMA -> "Ollama";
             case OPENAI_COMPATIBLE -> "OpenAI-compatible";
+            case ANTHROPIC -> "Claude (Anthropic)";
             case DETERMINISTIC -> "Deterministic (no AI)";
             case AUTO -> "Auto-detect";
         };

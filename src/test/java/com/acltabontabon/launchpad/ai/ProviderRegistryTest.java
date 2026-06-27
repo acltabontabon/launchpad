@@ -21,6 +21,7 @@ class ProviderRegistryTest {
         return new ProviderRegistry(List.of(
             new OllamaProvider(props, probe),
             new OpenAiCompatibleProvider(props, probe),
+            new AnthropicProvider(props, probe),
             new DeterministicProvider()));
     }
 
@@ -31,7 +32,19 @@ class ProviderRegistryTest {
         assertThat(registry.get(LlmProvider.OLLAMA.slug())).isInstanceOf(OllamaProvider.class);
         assertThat(registry.get(LlmProvider.OPENAI_COMPATIBLE.slug()))
             .isInstanceOf(OpenAiCompatibleProvider.class);
+        assertThat(registry.get(LlmProvider.ANTHROPIC.slug())).isInstanceOf(AnthropicProvider.class);
         assertThat(registry.get("nope")).isNull();
+    }
+
+    @Test
+    void anthropicIsListedButNotAutoDetectable() {
+        var registry = newRegistry();
+        var allIds = registry.all().stream().map(PreparationProvider::id).toList();
+        var autoIds = registry.autoDetectable().stream().map(PreparationProvider::id).toList();
+
+        // Selectable in the TUI (all()), but a paid provider AUTO must never pick.
+        assertThat(allIds).contains(LlmProvider.ANTHROPIC.slug());
+        assertThat(autoIds).doesNotContain(LlmProvider.ANTHROPIC.slug());
     }
 
     @Test
@@ -54,6 +67,7 @@ class ProviderRegistryTest {
         assertThat(ids).containsExactly(
             LlmProvider.OLLAMA.slug(),
             LlmProvider.OPENAI_COMPATIBLE.slug(),
+            LlmProvider.ANTHROPIC.slug(),
             LlmProvider.DETERMINISTIC.slug());
     }
 }

@@ -53,7 +53,7 @@ public class OllamaProvider implements PreparationProvider {
 
     @Override
     public LlmProviderStatus check(Snapshot snap) {
-        var body = probe.fetch(snap.baseUrl() + "/api/tags", null);
+        var body = probe.fetch(snap.baseUrl() + "/api/tags", (String) null);
         if (body == null) return LlmProviderStatus.daemonDown(LlmProvider.OLLAMA, snap.baseUrl());
         return probe.matchModel(body, snap.model(), OllamaProvider::ollamaMatch)
             ? LlmProviderStatus.ready(LlmProvider.OLLAMA, snap.model())

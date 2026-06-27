@@ -20,6 +20,7 @@ public record LaunchpadAiProperties(
     Duration connectTimeout,
     Duration readTimeout,
     Ollama ollama,
+    Anthropic anthropic,
     Synthesis synthesis
 ) {
 
@@ -27,18 +28,19 @@ public record LaunchpadAiProperties(
         if (connectTimeout == null) connectTimeout = Duration.ofSeconds(10);
         if (readTimeout == null) readTimeout = Duration.ofMinutes(2);
         if (ollama == null) ollama = new Ollama(null);
+        if (anthropic == null) anthropic = new Anthropic(null, null, null);
         if (synthesis == null) synthesis = new Synthesis(null, null, null);
     }
 
     /**
-     * Builds a properties instance with default Ollama / synthesis settings.
-     * Used by call-sites that only care about HTTP timeouts (tests, code
-     * paths that don't synthesise). Distinct from the canonical 4-arg
+     * Builds a properties instance with default Ollama / Anthropic / synthesis
+     * settings. Used by call-sites that only care about HTTP timeouts (tests,
+     * code paths that don't synthesise). Distinct from the canonical
      * constructor so Spring's @ConfigurationProperties binding stays
      * unambiguous (Spring picks the canonical constructor, not this factory).
      */
     public static LaunchpadAiProperties ofTimeouts(Duration connectTimeout, Duration readTimeout) {
-        return new LaunchpadAiProperties(connectTimeout, readTimeout, null, null);
+        return new LaunchpadAiProperties(connectTimeout, readTimeout, null, null, null);
     }
 
     /**
@@ -50,6 +52,28 @@ public record LaunchpadAiProperties(
     public record Ollama(Integer numCtx) {
         public Ollama {
             if (numCtx == null) numCtx = 8192;
+        }
+    }
+
+    /**
+     * Anthropic (Claude) cloud-provider knobs. Decoupled from the shared
+     * {@code launchpad.ai.base-url} / {@code api-key} (which are local-oriented)
+     * so selecting Anthropic does not require re-pointing the local settings.
+     * <ul>
+     *   <li>{@code baseUrl} - Anthropic API host. Defaults to the public cloud
+     *       endpoint.</li>
+     *   <li>{@code version} - the {@code anthropic-version} header sent on every
+     *       request and on the health probe.</li>
+     *   <li>{@code apiKey} - the vendor-specific key. Bound in
+     *       {@code application.properties} from the {@code LAUNCHPAD_ANTHROPIC_API_KEY}
+     *       env var; when blank the provider falls back to the shared snapshot key.</li>
+     * </ul>
+     */
+    public record Anthropic(String baseUrl, String version, String apiKey) {
+        public Anthropic {
+            if (baseUrl == null || baseUrl.isBlank()) baseUrl = "https://api.anthropic.com";
+            if (version == null || version.isBlank()) version = "2023-06-01";
+            if (apiKey == null) apiKey = "";
         }
     }
 
