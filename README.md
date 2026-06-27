@@ -1,12 +1,13 @@
-# Launchpad
+# 🚀 Launchpad
 
-Launchpad prepares a repository for AI-assisted development before the agent starts.
+**Launchpad prepares a repository for AI-assisted development before the agent starts.**
 
-It scans the project, resolves engineering standards, generates grounded project context, and emits durable preparation artifacts through `AGENTS.md`, `.ai/*`, and `.launchpad/*` sidecars.
+It scans the project, resolves engineering standards, generates grounded project context, and emits durable preparation artifacts through `AGENTS.md` and `.ai/*`.
 
-**Standards-first, not standards-after.**
+> **Standards-first, not standards-after.**
 
-> **Project status: philosophy hardening / maintenance mode**
+> [!IMPORTANT]
+> **Project status: focused hardening**
 >
 > Launchpad is currently in a focused hardening phase.
 >
@@ -20,36 +21,45 @@ It scans the project, resolves engineering standards, generates grounded project
 >
 > Launchpad is still in its early stages and currently supports **Spring Boot Java** projects on **Maven or Gradle** only.
 
-<img src="docs/resources/launchpad.gif" width="800" alt="Launchpad Demo">
+<p align="center">
+  <img src="docs/resources/launchpad.gif" width="800" alt="Launchpad Demo">
+</p>
 
-<img src="docs/resources/launchpad-commands.png" width="800" alt="Launchpad Commands">
+<p align="center">
+  <img src="docs/resources/launchpad-commands.png" width="800" alt="Launchpad Commands">
+</p>
 
 ---
 
-## How it works
+## 🧭 How it works
 
 ![Launchpad Overview](docs/resources/launchpad-overview.drawio.png)
 
 ---
 
-## What it does
+## ✨ What it does
 
-- **Scans your project deterministically** -- extracts structure, dependencies, endpoints, and documentation without guessing
-- **Resolves your engineering standards** -- rules, skills, and checklists from a YAML pack you control
-- **Generates grounded context files** -- `AGENTS.md` + `.ai/*` ready before the agent starts
-- **Emits durable preparation sidecars** -- structured `.launchpad/*` artifacts for project context, models, standards, and readiness signals
-- **Complements existing AI tools** -- works alongside Claude context mode, Cursor, Windsurf, Copilot, MCP servers, IDE assistants, and local agents
-- **Keeps local AI first-class** -- supports local/private workflows while leaving room for cloud, paid, hybrid, and deterministic preparation modes
+- **🔍 Scans your project deterministically** -- extracts structure, dependencies, endpoints, and documentation without guessing
+- **📏 Resolves your engineering standards** -- rules, skills, and checklists from a YAML pack you control
+- **🧠 Generates grounded context files** -- `AGENTS.md` + `.ai/*` ready before the agent starts
+- **📦 Emits durable preparation artifacts** -- structured project context, standards, readiness signals, and agent-facing guidance
+- **🤝 Complements existing AI tools** -- works alongside Claude context mode, Cursor, Windsurf, Copilot, MCP servers, IDE assistants, and local agents
+- **🏠 Keeps local AI first-class** -- supports local/private workflows while leaving room for cloud, paid, hybrid, and deterministic preparation modes
 
 ---
 
-## Philosophy
+## 🧠 Philosophy
 
-Launchpad is the preparation layer for AI-assisted development.
+Launchpad is the **preparation layer for AI-assisted development**.
 
 Context-aware tools help agents read and reason over a repository during a coding session.
 
-Launchpad prepares the repository before that session begins.
+Launchpad prepares the repository **before** that session begins.
+
+```text
+Context mode  = runtime awareness
+Launchpad     = preparation infrastructure
+```
 
 The goal is not to replace agents.  
 The goal is not to replace context mode.  
@@ -57,22 +67,31 @@ The goal is to make every agent start smarter.
 
 Launchpad is:
 
-- **Agent-agnostic** -- it should work with the user's preferred agent, IDE, model, or workflow
-- **Preparation-first** -- its value is in making the repo ready before AI-assisted work begins
-- **Standards-aware** -- engineering rules and checklists are part of the generated project contract
-- **Local-capable** -- local AI and deterministic workflows remain first-class options
-- **Not local-limited** -- paid/cloud providers and hybrid workflows should be supported where they produce better results
+- **🧩 Agent-agnostic** -- works with the user's preferred agent, IDE, model, or workflow
+- **🛠️ Preparation-first** -- makes the repo ready before AI-assisted work begins
+- **📐 Standards-aware** -- treats engineering rules and checklists as part of the generated project contract
+- **🏠 Local-capable** -- keeps local AI and deterministic workflows as first-class options
+- **🌐 Not local-limited** -- leaves room for paid/cloud providers and hybrid workflows when they produce better results
 
 ---
 
-## Local AI providers
+## 🏠 Local AI support
 
 Ollama, LM Studio, llama.cpp, vLLM -- anything with an OpenAI-compatible endpoint works.
 
-Default: Ollama at `http://localhost:11434`.
+Default:
+
+```text
+http://localhost:11434
+```
 
 Local AI remains a first-class option for privacy-sensitive, offline, air-gapped, or cost-sensitive workflows.
 
 ---
 
-[Docs](docs/index.adoc) | [Getting Started](docs/getting-started.adoc) | [MIT License](LICENSE) | [Issues](https://github.com/acltabontabon/launchpad/issues)
+<p align="center">
+  <a href="docs/index.adoc">Docs</a> ·
+  <a href="docs/getting-started.adoc">Getting Started</a> ·
+  <a href="LICENSE">MIT License</a> ·
+  <a href="https://github.com/acltabontabon/launchpad/issues">Issues</a>
+</p>
