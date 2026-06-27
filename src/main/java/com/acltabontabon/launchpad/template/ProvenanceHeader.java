@@ -14,20 +14,20 @@ import org.springframework.lang.Nullable;
  * <p>Rendered as a single-line HTML comment: a stable {@code launchpad:provenance}
  * marker token followed by a compact JSON payload, e.g.
  * <pre>{@code
- * <!-- launchpad:provenance {"schema":1,"launchpadVersion":"0.6.0",...} -->
+ * <!-- launchpad:provenance {"schemaVersion":1,"launchpadVersion":"0.6.0",...} -->
  * }</pre>
  * HTML-comment form is tolerated by every markdown renderer and matches the
  * existing {@link MergeMarkers} convention. The marker token makes the line
  * greppable; the JSON payload makes it parseable.
  *
- * @param schema           Bumped on any breaking change to this payload shape.
+ * @param schemaVersion    Bumped on any breaking change to this payload shape.
  * @param launchpadVersion Running Launchpad build version (or {@code "dev"}).
  * @param generatedAt      ISO-8601 generation timestamp.
  * @param standards        Resolved standards-pack provenance; {@code null} when no pack resolved.
  * @param aiModel          The model that synthesized sections, or {@code "deterministic-only"}.
  */
 public record ProvenanceHeader(
-    int schema,
+    int schemaVersion,
     String launchpadVersion,
     String generatedAt,
     @Nullable Standards standards,
