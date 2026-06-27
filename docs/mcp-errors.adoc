@@ -56,8 +56,7 @@ Fields:
 | code | type | meaning
 
 | `invalid_purpose`         | INVALID_ARGUMENT   | `purpose` filter is not one of the allowed values.
-| `missing_query`           | INVALID_ARGUMENT   | `query` argument was empty or blank.
-| `missing_path`            | INVALID_ARGUMENT   | `path` argument was empty or blank.
+| `missing_argument`        | INVALID_ARGUMENT   | A required string argument was null or blank. `details.field` names the offending argument.
 | `invalid_path`            | INVALID_ARGUMENT   | `path` could not be normalised.
 | `not_a_file`              | INVALID_ARGUMENT   | The resolved target is not a regular file.
 | `no_project_specified`    | INVALID_ARGUMENT   | No `project` argument and `LAUNCHPAD_DEFAULT_PROJECT` is unset.
@@ -85,11 +84,16 @@ Fields:
 [source,java]
 ----
 return McpError.invalidArgument(
-    "missing_query",
-    "The `query` argument is empty.",
-    "Pass a non-empty substring to search for."
+    "invalid_purpose",
+    "Unknown purpose `" + purpose + "`.",
+    "Allowed values: overview, setup, architecture, api, operations, ..."
 ).toPayload();
 ----
+
+For a plain null/blank check on a required argument, reuse the shared
+`McpArgs.requireText(field, value)` guard instead of hand-writing the envelope -
+it returns the canonical `missing_argument` error (with `details.field`) or
+`null` when the value is present.
 4. Attach machine-readable context with `withDetails(Map.of(...))` when the
    client may need to act on it (e.g. listing available alternatives).
 5. Add a row to the registry table above so future tool authors see the new

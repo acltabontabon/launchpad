@@ -463,6 +463,10 @@ public class LaunchpadMcpTools {
         @McpArg(name = "projectB", description = "Second project (name or absolute path)", required = true)
         String projectB
     ) {
+        var missingA = McpArgs.requireText("projectA", projectA);
+        if (missingA != null) return missingA;
+        var missingB = McpArgs.requireText("projectB", projectB);
+        if (missingB != null) return missingB;
         var a = resolveProject(projectA);
         if (a instanceof Resolution.Error err) return err.payload();
         var b = resolveProject(projectB);
@@ -841,13 +845,8 @@ public class LaunchpadMcpTools {
             required = true)
         String query
     ) {
-        if (query == null || query.isBlank()) {
-            return McpError.invalidArgument(
-                "missing_query",
-                "The `query` argument is empty.",
-                "Pass a non-empty task description or keywords to slice the graph by."
-            ).toPayload();
-        }
+        var missingQuery = McpArgs.requireText("query", query);
+        if (missingQuery != null) return missingQuery;
         var resolved = resolveProject(project);
         if (resolved instanceof Resolution.Error err) return err.payload();
         var projectRoot = ((Resolution.Path) resolved).value();
@@ -1031,7 +1030,8 @@ public class LaunchpadMcpTools {
             required = false)
         String history
     ) {
-        if (task == null || task.isBlank()) return missingTask();
+        var missingTask = McpArgs.requireText("task", task);
+        if (missingTask != null) return missingTask;
         var prep = prepareTask(project);
         if (prep.error() != null) return prep.error();
         List<TaskTurn> turns;
@@ -1101,7 +1101,8 @@ public class LaunchpadMcpTools {
             + "description alone", required = false)
         String history
     ) {
-        if (task == null || task.isBlank()) return missingTask();
+        var missingTask = McpArgs.requireText("task", task);
+        if (missingTask != null) return missingTask;
         var prep = prepareTask(project);
         if (prep.error() != null) return prep.error();
         List<TaskTurn> turns;
@@ -1157,8 +1158,11 @@ public class LaunchpadMcpTools {
             + "{\"question\":..., \"answer\":...} objects", required = false)
         String history
     ) {
-        if (task == null || task.isBlank()) return missingTask();
-        var key = section == null ? "" : section.trim().toLowerCase(java.util.Locale.ROOT).replace('-', '_');
+        var missingTask = McpArgs.requireText("task", task);
+        if (missingTask != null) return missingTask;
+        var missingSection = McpArgs.requireText("section", section);
+        if (missingSection != null) return missingSection;
+        var key = section.trim().toLowerCase(java.util.Locale.ROOT).replace('-', '_');
         var heading = SECTION_HEADINGS.get(key);
         if (heading == null) {
             return McpError.invalidArgument(
@@ -1232,14 +1236,6 @@ public class LaunchpadMcpTools {
         } catch (IOException e) {
             throw new IllegalArgumentException(e.getMessage(), e);
         }
-    }
-
-    private static Map<String, Object> missingTask() {
-        return McpError.invalidArgument(
-            "missing_task",
-            "The `task` argument is empty.",
-            "Pass the task description to scope."
-        ).toPayload();
     }
 
     private static Map<String, Object> malformedHistory(RuntimeException e) {
@@ -1366,13 +1362,8 @@ public class LaunchpadMcpTools {
             + "every registered project is searched", required = false)
         String project
     ) {
-        if (query == null || query.isBlank()) {
-            return McpError.invalidArgument(
-                "missing_query",
-                "The `query` argument is empty.",
-                "Pass a non-empty substring to search for."
-            ).toPayload();
-        }
+        var missingQuery = McpArgs.requireText("query", query);
+        if (missingQuery != null) return missingQuery;
         String needle = query.toLowerCase();
 
         List<Path> roots = new ArrayList<>();
@@ -1463,19 +1454,13 @@ public class LaunchpadMcpTools {
             + "list_documentation)", required = true)
         String path
     ) {
+        var missingPath = McpArgs.requireText("path", path);
+        if (missingPath != null) return missingPath;
         var resolved = resolveProject(project);
         if (resolved instanceof Resolution.Error err) return err.payload();
         var projectRoot = ((Resolution.Path) resolved).value();
         var unsupported = requireSupported(projectRoot);
         if (unsupported != null) return unsupported;
-
-        if (path == null || path.isBlank()) {
-            return McpError.invalidArgument(
-                "missing_path",
-                "The `path` argument is empty.",
-                "Pass a project-relative doc-page path as `path`."
-            ).toPayload();
-        }
 
         var ctx = loadOrScan(projectRoot);
         var docs = ctx.documentation();
