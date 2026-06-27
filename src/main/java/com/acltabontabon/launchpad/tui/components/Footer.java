@@ -18,7 +18,7 @@ import java.util.List;
 
 /**
  * Persistent single-row footer rendered below every view. Hints supplied by
- * the active view appear on the left; system status dots (Ollama + Standards)
+ * the active view appear on the left; system status dots (LLM provider + Standards)
  * appear on the right when present.
  */
 public final class Footer {
@@ -58,13 +58,13 @@ public final class Footer {
 
     private static List<Span> statusSpans(AppState state) {
         var out = new ArrayList<Span>();
-        var ollama = state.ollamaStatus.get();
+        var llmProvider = state.llmProviderStatus.get();
         var standards = state.remoteStandardsStatus.get();
-        if (ollama != null) {
-            out.add(StatusDot.dot(ollamaState(ollama)));
-            var label = ollama.resolvedProvider() == null
+        if (llmProvider != null) {
+            out.add(StatusDot.dot(llmProviderState(llmProvider)));
+            var label = llmProvider.resolvedProvider() == null
                 ? " Local AI  "
-                : " " + ollama.resolvedProvider().displayName() + "  ";
+                : " " + llmProvider.resolvedProvider().displayName() + "  ";
             out.add(Span.styled(label, Styles.dim()));
         }
         if (standards != null) {
@@ -74,7 +74,7 @@ public final class Footer {
         return out;
     }
 
-    private static StatusDot.State ollamaState(LlmProviderStatus s) {
+    private static StatusDot.State llmProviderState(LlmProviderStatus s) {
         return switch (s.state()) {
             case READY -> StatusDot.State.OK;
             case CHECKING -> StatusDot.State.WORKING;

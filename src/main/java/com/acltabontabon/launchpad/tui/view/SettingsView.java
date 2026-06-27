@@ -129,7 +129,7 @@ public class SettingsView implements View {
         var inner = card.inner(area);
         frame.renderWidget(card, area);
 
-        var llm = state.ollamaStatus.get();
+        var llm = state.llmProviderStatus.get();
         int innerWidth = inner.width();
         var lines = new Line[]{
             providerRow(state, innerWidth),

@@ -87,11 +87,11 @@ public class WelcomeView implements View {
 
     // Show the rocket only when both subsystems are non-blocking.
     private static boolean allReady(AppState state) {
-        return ollamaReady(state) && standardsReady(state);
+        return llmProviderReady(state) && standardsReady(state);
     }
 
-    private static boolean ollamaReady(AppState state) {
-        return state.ollamaStatus.get().state() == LlmProviderStatus.State.READY;
+    private static boolean llmProviderReady(AppState state) {
+        return state.llmProviderStatus.get().state() == LlmProviderStatus.State.READY;
     }
 
     private static boolean standardsReady(AppState state) {
@@ -104,13 +104,17 @@ public class WelcomeView implements View {
 
     private void renderSystemCheck(Frame frame, Rect area, AppState state) {
         var snap = settings.snapshot();
-        var ollama = state.ollamaStatus.get();
+        var llmProvider = state.llmProviderStatus.get();
         var standards = state.remoteStandardsStatus.get();
+
+        var providerName = llmProvider.resolvedProvider() != null
+            ? llmProvider.resolvedProvider().displayName()
+            : snap.provider() != null ? snap.provider().displayName() : "Local AI";
 
         int cardWidth = Math.min(area.width() - 4, 80);
         var rows = new java.util.ArrayList<Line>();
         rows.add(blank());
-        rows.add(serviceRow("Ollama", ollamaDot(ollama), ollamaLabel(ollama), ollamaDetail(ollama, snap), cardWidth));
+        rows.add(serviceRow(providerName, llmProviderDot(llmProvider), llmProviderLabel(llmProvider), llmProviderDetail(llmProvider, snap), cardWidth));
         rows.add(blank());
         rows.add(serviceRow("Standards", standardsDot(standards), standardsLabelText(standards), standardsDetail(standards), cardWidth));
 
@@ -155,7 +159,7 @@ public class WelcomeView implements View {
         );
     }
 
-    private static StatusDot.State ollamaDot(LlmProviderStatus s) {
+    private static StatusDot.State llmProviderDot(LlmProviderStatus s) {
         return switch (s.state()) {
             case READY -> StatusDot.State.OK;
             case CHECKING -> StatusDot.State.WORKING;
@@ -163,7 +167,7 @@ public class WelcomeView implements View {
         };
     }
 
-    private String ollamaLabel(LlmProviderStatus s) {
+    private String llmProviderLabel(LlmProviderStatus s) {
         return switch (s.state()) {
             case READY -> "ready";
             case CHECKING -> "checking " + Spinner.frame(tick / 4);
@@ -172,7 +176,7 @@ public class WelcomeView implements View {
         };
     }
 
-    private static String ollamaDetail(LlmProviderStatus s, LaunchpadSettings.Snapshot snap) {
+    private static String llmProviderDetail(LlmProviderStatus s, LaunchpadSettings.Snapshot snap) {
         var primary = snap.baseUrl() + "  " + Icons.SEP + "  " + snap.model();
         if (s.hint() != null && !s.hint().isBlank()) {
             return primary + "  " + Icons.SEP + "  " + s.hint();

@@ -49,7 +49,7 @@ public class AppState {
     public final TaskFlowState task = new TaskFlowState();
 
     // Local-AI provider readiness (updated from background thread)
-    public final AtomicReference<LlmProviderStatus> ollamaStatus =
+    public final AtomicReference<LlmProviderStatus> llmProviderStatus =
         new AtomicReference<>(LlmProviderStatus.checking());
     public volatile boolean healthCheckRequested = true;
 
@@ -75,7 +75,7 @@ public class AppState {
     // Set by ProjectSelectView when the support gate rejects the entered project.
     public volatile String projectGateError = null;
 
-    // Active Ollama model name. Surfaced in the Welcome header.
+    // Active model name. Surfaced in the Welcome header.
     public volatile String activeModel = "";
 
     // Projects screen
