@@ -1,127 +1,91 @@
 package com.acltabontabon.launchpad.ai;
 
+import com.acltabontabon.launchpad.config.LaunchpadAiProperties;
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.config.LaunchpadSettings.Snapshot;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
- * Probes the configured local-AI endpoint. Supports both Ollama's {@code /api/tags}
- * model-listing endpoint and the OpenAI-compatible {@code /v1/models} endpoint.
- * For {@link LlmProvider#AUTO} the Ollama endpoint is probed first; on miss the
- * OpenAI endpoint is tried so a single base URL works for either backend.
+ * Owns provider resolution policy and is the only place that probes the network
+ * during resolution. Dispatches to the {@link PreparationProvider} beans held by
+ * {@link ProviderRegistry}; there is no {@code switch} over {@link LlmProvider}.
+ *
+ * <p>Resolution rules, shared by {@link #resolve(Snapshot)} (which model to
+ * build) and {@link #check()} (what status to display):
+ * <ul>
+ *   <li>synthesis disabled globally -> the deterministic (no-AI) provider,
+ *       regardless of the configured provider;</li>
+ *   <li>a pinned provider -> that provider;</li>
+ *   <li>{@link LlmProvider#AUTO} -> probe the auto-detectable providers in order
+ *       and take the first that is reachable. {@code MODEL_MISSING} counts as
+ *       reachable (the daemon answered); only {@code DAEMON_DOWN} is skipped.</li>
+ * </ul>
  */
 @Component
 public class ProviderHealthChecker {
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(2);
-    // Both endpoints embed model identifiers as JSON "id" or "name" fields. A
-    // single regex with two alternatives captures both shapes without pulling
-    // in a JSON parser for what is essentially a sanity check.
-    private static final Pattern MODEL_ID = Pattern.compile("\"(?:name|id)\"\\s*:\\s*\"([^\"]+)\"");
-
     private final LaunchpadSettings settings;
-    private final HttpClient http;
+    private final LaunchpadAiProperties properties;
+    private final ProviderRegistry registry;
 
-    public ProviderHealthChecker(LaunchpadSettings settings) {
+    public ProviderHealthChecker(LaunchpadSettings settings,
+                                 LaunchpadAiProperties properties,
+                                 ProviderRegistry registry) {
         this.settings = settings;
-        this.http = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
-    }
-
-    public LlmProviderStatus check() {
-        var snap = settings.snapshot();
-        var requested = snap.provider();
-        return switch (requested) {
-            case OLLAMA -> checkOllama(snap);
-            case OPENAI_COMPATIBLE -> checkOpenAi(snap);
-            case AUTO -> resolveAndCheck(snap);
-        };
+        this.properties = properties;
+        this.registry = registry;
     }
 
     /**
-     * Determine which concrete provider should handle traffic when the user
-     * has not pinned one. Returns the resolved provider, or {@link LlmProvider#OLLAMA}
-     * as a default when neither endpoint responds (so the daemon-down badge is
-     * still actionable - the user sees "Ollama not reachable" rather than a
-     * generic "no provider responded").
+     * Resolve the provider whose chat model the router should build for this
+     * snapshot. Concrete providers resolve without any network call; only the
+     * AUTO path probes.
      */
-    public LlmProvider resolveAuto(String baseUrl, String apiKey) {
-        if (probe(baseUrl + "/api/tags", null)) return LlmProvider.OLLAMA;
-        if (probe(baseUrl + "/v1/models", apiKey)) return LlmProvider.OPENAI_COMPATIBLE;
-        return LlmProvider.OLLAMA;
+    public PreparationProvider resolve(Snapshot snap) {
+        if (!properties.synthesis().enabled()) {
+            return registry.deterministic();
+        }
+        if (snap.provider() == LlmProvider.AUTO) {
+            return firstReachableOrFallback(snap);
+        }
+        var provider = registry.get(snap.provider().slug());
+        return provider != null ? provider : registry.deterministic();
     }
 
-    private LlmProviderStatus resolveAndCheck(Snapshot snap) {
-        var resolved = resolveAuto(snap.baseUrl(), snap.apiKey());
-        // Re-issue the full check against the resolved provider so model-presence
-        // verification (not just endpoint liveness) feeds the status.
-        return switch (resolved) {
-            case OLLAMA -> checkOllama(snap);
-            case OPENAI_COMPATIBLE -> checkOpenAi(snap);
-            case AUTO -> LlmProviderStatus.daemonDown(LlmProvider.AUTO, snap.baseUrl());
-        };
-    }
-
-    private LlmProviderStatus checkOllama(Snapshot snap) {
-        var body = fetch(snap.baseUrl() + "/api/tags", null);
-        if (body == null) return LlmProviderStatus.daemonDown(LlmProvider.OLLAMA, snap.baseUrl());
-        return matchModel(body, snap.model(), this::ollamaMatch)
-            ? LlmProviderStatus.ready(LlmProvider.OLLAMA, snap.model())
-            : LlmProviderStatus.modelMissing(LlmProvider.OLLAMA, snap.model());
-    }
-
-    private LlmProviderStatus checkOpenAi(Snapshot snap) {
-        var body = fetch(snap.baseUrl() + "/v1/models", snap.apiKey());
-        if (body == null) return LlmProviderStatus.daemonDown(LlmProvider.OPENAI_COMPATIBLE, snap.baseUrl());
-        return matchModel(body, snap.model(), String::equals)
-            ? LlmProviderStatus.ready(LlmProvider.OPENAI_COMPATIBLE, snap.model())
-            : LlmProviderStatus.modelMissing(LlmProvider.OPENAI_COMPATIBLE, snap.model());
-    }
-
-    private String fetch(String url, String apiKey) {
-        try {
-            var builder = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(TIMEOUT)
-                .GET();
-            if (apiKey != null && !apiKey.isBlank()) {
-                builder.header("Authorization", "Bearer " + apiKey);
+    /** Health status for the currently configured provider. */
+    public LlmProviderStatus check() {
+        var snap = settings.snapshot();
+        if (!properties.synthesis().enabled()) {
+            return registry.deterministic().check(snap);
+        }
+        if (snap.provider() != LlmProvider.AUTO) {
+            var provider = registry.get(snap.provider().slug());
+            return provider != null
+                ? provider.check(snap)
+                : LlmProviderStatus.daemonDown(snap.provider(), snap.baseUrl());
+        }
+        // AUTO: probe ordered auto-detectable providers; first reachable wins.
+        for (var provider : registry.autoDetectable()) {
+            var status = provider.check(snap);
+            if (status.state() != LlmProviderStatus.State.DAEMON_DOWN) {
+                return status;
             }
-            var response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-            return response.statusCode() == 200 ? response.body() : null;
-        } catch (Exception e) {
-            return null;
         }
+        return LlmProviderStatus.daemonDown(LlmProvider.AUTO, snap.baseUrl());
     }
 
-    private boolean probe(String url, String apiKey) {
-        return fetch(url, apiKey) != null;
-    }
-
-    /** Apply the provider-specific matcher against every model id in the response body. */
-    private static boolean matchModel(String body, String configured, ModelMatcher matcher) {
-        Matcher m = MODEL_ID.matcher(body);
-        while (m.find()) {
-            if (matcher.matches(m.group(1), configured)) return true;
+    /**
+     * First auto-detectable provider that answers a probe; if none answer, the
+     * first auto-detectable provider (so a daemon-down badge still names an
+     * actionable backend rather than nothing).
+     */
+    private PreparationProvider firstReachableOrFallback(Snapshot snap) {
+        var candidates = registry.autoDetectable();
+        for (var provider : candidates) {
+            if (provider.check(snap).state() != LlmProviderStatus.State.DAEMON_DOWN) {
+                return provider;
+            }
         }
-        return false;
-    }
-
-    /** Ollama returns names like "llama3.2:latest" for a "llama3.2" pull. */
-    private boolean ollamaMatch(String installed, String configured) {
-        if (installed.equals(configured)) return true;
-        int colon = installed.indexOf(':');
-        return colon > 0 && installed.substring(0, colon).equals(configured);
-    }
-
-    @FunctionalInterface
-    private interface ModelMatcher {
-        boolean matches(String installed, String configured);
+        return candidates.isEmpty() ? registry.deterministic() : candidates.get(0);
     }
 }

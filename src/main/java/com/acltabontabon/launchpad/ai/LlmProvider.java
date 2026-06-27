@@ -1,14 +1,17 @@
 package com.acltabontabon.launchpad.ai;
 
 /**
- * Local-AI backend Launchpad talks to. {@link #AUTO} defers the choice to
- * {@link ProviderHealthChecker#resolveAuto(String, String)} at health-check
- * time; the resolved value is surfaced on {@link LlmProviderStatus} so the
- * Welcome badge can show what was actually picked.
+ * Built-in vocabulary of preparation backends Launchpad talks to. Each value's
+ * {@link #slug()} matches the {@code id()} of a {@link PreparationProvider} bean.
+ * {@link #AUTO} defers the choice to {@link ProviderHealthChecker} at
+ * health-check time; the resolved value is surfaced on {@link LlmProviderStatus}
+ * so the Welcome badge can show what was actually picked. {@link #DETERMINISTIC}
+ * selects deterministic, no-AI output.
  */
 public enum LlmProvider {
     OLLAMA("ollama"),
     OPENAI_COMPATIBLE("openai-compatible"),
+    DETERMINISTIC("deterministic"),
     AUTO("auto");
 
     private final String slug;
@@ -36,6 +39,7 @@ public enum LlmProvider {
         return switch (this) {
             case OLLAMA -> "Ollama";
             case OPENAI_COMPATIBLE -> "OpenAI-compatible";
+            case DETERMINISTIC -> "Deterministic (no AI)";
             case AUTO -> "Auto-detect";
         };
     }

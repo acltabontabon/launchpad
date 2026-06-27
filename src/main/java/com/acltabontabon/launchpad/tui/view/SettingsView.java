@@ -2,6 +2,7 @@ package com.acltabontabon.launchpad.tui.view;
 
 import com.acltabontabon.launchpad.ai.LlmProvider;
 import com.acltabontabon.launchpad.ai.LlmProviderStatus;
+import com.acltabontabon.launchpad.ai.ProviderRegistry;
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.tui.AppState;
 import com.acltabontabon.launchpad.tui.components.Card;
@@ -56,17 +57,27 @@ public class SettingsView implements View {
     private final SnippetFactory snippetFactory;
     private final McpConfigWriter mcpWriter;
     private final ProjectionSelectView projectionSelectView;
+    // Selectable providers, sourced from the registered provider beans (in
+    // declared order) with AUTO appended as the trailing meta-option. Rendering
+    // the registry rather than walking the enum keeps the list in step with the
+    // registered providers (e.g. the deterministic no-AI provider appears here).
+    private final List<LlmProvider> providerOptions;
 
     public SettingsView(LaunchpadSettings settings,
                         ClientRegistry clientRegistry,
                         SnippetFactory snippetFactory,
                         McpConfigWriter mcpWriter,
-                        ProjectionSelectView projectionSelectView) {
+                        ProjectionSelectView projectionSelectView,
+                        ProviderRegistry providerRegistry) {
         this.settings = settings;
         this.clientRegistry = clientRegistry;
         this.snippetFactory = snippetFactory;
         this.mcpWriter = mcpWriter;
         this.projectionSelectView = projectionSelectView;
+        var options = new ArrayList<LlmProvider>();
+        providerRegistry.all().forEach(p -> options.add(LlmProvider.parse(p.id())));
+        options.add(LlmProvider.AUTO);
+        this.providerOptions = List.copyOf(options);
     }
 
     @Override
@@ -177,9 +188,8 @@ public class SettingsView implements View {
     private Line providerRow(AppState state, int innerWidth) {
         boolean focused = state.settings.focusIndex == FIELD_PROVIDER;
         var row = new RowBuilder(focused).label("Provider");
-        var providers = LlmProvider.values();
-        for (int i = 0; i < providers.length; i++) {
-            var p = providers[i];
+        for (int i = 0; i < providerOptions.size(); i++) {
+            var p = providerOptions.get(i);
             boolean isActive = p == state.settings.providerInput;
             Style chipStyle;
             if (isActive) {
@@ -188,7 +198,7 @@ public class SettingsView implements View {
                 chipStyle = focused ? Styles.muteChip() : Styles.muted();
             }
             row.value(" " + p.slug() + " ", chipStyle);
-            if (i < providers.length - 1) row.value(" ", Style.create());
+            if (i < providerOptions.size() - 1) row.value(" ", Style.create());
         }
         return row.build(innerWidth);
     }
@@ -668,13 +678,10 @@ public class SettingsView implements View {
         return false;
     }
 
-    private static LlmProvider cycleProvider(LlmProvider current, int direction) {
-        var values = LlmProvider.values();
-        int idx = 0;
-        for (int i = 0; i < values.length; i++) {
-            if (values[i] == current) { idx = i; break; }
-        }
-        return values[Math.floorMod(idx + direction, values.length)];
+    private LlmProvider cycleProvider(LlmProvider current, int direction) {
+        int idx = providerOptions.indexOf(current);
+        if (idx < 0) idx = 0;
+        return providerOptions.get(Math.floorMod(idx + direction, providerOptions.size()));
     }
 
     private boolean handlePicker(KeyEvent key, AppState state) {

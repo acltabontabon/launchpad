@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.tui;
 
 import com.acltabontabon.launchpad.ai.ContextGeneratorService;
+import com.acltabontabon.launchpad.ai.LlmProvider;
 import com.acltabontabon.launchpad.ai.LlmProviderStatus;
 import com.acltabontabon.launchpad.ai.ProviderHealthChecker;
 import com.acltabontabon.launchpad.audit.AuditService;
@@ -452,12 +453,23 @@ public class LaunchpadRunner implements ApplicationRunner {
                     status = healthChecker.check();
                     state.ollamaStatus.set(status);
                 }
-                boolean aiAvailable = status.isReady();
+                // The deterministic provider reports READY but performs no
+                // synthesis, so it yields deterministic-only output just like an
+                // unreachable daemon - only the messaging differs (intentional
+                // mode vs degraded fallback).
+                boolean deterministic = status.resolvedProvider() == LlmProvider.DETERMINISTIC;
+                boolean aiAvailable = status.isReady() && !deterministic;
                 if (!aiAvailable) {
-                    var hint = status.hint() == null ? "" : " " + status.hint();
-                    var degradeMsg = "Local AI unreachable - generated deterministic context only "
-                        + "(no LLM synthesis)." + hint;
-                    state.scan.pushActivity("assemble", degradeMsg, "warn");
+                    String degradeMsg;
+                    if (deterministic) {
+                        degradeMsg = "Deterministic mode - generated deterministic context only "
+                            + "(no LLM synthesis).";
+                    } else {
+                        var hint = status.hint() == null ? "" : " " + status.hint();
+                        degradeMsg = "Local AI unreachable - generated deterministic context only "
+                            + "(no LLM synthesis)." + hint;
+                    }
+                    state.scan.pushActivity("assemble", degradeMsg, deterministic ? "info" : "warn");
                     var merged = new java.util.ArrayList<>(state.gen.warnings);
                     merged.add(degradeMsg);
                     state.gen.warnings = merged;
