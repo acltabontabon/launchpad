@@ -45,22 +45,43 @@ public class SectionSynthesizer {
         return generator != null;
     }
 
+    /**
+     * Whether LLM synthesis will actually run for this generation: a generator
+     * must be wired in <em>and</em> the provider reachable. A configured but
+     * unreachable provider ({@code aiAvailable == false}) degrades to
+     * deterministic output, so files are stamped {@code deterministic-only}.
+     */
+    public boolean isAiEnabled(boolean aiAvailable) {
+        return generator != null && aiAvailable;
+    }
+
     public SynthesisOutputs synthesize(ProjectContext ctx) {
+        return synthesize(ctx, true);
+    }
+
+    /**
+     * @param aiAvailable whether the local provider is reachable. When false,
+     *                    every section short-circuits to its deterministic
+     *                    fallback with no network call - so an unreachable
+     *                    daemon costs nothing instead of three stream timeouts.
+     */
+    public SynthesisOutputs synthesize(ProjectContext ctx, boolean aiAvailable) {
+        boolean ai = isAiEnabled(aiAvailable);
         var classFacts = ProjectClassFacts.collect(
             Path.of(ctx.rootPath()), ctx.sourceFiles(), ctx.endpoints());
         var allEndpoints = combinedEndpoints(ctx);
-        var notes = endpointNotes(ctx, allEndpoints);
+        var notes = endpointNotes(ctx, allEndpoints, ai);
 
         return new SynthesisOutputs(
-            introBody(ctx),
-            architectureNarrative(ctx, classFacts),
+            introBody(ctx, ai),
+            architectureNarrative(ctx, classFacts, ai),
             classFacts,
             allEndpoints,
             notes
         );
     }
 
-    private String introBody(ProjectContext ctx) {
+    private String introBody(ProjectContext ctx, boolean ai) {
         // Round-6: always run synthesis when synthesis is enabled AND we
         // have at least one signal. The LLM rephrases + fuses the README
         // intro, pom <description>, and structural facts into a richer
@@ -96,7 +117,7 @@ public class SectionSynthesizer {
             4000, 900,
             fallback,
             introAllowlist(ctx));
-        return runSynthesis(job);
+        return runSynthesis(job, ai);
     }
 
     /**
@@ -105,7 +126,7 @@ public class SectionSynthesizer {
      * the model sees real package + class evidence; the allowlist constrains
      * any backticked reference in the output.
      */
-    private String architectureNarrative(ProjectContext ctx, List<ClassFact> facts) {
+    private String architectureNarrative(ProjectContext ctx, List<ClassFact> facts, boolean ai) {
         var tree = ArchitectureTreeRenderer.render(facts);
         var template = synthesisPrompts.load("architecture-narrative")
             .replace("{tree}", tree);
@@ -114,7 +135,7 @@ public class SectionSynthesizer {
             6000, 500,
             () -> "",
             architectureAllowlist(facts));
-        return runSynthesis(job);
+        return runSynthesis(job, ai);
     }
 
     private static List<Endpoint> combinedEndpoints(ProjectContext ctx) {
@@ -132,7 +153,7 @@ public class SectionSynthesizer {
      * endpoints get their deterministic note pre-filled so a thin or
      * rejected LLM response still produces useful Notes cells.
      */
-    private Map<String, String> endpointNotes(ProjectContext ctx, List<Endpoint> all) {
+    private Map<String, String> endpointNotes(ProjectContext ctx, List<Endpoint> all, boolean ai) {
         var notes = new LinkedHashMap<String, String>(ctx.actuatorNotes());
         if (all.isEmpty()) return notes;
 
@@ -157,7 +178,7 @@ public class SectionSynthesizer {
             12000, 1200,
             () -> "",
             allowedKeys);
-        var raw = runSynthesis(job);
+        var raw = runSynthesis(job, ai);
         if (raw == null || raw.isBlank()) return notes;
 
         for (var rawLine : raw.split("\n")) {
@@ -242,9 +263,11 @@ public class SectionSynthesizer {
         while (m.find()) sink.add(m.group());
     }
 
-    private String runSynthesis(SynthesisJob job) {
-        // Without a generator (tests, AI disabled by Spring config) go straight to fallback.
-        if (generator == null) return job.fallback().get();
+    private String runSynthesis(SynthesisJob job, boolean ai) {
+        // Without a generator (tests, AI disabled by Spring config) or an
+        // unreachable provider, go straight to fallback - no network call, so a
+        // down daemon costs nothing instead of a per-job stream timeout.
+        if (!ai) return job.fallback().get();
         return generator.synthesize(job);
     }
 

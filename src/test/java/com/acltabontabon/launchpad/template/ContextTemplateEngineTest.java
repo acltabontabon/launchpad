@@ -3,8 +3,11 @@ package com.acltabontabon.launchpad.template;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.acltabontabon.launchpad.ai.ContextGeneratorService;
 import com.acltabontabon.launchpad.model.ProjectContextAssembler;
 import com.acltabontabon.launchpad.model.VirtualProjectContext;
 import com.acltabontabon.launchpad.scanner.PackageSummary;
@@ -137,6 +140,46 @@ class ContextTemplateEngineTest {
     }
 
     @Test
+    void unreachableProviderDegradesToDeterministicWithoutCallingTheModel() {
+        // Generator IS wired (production shape) but the provider is unreachable:
+        // aiAvailable=false must short-circuit to deterministic output, never
+        // touch the model, and stamp deterministic-only regardless of the model arg.
+        var generator = mock(ContextGeneratorService.class);
+        var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
+            List.of(SAMPLE_CHECKLIST),
+            agentsAdapterIncluding("rules", "skills", "checklists"),
+            generator);
+
+        var ctx = sampleContext();
+        var files = engine.buildFiles(ctx, modelFor(ctx), "qwen2.5-coder",
+            "2026-06-22T14:30:45Z", false);
+
+        var primary = contentAt(files, "AGENTS.md");
+        assertThat(primary).contains(ProvenanceHeader.DETERMINISTIC_ONLY);
+        assertThat(primary).doesNotContain("\"aiModel\":\"qwen2.5-coder\"");
+        // No network call: the unreachable daemon costs nothing, not three timeouts.
+        verify(generator, never()).synthesize(any());
+    }
+
+    @Test
+    void reachableProviderStampsTheConfiguredModel() {
+        var generator = mock(ContextGeneratorService.class);
+        when(generator.synthesize(any())).thenReturn("Synthesized prose.");
+        var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
+            List.of(SAMPLE_CHECKLIST),
+            agentsAdapterIncluding("rules", "skills", "checklists"),
+            generator);
+
+        var ctx = sampleContext();
+        var files = engine.buildFiles(ctx, modelFor(ctx), "qwen2.5-coder",
+            "2026-06-22T14:30:45Z", true);
+
+        var primary = contentAt(files, "AGENTS.md");
+        assertThat(primary).contains("\"aiModel\":\"qwen2.5-coder\"");
+        assertThat(primary).doesNotContain(ProvenanceHeader.DETERMINISTIC_ONLY);
+    }
+
+    @Test
     void primaryUsesReadmeIntroWhenPresent() {
         var engine = engineWith(List.of(SAMPLE_RULE), List.of(SAMPLE_SKILL),
             List.of(SAMPLE_CHECKLIST),
@@ -262,6 +305,13 @@ class ContextTemplateEngineTest {
         List<Rule> rules, List<Skill> skills, List<Checklist> checklists,
         Adapter adapter
     ) {
+        return engineWith(rules, skills, checklists, adapter, null);
+    }
+
+    private static ContextTemplateEngine engineWith(
+        List<Rule> rules, List<Skill> skills, List<Checklist> checklists,
+        Adapter adapter, ContextGeneratorService generator
+    ) {
         var loader = mock(StandardsLoader.class);
         when(loader.loadRules(any())).thenReturn(rules);
         when(loader.loadSkills(any())).thenReturn(skills);
@@ -270,7 +320,7 @@ class ContextTemplateEngineTest {
         when(loader.loadProjectionIds(any())).thenReturn(java.util.Set.of("claude"));
 
         return new ContextTemplateEngine(loader, new AdapterResolver(loader),
-            new SectionSynthesizer(null), new CompanionFileBuilder(),
+            new SectionSynthesizer(generator), new CompanionFileBuilder(),
             new AgentsPrimaryFileBuilder(),
             List.of(new ClaudeSkillsProjection()));
     }
