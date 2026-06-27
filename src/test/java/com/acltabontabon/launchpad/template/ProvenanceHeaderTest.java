@@ -43,6 +43,31 @@ class ProvenanceHeaderTest {
         assertThat(node.get("aiModel").asText()).isEqualTo(ProvenanceHeader.DETERMINISTIC_ONLY);
     }
 
+    @Test
+    void parseRecoversTheHeaderFromRenderedContent() {
+        var source = new StandardsSource("acme-standards", "1.2.0",
+            StandardsSource.ORIGIN_REMOTE_CACHE);
+        var original = ProvenanceHeader.of("2026-06-22T14:30:45Z", source, "qwen2.5-coder");
+        var fileContent = original.render() + "# Project\n\nBody.\n";
+
+        var parsed = ProvenanceHeader.parse(fileContent);
+
+        assertThat(parsed).isPresent();
+        assertThat(parsed.get()).isEqualTo(original);
+    }
+
+    @Test
+    void parseReturnsEmptyWhenMarkerAbsent() {
+        assertThat(ProvenanceHeader.parse("# Project\n\nNo stamp here.\n")).isEmpty();
+    }
+
+    @Test
+    void parseReturnsEmptyOnMalformedPayload() {
+        assertThat(ProvenanceHeader.parse("<!-- " + ProvenanceHeader.MARKER + " {not json} -->\n"))
+            .isEmpty();
+        assertThat(ProvenanceHeader.parse(null)).isEmpty();
+    }
+
     private static JsonNode parsePayload(String rendered) throws Exception {
         var prefix = "<!-- " + ProvenanceHeader.MARKER + " ";
         var json = rendered.stripTrailing();

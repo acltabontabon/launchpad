@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Project readiness evaluator**: `ReadinessEvaluator.evaluate(Path)` returns a read-only `ReadinessResult` (status, structured reason lines, recommended action, last-prepared timestamp) derived from a project's prepared artifacts (`AGENTS.md` and the `.launchpad/*.json` sidecars) and its provenance stamp - the deterministic verdict the readiness dashboard renders. `ProvenanceHeader` gains a `parse(...)` inverse of `render()` (closes #122).
 - **Output contract docs**: `docs/output-contract.adoc` documents every file a scan writes - layout, section structure, provenance stamp, write/merge actions, stable-vs-experimental tiers, and versioning - so downstream tools integrate against a contract instead of snapshot-testing prose. Adds a `docs/index.adoc` landing page (closes #91).
 - **MCP task-interview tools**: `ask_task_question`, `finalize_task`, and `regenerate_section` expose the local `/new-task` interview over MCP so a cloud agent can de-risk a task first. Stateless (the caller carries the `history` transcript), reuses `TaskAdvisorService`, caps at 8 rounds with a critic after round 2 (closes #19).
 - **MCP semantic-graph query tools**: `get_repo_map`, `get_architecture`, and `get_task_context(project, query)` read the `.launchpad/project.model.json` graph and return structured node/edge records; `get_standards` gains an optional `ruleId`. All honor `LAUNCHPAD_MCP_RESPONSE_MODE` (toward #19).

@@ -2,8 +2,10 @@ package com.acltabontabon.launchpad.template;
 
 import com.acltabontabon.launchpad.standards.index.StandardsSource;
 import com.acltabontabon.launchpad.support.LaunchpadVersion;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Optional;
 import org.springframework.lang.Nullable;
 
 /**
@@ -26,6 +28,7 @@ import org.springframework.lang.Nullable;
  * @param standards        Resolved standards-pack provenance; {@code null} when no pack resolved.
  * @param aiModel          The model that synthesized sections, or {@code "deterministic-only"}.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record ProvenanceHeader(
     int schemaVersion,
     String launchpadVersion,
@@ -78,5 +81,40 @@ public record ProvenanceHeader(
             // realistically fail, but never emit a half-written marker if it does.
             throw new IllegalStateException("Failed to render provenance header", e);
         }
+    }
+
+    /**
+     * Recovers the header from a file's content, the inverse of {@link #render()}.
+     * Scans for the first {@link #MARKER} line and parses the JSON payload between
+     * the marker and the trailing {@code -->}.
+     *
+     * <p>Returns {@link Optional#empty()} on any failure - marker absent, malformed
+     * JSON, or an older payload shape - so a caller can treat an unreadable stamp as
+     * stale rather than an error. {@code @JsonIgnoreProperties} keeps newer payloads
+     * parseable; a missing required field still yields a header (with nulls) rather
+     * than throwing.
+     */
+    public static Optional<ProvenanceHeader> parse(String fileContent) {
+        if (fileContent == null) {
+            return Optional.empty();
+        }
+        for (var line : fileContent.split("\\R")) {
+            int marker = line.indexOf(MARKER);
+            if (marker < 0) {
+                continue;
+            }
+            int payloadStart = marker + MARKER.length();
+            int payloadEnd = line.lastIndexOf("-->");
+            if (payloadEnd <= payloadStart) {
+                return Optional.empty();
+            }
+            var payload = line.substring(payloadStart, payloadEnd).trim();
+            try {
+                return Optional.ofNullable(JSON.readValue(payload, ProvenanceHeader.class));
+            } catch (JsonProcessingException e) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
     }
 }
