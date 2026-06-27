@@ -67,15 +67,27 @@ public class ContextTemplateEngine {
      */
     public List<GeneratedFile> buildFiles(ProjectContext ctx, VirtualProjectContext model,
                                           String activeModel, String generatedAt) {
+        return buildFiles(ctx, model, activeModel, generatedAt, true);
+    }
+
+    /**
+     * @param aiAvailable whether the local provider is reachable. When false,
+     *                    synthesis short-circuits to deterministic output and the
+     *                    provenance {@code aiModel} is stamped
+     *                    {@code deterministic-only} regardless of {@code activeModel}.
+     */
+    public List<GeneratedFile> buildFiles(ProjectContext ctx, VirtualProjectContext model,
+                                          String activeModel, String generatedAt,
+                                          boolean aiAvailable) {
         var projectRoot = Path.of(ctx.rootPath());
         var rules = standardsLoader.loadRules(projectRoot);
         var skills = standardsLoader.loadSkills(projectRoot);
         var checklists = standardsLoader.loadChecklists(projectRoot);
         var resolved = adapterResolver.resolve(projectRoot);
-        var synthesis = sectionSynthesizer.synthesize(ctx);
+        var synthesis = sectionSynthesizer.synthesize(ctx, aiAvailable);
 
         var source = standardsLoader.describeRulesSource(projectRoot).orElse(null);
-        var aiModel = sectionSynthesizer.isAiEnabled() && activeModel != null && !activeModel.isBlank()
+        var aiModel = sectionSynthesizer.isAiEnabled(aiAvailable) && activeModel != null && !activeModel.isBlank()
             ? activeModel
             : ProvenanceHeader.DETERMINISTIC_ONLY;
         var provenance = ProvenanceHeader.of(generatedAt, source, aiModel).render();

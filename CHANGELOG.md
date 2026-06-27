@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Standards-pack schema version**: `standards-pack.yml` requires an integer `schemaVersion`; missing or unsupported versions are rejected on load and surfaced by the MCP standards tools as `incompatible_pack_schema` (closes #84).
 
 ### Changed
+- **Graceful degrade when local AI is unreachable**: A configured-but-unreachable provider now downgrades instead of stalling - the scan resolves provider health before assembly, skips the three LLM synthesis jobs (no per-job stream timeout), generates deterministic context, stamps the files `deterministic-only`, and surfaces a warning on the review screen (closes #88).
 - **Provenance version field renamed to `schemaVersion`**: The provenance stamp's version field is now `schemaVersion` (was `schema`, value still `1`) to match the sidecars. Changes the JSON key in the `launchpad:provenance` comment.
 - **MCP tool descriptions clarify the sandbox/Launchpad boundary**: Descriptions now separate sandbox-owned raw inspection from Launchpad-owned synthesized intelligence to guide tool selection. Text only - no behavior change (closes #73).
 - **MCP body-heavy tools return references by default**: `get_standards`, `compare_standards`, and `get_documentation` return references (ids, paths, `.ai/` anchors, hashes, summaries) instead of full bodies. Set `LAUNCHPAD_MCP_RESPONSE_MODE=inline` to restore the old shape (closes #78).
