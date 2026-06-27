@@ -1,6 +1,6 @@
 # Launchpad
 
-Cloud AI burns tokens re-reading your project on every task. Launchpad front-loads that work -- scans locally, resolves your engineering standards, and hands the agent a grounded brief before the first prompt runs.
+Launchpad prepares a repository for AI-assisted development before the agent starts. It scans locally, resolves engineering standards, and emits grounded project context through `AGENTS.md`, `.ai/*`, and `.launchpad/*` sidecars.
 
 Standards-first, not standards-after.
 

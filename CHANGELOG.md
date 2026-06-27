@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Standards-pack schema version**: `standards-pack.yml` requires an integer `schemaVersion`; missing or unsupported versions are rejected on load and surfaced by the MCP standards tools as `incompatible_pack_schema` (closes #84).
 
 ### Changed
+- **Repositioned product headline**: README and positioning now lead with the Preparation Engine and standards-first story instead of contested token-savings claims. Launchpad prepares a repository for AI-assisted development by scanning locally, resolving standards, and emitting grounded context artifacts (closes #71).
 - **Graceful degrade when local AI is unreachable**: A configured-but-unreachable provider now downgrades instead of stalling - the scan resolves provider health before assembly, skips the three LLM synthesis jobs (no per-job stream timeout), generates deterministic context, stamps the files `deterministic-only`, and surfaces a warning on the review screen (closes #88).
 - **Provenance version field renamed to `schemaVersion`**: The provenance stamp's version field is now `schemaVersion` (was `schema`, value still `1`) to match the sidecars. Changes the JSON key in the `launchpad:provenance` comment.
 - **MCP tool descriptions clarify the sandbox/Launchpad boundary**: Descriptions now separate sandbox-owned raw inspection from Launchpad-owned synthesized intelligence to guide tool selection. Text only - no behavior change (closes #73).
@@ -113,7 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Performance & Stability:** Fixed TUI freezes with explicit AI timeouts and added concurrent safety for scan state.
 - **I/O Resilience:** Improved handling of unreadable files and corrupted markers during merge operations.
 - **Native Image compatibility:** Full support for MCP and TUI modes under GraalVM native image.
-- **Documentation:** Simplified `USAGE.md` and added `BENEFITS.md` for token-cost analysis.
+- **Documentation:** Improved documentation and guides.
 ### Removed
 - **Redundant sections:** Dropped obsolete synthesis helpers and overlapping developer-workflow blocks.
 - **Mega-prompt pipeline:** Retired the single-pass generation in favor of chunked, validated synthesis jobs.
