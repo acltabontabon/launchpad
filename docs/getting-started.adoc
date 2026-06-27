@@ -6,15 +6,15 @@
 
 == Prerequisites
 
-=== A local AI model
+=== An AI model
 
-Launchpad uses a locally-running model for synthesis and LLM-based audit checks.
+Launchpad uses a model for synthesis and LLM-based audit checks. Local providers run on your machine and keep your code private; any OpenAI-compatible endpoint works, including paid or remote providers.
 Any of the following work:
 
-* https://ollama.com[Ollama] (recommended for simplicity)
+* https://ollama.com[Ollama] (recommended; runs locally)
 * https://lmstudio.ai[LM Studio]
 * https://github.com/ggerganov/llama.cpp[llama.cpp]
-* Any OpenAI-compatible local endpoint
+* Any OpenAI-compatible endpoint (local or remote)
 
 ==== Ollama quick setup
 
