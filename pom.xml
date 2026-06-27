@@ -65,6 +65,15 @@
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
 
+        <!-- Spring AI - opt-in cloud provider. Anthropic (Claude) is a paid,
+             explicit-selection synthesis backend on the PreparationProvider SPI;
+             AUTO never selects it. Like the local starters, its autoconfigured
+             bean is shadowed by the router's @Primary ChatModel. -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-anthropic</artifactId>
+        </dependency>
+
         <!-- Spring AI MCP server (stdio transport) - exposes Launchpad's scan / standards /
              audit results as MCP tools and resources so any MCP client (Claude Code, Cursor,
              Cline, Continue, Zed) can query them. -->

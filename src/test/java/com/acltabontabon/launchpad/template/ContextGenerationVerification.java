@@ -62,6 +62,7 @@ class ContextGenerationVerification {
         var aiProps = new LaunchpadAiProperties(
             Duration.ofSeconds(10), Duration.ofMinutes(2),
             new LaunchpadAiProperties.Ollama(8192),
+            null,
             new LaunchpadAiProperties.Synthesis(true, 2500, 800));
         var api = OllamaApi.builder().baseUrl(OLLAMA_URL).build();
         var opts = OllamaChatOptions.builder().model(OLLAMA_MODEL).numCtx(8192).build();

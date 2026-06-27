@@ -12,6 +12,8 @@ image::resources/launchpad-overview.drawio.png[Launchpad architecture overview]
 
 Launchpad works with any AI provider that exposes an OpenAI-compatible endpoint. Local providers (Ollama, LM Studio, llama.cpp) are the default: source code, scan results, and generated context stay on your machine, and no cloud API calls are made during analysis or synthesis. Paid or remote providers are also supported; the choice belongs to the operator, not the tool.
 
+The provider is a pluggable bean, so a paid cloud provider is just another selectable backend - Anthropic (Claude) ships as the first one, chosen for higher-quality synthesis when the operator wants it. It is opt-in and explicitly selected; auto-detection only ever resolves to a local backend, so preparation is never silently routed to a paid API. No vendor is privileged - cloud providers are added on the same provider seam, not as a blessed default.
+
 === Deterministic-first
 
 Repository structure, dependencies, endpoints, and documentation are extracted through structured, deterministic analysis. The local AI model is only used for bounded synthesis -- writing short narrative sections from data the deterministic phase already produced.

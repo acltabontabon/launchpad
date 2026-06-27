@@ -77,7 +77,9 @@ Launchpad is:
 
 ## 🔌 AI providers
 
-Providers are pluggable. Local AI is the default -- Ollama, LM Studio, llama.cpp, vLLM, or anything with an OpenAI-compatible endpoint -- and keeps your code on your machine, which makes it a first-class option for privacy-sensitive, offline, air-gapped, or cost-sensitive workflows. Paid and cloud providers are also supported when they produce better results.
+Providers are pluggable. Local AI is the default -- Ollama, LM Studio, llama.cpp, vLLM, or anything with an OpenAI-compatible endpoint -- and keeps your code on your machine, which makes it a first-class option for privacy-sensitive, offline, air-gapped, or cost-sensitive workflows. Paid and cloud providers are also supported when they produce better results: Claude (Anthropic) is the first cloud provider, opt-in and explicitly selected. Local stays the default, and auto-detection never selects a paid provider -- choosing one is always a deliberate choice.
+
+Selecting Anthropic is explicit (`launchpad.ai.provider=anthropic`); its key reads from `LAUNCHPAD_ANTHROPIC_API_KEY` (falling back to the shared `LAUNCHPAD_LLM_API_KEY`). If the key is missing or Anthropic is unreachable, preparation degrades cleanly to deterministic-only output.
 
 Default:
 

@@ -28,6 +28,9 @@ class ProviderHealthCheckerTest {
     private HttpServer server;
     private String baseUrl;
     private final AtomicReference<Snapshot> snapshot = new AtomicReference<>();
+    // Vendor key used to build the Anthropic provider in newChecker(); blank by
+    // default so the paid provider stays inert for the local/AUTO scenarios.
+    private String anthropicKey = "";
 
     @BeforeEach
     void startServer() throws IOException {
@@ -147,6 +150,33 @@ class ProviderHealthCheckerTest {
     }
 
     @Test
+    void anthropicPinnedReadyWithVendorKey() {
+        anthropicKey = "sk-ant-test";
+        respondAt("/v1/models", 200, "{\"data\":[{\"id\":\"claude-sonnet-4-5\"}]}");
+        snapshot.set(new Snapshot(LlmProvider.ANTHROPIC, baseUrl, "claude-sonnet-4-5", null, null, null));
+
+        var status = newChecker().check();
+
+        assertThat(status.state()).isEqualTo(LlmProviderStatus.State.READY);
+        assertThat(status.resolvedProvider()).isEqualTo(LlmProvider.ANTHROPIC);
+    }
+
+    @Test
+    void autoNeverSelectsAnthropicEvenWhenReachable() {
+        // Anthropic is configured and reachable (vendor key + /v1/models answers),
+        // but a paid provider must never be chosen by AUTO. Only the local,
+        // auto-detectable OpenAI-compatible provider may win here.
+        anthropicKey = "sk-ant-test";
+        respondAt("/v1/models", 200, "{\"data\":[{\"id\":\"local-model\"}]}");
+        snapshot.set(new Snapshot(LlmProvider.AUTO, baseUrl, "local-model", null, null, null));
+
+        var status = newChecker().check();
+
+        assertThat(status.resolvedProvider()).isNotEqualTo(LlmProvider.ANTHROPIC);
+        assertThat(status.resolvedProvider()).isEqualTo(LlmProvider.OPENAI_COMPATIBLE);
+    }
+
+    @Test
     void synthesisDisabledResolvesDeterministicRegardlessOfProvider() {
         // Provider pinned to Ollama, but synthesis is off globally: deterministic wins.
         server.stop(0);
@@ -176,11 +206,13 @@ class ProviderHealthCheckerTest {
     private ProviderHealthChecker newChecker(boolean synthesisEnabled) {
         var props = new LaunchpadAiProperties(
             Duration.ofSeconds(2), Duration.ofSeconds(2), null,
+            new LaunchpadAiProperties.Anthropic(baseUrl, "2023-06-01", anthropicKey),
             new Synthesis(synthesisEnabled, null, null));
         var probe = new ProviderProbe();
         var registry = new ProviderRegistry(List.of(
             new OllamaProvider(props, probe),
             new OpenAiCompatibleProvider(props, probe),
+            new AnthropicProvider(props, probe),
             new DeterministicProvider()));
         return new ProviderHealthChecker(new StubSettings(snapshot), props, registry);
     }
