@@ -146,7 +146,12 @@ class LaunchpadMcpToolsGraphTest {
         writeGraph(projectRoot);
 
         var out = toolsWith(null).getTaskContext(projectRoot.toString(), "  ");
-        assertThat((Map<String, Object>) out.get("error")).containsEntry("code", "missing_query");
+        @SuppressWarnings("unchecked")
+        var err = (Map<String, Object>) out.get("error");
+        assertThat(err).containsEntry("code", "missing_argument");
+        @SuppressWarnings("unchecked")
+        var det = (Map<String, Object>) err.get("details");
+        assertThat(det).containsEntry("field", "query");
     }
 
     @Test

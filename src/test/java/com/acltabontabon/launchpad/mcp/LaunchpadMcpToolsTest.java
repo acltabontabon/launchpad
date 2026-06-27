@@ -1,6 +1,7 @@
 package com.acltabontabon.launchpad.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import com.acltabontabon.launchpad.audit.AuditService;
 import com.acltabontabon.launchpad.audit.MarkdownAuditWriter;
@@ -25,11 +26,16 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Integration coverage for the MCP tool surface in {@link LaunchpadMcpTools}.
@@ -248,7 +254,9 @@ class LaunchpadMcpToolsTest {
     @Test
     void findDocumentationRejectsBlankQuery() {
         var out = tools.findDocumentation("   ", projectRoot.toString());
-        assertThat(errorEnvelope(out)).containsEntry("code", "missing_query");
+        var err = errorEnvelope(out);
+        assertThat(err).containsEntry("code", "missing_argument");
+        assertThat(details(err)).containsEntry("field", "query");
     }
 
     @Test
@@ -531,7 +539,9 @@ class LaunchpadMcpToolsTest {
     @Test
     void askTaskQuestionRejectsBlankTask() {
         var out = tools.askTaskQuestion(projectRoot.toString(), "  ", null);
-        assertThat(errorEnvelope(out)).containsEntry("code", "missing_task");
+        var err = errorEnvelope(out);
+        assertThat(err).containsEntry("code", "missing_argument");
+        assertThat(details(err)).containsEntry("field", "task");
     }
 
     @Test
@@ -543,13 +553,81 @@ class LaunchpadMcpToolsTest {
     @Test
     void finalizeTaskRejectsBlankTask() {
         var out = tools.finalizeTask(projectRoot.toString(), "", null);
-        assertThat(errorEnvelope(out)).containsEntry("code", "missing_task");
+        var err = errorEnvelope(out);
+        assertThat(err).containsEntry("code", "missing_argument");
+        assertThat(details(err)).containsEntry("field", "task");
     }
 
     @Test
     void regenerateSectionRejectsUnknownSection() {
+        // A present-but-unrecognised value is a choice error, not a missing-arg one.
         var out = tools.regenerateSection(projectRoot.toString(), "constraints", "Add an endpoint", null);
         assertThat(errorEnvelope(out)).containsEntry("code", "invalid_section");
+    }
+
+    /** Invokes one tool with a bad value for one of its required arguments. */
+    @FunctionalInterface
+    private interface RequiredArgCall {
+        Map<String, Object> call(LaunchpadMcpTools tools, String project, String badValue);
+    }
+
+    private static Stream<Arguments> requiredArgCases() {
+        return Stream.of(
+            arguments("getTaskContext/query",
+                (RequiredArgCall) (t, p, v) -> t.getTaskContext(p, v), "query"),
+            arguments("findDocumentation/query",
+                (RequiredArgCall) (t, p, v) -> t.findDocumentation(v, p), "query"),
+            arguments("getDocumentation/path",
+                (RequiredArgCall) (t, p, v) -> t.getDocumentation(p, v), "path"),
+            arguments("askTaskQuestion/task",
+                (RequiredArgCall) (t, p, v) -> t.askTaskQuestion(p, v, null), "task"),
+            arguments("finalizeTask/task",
+                (RequiredArgCall) (t, p, v) -> t.finalizeTask(p, v, null), "task"),
+            arguments("regenerateSection/task",
+                (RequiredArgCall) (t, p, v) -> t.regenerateSection(p, "goal", v, null), "task"),
+            arguments("regenerateSection/section",
+                (RequiredArgCall) (t, p, v) -> t.regenerateSection(p, v, "Add an endpoint", null), "section"),
+            arguments("compareStandards/projectA",
+                (RequiredArgCall) (t, p, v) -> t.compareStandards(v, p), "projectA"),
+            arguments("compareStandards/projectB",
+                (RequiredArgCall) (t, p, v) -> t.compareStandards(p, v), "projectB")
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("requiredArgCases")
+    void rejectsNullOrBlankRequiredArg(String label, RequiredArgCall call, String field) {
+        for (String bad : Arrays.asList(null, "   ")) {
+            var out = call.call(tools, projectRoot.toString(), bad);
+            var err = errorEnvelope(out);
+            assertThat(err).as("%s bad=[%s]", label, bad).containsEntry("code", "missing_argument");
+            assertThat(err).containsEntry("type", "INVALID_ARGUMENT");
+            assertThat(details(err)).containsEntry("field", field);
+        }
+    }
+
+    @Test
+    void compareStandardsRejectsMissingRequiredProjectBeforeResolution() {
+        // A blank/null required project must be rejected as a missing argument
+        // rather than silently falling through to LAUNCHPAD_DEFAULT_PROJECT.
+        var a = errorEnvelope(tools.compareStandards("  ", projectRoot.toString()));
+        assertThat(a).containsEntry("code", "missing_argument");
+        assertThat(details(a)).containsEntry("field", "projectA");
+        var b = errorEnvelope(tools.compareStandards(projectRoot.toString(), null));
+        assertThat(b).containsEntry("code", "missing_argument");
+        assertThat(details(b)).containsEntry("field", "projectB");
+    }
+
+    @Test
+    void missingArgumentEnvelopeIsStandardisedAndNamesTheField() {
+        var out = tools.compareStandards(null, projectRoot.toString());
+        assertThat(out).hasSize(1).containsOnlyKeys("error");
+        var err = errorEnvelope(out);
+        assertThat(err).containsEntry("code", "missing_argument");
+        assertThat(err).containsEntry("type", "INVALID_ARGUMENT");
+        assertThat(err.get("message")).asString().isNotBlank();
+        assertThat(err).containsKey("remediation");
+        assertThat(details(err)).containsEntry("field", "projectA");
     }
 
     private static void copyDirectory(Path source, Path target) throws IOException {
