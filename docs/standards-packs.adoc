@@ -71,14 +71,15 @@ includes:
 
 projections:
   - claude
-  - cursor
+  - gemini
 ----
 
-The `projections` field controls which agent-native formats are emitted alongside `AGENTS.md`:
+The `projections` field controls which agent-native outputs are emitted alongside `AGENTS.md`. Projections never duplicate `AGENTS.md`; they only add what a tool needs to consume it:
 
 * `claude` -- `.claude/skills/<id>/SKILL.md` for Claude Code slash-command discovery
-* `cursor` -- `.cursor/rules/<id>.mdc`
-* `windsurf` -- `.windsurfrules`
+* `gemini` -- `.gemini/settings.json` that points Gemini CLI's `context.fileName` at `AGENTS.md`
+
+Cursor and Windsurf are not listed: both read a root `AGENTS.md` natively, so no projection is needed for them.
 
 Omit `projections` to use the default (`claude` only). Set it to `[]` to disable all projections.
 
@@ -305,7 +306,7 @@ When adding a new HTTP route or extending the API surface.
 
 Anchor slugs must be unique: two ids that collapse to the same slug (e.g. `foo.bar` and `foo-bar`) are an authoring conflict and fail the scan, rather than being silently de-duplicated in the output.
 
-Agent projections (`.claude/skills/`, `.cursor/rules/`, `.windsurf/`) are generated from the same source -- editing the YAML updates all outputs on the next scan.
+Agent projections (`.claude/skills/`, `.gemini/settings.json`) are generated from the same source -- editing the YAML updates all outputs on the next scan.
 
 == Machine-readable sidecar
 

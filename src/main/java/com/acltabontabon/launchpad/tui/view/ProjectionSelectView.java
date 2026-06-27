@@ -47,8 +47,7 @@ public class ProjectionSelectView implements View {
     /** Maps a projection id to the MCP-client ids whose presence implies
      *  the developer probably uses that agent. Used for pre-ticking. */
     private static final Map<String, Set<ClientId>> PROJECTION_CLIENTS = Map.of(
-        "claude", Set.of(ClientId.CLAUDE_DESKTOP, ClientId.CLAUDE_CODE),
-        "cursor", Set.of(ClientId.CURSOR)
+        "claude", Set.of(ClientId.CLAUDE_DESKTOP, ClientId.CLAUDE_CODE)
     );
 
     private final List<AgentProjection> projections;
