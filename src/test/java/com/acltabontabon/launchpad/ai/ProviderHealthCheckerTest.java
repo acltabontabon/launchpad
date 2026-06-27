@@ -2,12 +2,16 @@ package com.acltabontabon.launchpad.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.acltabontabon.launchpad.config.LaunchpadAiProperties;
+import com.acltabontabon.launchpad.config.LaunchpadAiProperties.Synthesis;
 import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.config.LaunchpadSettings.Snapshot;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -115,6 +119,46 @@ class ProviderHealthCheckerTest {
         assertThat(status.state()).isEqualTo(LlmProviderStatus.State.DAEMON_DOWN);
     }
 
+    @Test
+    void autoReturnsModelMissingFromReachableProvider() {
+        // Ollama answers but lacks the model: reachable, so AUTO stops here and
+        // surfaces its provider-specific MODEL_MISSING rather than probing on.
+        respondAt("/api/tags", 200, "{\"models\":[{\"name\":\"other-model\"}]}");
+        respondAt("/v1/models", 200, "{\"data\":[{\"id\":\"local-model\"}]}");
+        snapshot.set(new Snapshot(LlmProvider.AUTO, baseUrl, "local-model", null, null, null));
+
+        var status = newChecker().check();
+
+        assertThat(status.state()).isEqualTo(LlmProviderStatus.State.MODEL_MISSING);
+        assertThat(status.resolvedProvider()).isEqualTo(LlmProvider.OLLAMA);
+    }
+
+    @Test
+    void deterministicProviderReadyWithoutNetwork() {
+        // No server: a deterministic check must not touch the network.
+        server.stop(0);
+        server = null;
+        snapshot.set(new Snapshot(LlmProvider.DETERMINISTIC, baseUrl, "unused", null, null, null));
+
+        var status = newChecker().check();
+
+        assertThat(status.state()).isEqualTo(LlmProviderStatus.State.READY);
+        assertThat(status.resolvedProvider()).isEqualTo(LlmProvider.DETERMINISTIC);
+    }
+
+    @Test
+    void synthesisDisabledResolvesDeterministicRegardlessOfProvider() {
+        // Provider pinned to Ollama, but synthesis is off globally: deterministic wins.
+        server.stop(0);
+        server = null;
+        snapshot.set(new Snapshot(LlmProvider.OLLAMA, baseUrl, "qwen2.5-coder:7b", null, null, null));
+
+        var status = newChecker(false).check();
+
+        assertThat(status.state()).isEqualTo(LlmProviderStatus.State.READY);
+        assertThat(status.resolvedProvider()).isEqualTo(LlmProvider.DETERMINISTIC);
+    }
+
     private void respondAt(String path, int status, String body) {
         server.createContext(path, exchange -> {
             byte[] bytes = body.getBytes();
@@ -126,7 +170,19 @@ class ProviderHealthCheckerTest {
     }
 
     private ProviderHealthChecker newChecker() {
-        return new ProviderHealthChecker(new StubSettings(snapshot));
+        return newChecker(true);
+    }
+
+    private ProviderHealthChecker newChecker(boolean synthesisEnabled) {
+        var props = new LaunchpadAiProperties(
+            Duration.ofSeconds(2), Duration.ofSeconds(2), null,
+            new Synthesis(synthesisEnabled, null, null));
+        var probe = new ProviderProbe();
+        var registry = new ProviderRegistry(List.of(
+            new OllamaProvider(props, probe),
+            new OpenAiCompatibleProvider(props, probe),
+            new DeterministicProvider()));
+        return new ProviderHealthChecker(new StubSettings(snapshot), props, registry);
     }
 
     /** LaunchpadSettings stub that reads from an AtomicReference instead of disk. */

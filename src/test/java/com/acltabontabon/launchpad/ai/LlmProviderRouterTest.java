@@ -7,8 +7,11 @@ import com.acltabontabon.launchpad.config.LaunchpadSettings;
 import com.acltabontabon.launchpad.config.LaunchpadSettings.LlmProviderSettingsChanged;
 import com.acltabontabon.launchpad.config.LaunchpadSettings.Snapshot;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 
@@ -57,11 +60,28 @@ class LlmProviderRouterTest {
         assertThat(router.getDefaultOptions()).isNotNull();
     }
 
+    @Test
+    void buildsInertDelegateWhenProviderIsDeterministic() {
+        var router = newRouter(new Snapshot(
+            LlmProvider.DETERMINISTIC, "http://localhost:11434", "unused", null, null, null));
+
+        var delegate = delegateOf(router);
+        assertThat(delegate).isNotInstanceOf(OllamaChatModel.class);
+        assertThat(delegate).isNotInstanceOf(OpenAiChatModel.class);
+        // The deterministic delegate makes no network call and yields no content.
+        assertThat(((ChatModel) delegate).call(new Prompt("hi")).getResults()).isEmpty();
+    }
+
     private static LlmProviderRouter newRouter(Snapshot snapshot) {
         var settings = new StubSettings(snapshot);
         var properties = LaunchpadAiProperties.ofTimeouts(Duration.ofMillis(500), Duration.ofMillis(500));
-        var healthChecker = new ProviderHealthChecker(settings);
-        return new LlmProviderRouter(settings, properties, healthChecker);
+        var probe = new ProviderProbe();
+        var registry = new ProviderRegistry(List.of(
+            new OllamaProvider(properties, probe),
+            new OpenAiCompatibleProvider(properties, probe),
+            new DeterministicProvider()));
+        var healthChecker = new ProviderHealthChecker(settings, properties, registry);
+        return new LlmProviderRouter(settings, healthChecker);
     }
 
     /**
