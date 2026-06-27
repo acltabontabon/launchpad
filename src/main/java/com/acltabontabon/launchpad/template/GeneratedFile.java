@@ -11,7 +11,8 @@ public record GeneratedFile(
         RULES,      // engineering rules files
         SKILL,      // one skill, vendor-native projection file (e.g. .claude/skills/<id>/SKILL.md)
         SKILLS,     // canonical aggregated skills companion (.ai/skills.md)
-        INDEX       // .ai/index.md, directory indexes
+        INDEX,      // .ai/index.md, directory indexes
+        CONFIG      // vendor tool config that points the tool at canonical output (e.g. .gemini/settings.json)
     }
 
     public String filename() {

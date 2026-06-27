@@ -22,7 +22,7 @@ This ordering is deliberate. Deterministic analysis is fast, repeatable, and doe
 
 === Vendor-neutral output
 
-Generated context files use a standard shape (`AGENTS.md` + `.ai/`) that any AI assistant can read. Agent-specific formats (Claude Code skills, Cursor rules, Windsurf rules) are produced as optional projections on top of the canonical output, not as replacements for it.
+Generated context files use a standard shape (`AGENTS.md` + `.ai/`) that any AI assistant can read. `AGENTS.md` is the single agent-instruction contract; projections never duplicate it. Tools that read `AGENTS.md` natively (Cursor, Windsurf) get no generated file at all. Optional projections add only what a tool needs on top of the canonical output -- Claude Code slash-command skills, or a `.gemini/settings.json` that points Gemini CLI at `AGENTS.md` -- never a replacement for it.
 
 The standards companions (`.ai/engineering-rules.md`, `.ai/skills.md`, `.ai/checklists.md`) emit one stable-slug heading per rule, skill, and checklist -- each anchor derived from the record's stable id, not its title -- so downstream sandbox indexers chunk the corpus one item at a time. `AGENTS.md` itself stays standards-free.
 

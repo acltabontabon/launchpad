@@ -98,7 +98,6 @@ Press `s` to apply all plans. Launchpad backs up any file it changes to `.launch
 │   ├── checklists.md                  # checklists from your standards pack
 │   └── index.md                       # index of all .ai/ files
 ├── .claude/skills/<id>/SKILL.md       # Claude Code slash-command stubs (one per skill)
-├── .cursor/rules/<id>.mdc             # Cursor rules (if Cursor projection is enabled)
 └── .launchpad/
     ├── scan.json                      # structured scan cache (read by MCP server and audit)
     ├── audit.md                       # audit findings (if standards pack has check: rules)

@@ -322,6 +322,7 @@ public class ReviewView implements View {
             case SKILL -> "skill";
             case SKILLS -> "skills";
             case INDEX -> "index";
+            case CONFIG -> "config";
         };
     }
 

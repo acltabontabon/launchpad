@@ -28,6 +28,8 @@ tier (see <<Stability tiers>>).
 ----
 <project-root>/
 ├── AGENTS.md                       # primary agent-instructions file        [stable layout / experimental prose]
+├── .gemini/
+│   └── settings.json              # points Gemini CLI at AGENTS.md (opt-in)  [stable]
 ├── .ai/
 │   ├── index.md                    # navigation index + skills list         [stable]
 │   ├── stack.md                    # detected stack and dependencies        [stable]
@@ -35,11 +37,7 @@ tier (see <<Stability tiers>>).
 │   ├── skills.md                   # skills (only if skills exist)          [stable]
 │   └── checklists.md               # checklists (only if checklists exist)  [stable]
 ├── .claude/
-│   └── skills/<skill-id>/SKILL.md  # Claude Code projection (default-on)     [stable]
-├── .cursor/
-│   └── rules/*.mdc                 # Cursor projection (opt-in)              [stable]
-├── .windsurf/
-│   └── rules/*.md                  # Windsurf projection (opt-in)            [stable]
+│   └── skills/<skill-id>/SKILL.md  # Claude Code slash commands (default-on) [stable]
 └── .launchpad/
     ├── project.model.json          # deterministic structure graph          [stable, versioned]
     ├── standards.index.json        # deterministic standards records        [stable, versioned]
@@ -50,9 +48,17 @@ tier (see <<Stability tiers>>).
 
 Conditional companions (`engineering-rules.md`, `skills.md`, `checklists.md`)
 are written only when the resolved standards pack contributes that record type.
-The projection directories appear only for enabled projections - `claude` is
-on by default; `cursor` and `windsurf` are opt-in via the standards manifest's
-`projections` list.
+The projection outputs appear only for enabled projections - `claude` is on by
+default and `gemini` is opt-in, via the standards manifest's `projections` list
+or the TUI projection picker.
+
+`AGENTS.md` is the single agent-instruction contract; projections never
+duplicate it. Cursor and Windsurf read `AGENTS.md` natively (root = always-on
+rules), so Launchpad generates no vendor instruction files for them. Gemini CLI
+defaults to a different file name but is configurable, so the `gemini` projection
+emits only a `.gemini/settings.json` that points `context.fileName` at
+`AGENTS.md`. The `claude` projection emits Claude Code slash commands, which are
+invokable workflows rather than an instruction file.
 
 == Generated files
 
@@ -67,12 +73,43 @@ on by default; `cursor` and `windsurf` are opt-in via the standards manifest's
 | `.ai/skills.md`         | `SKILLS`  | deterministic (from pack) | only if skills exist
 | `.ai/checklists.md`     | `CONTEXT` | deterministic (from pack) | only if checklists exist
 | `.claude/skills/<id>/SKILL.md` | `SKILL` | deterministic projection | per skill (default-on)
-| `.cursor/rules/*.mdc`   | `RULES` / `SKILL` | deterministic projection | opt-in
-| `.windsurf/rules/*.md`  | `RULES` / `SKILL` | deterministic projection | opt-in
+| `.gemini/settings.json` | `CONFIG`  | deterministic projection | opt-in
 |===
 
+=== Cursor and Windsurf
+
+Neither tool gets a generated file. Cursor reads a root `AGENTS.md` natively
+(applied as always-on rules, alongside any `.cursor/rules`), and Windsurf/Cascade
+discovers a root `AGENTS.md` through the same rules engine that powers
+`.windsurf/rules`. Because both already consume the canonical contract, Launchpad
+emits nothing for them - `AGENTS.md` is the single source of truth.
+
+=== Gemini CLI projection
+
+The `gemini` projection does *not* emit a separate context file. Gemini CLI
+loads its project context from a configurable file name (default `GEMINI.md`),
+so rather than duplicate `AGENTS.md` into a `GEMINI.md` that would clutter the
+repo and drift out of sync, the projection writes a minimal
+`.gemini/settings.json` that sets `context.fileName` to `AGENTS.md`:
+
+[source,json]
+----
+{
+  "context": {
+    "fileName": "AGENTS.md"
+  }
+}
+----
+
+Gemini CLI then reads the single source-of-truth contract directly. The settings
+file carries no JSON comment markers, so an existing hand-authored
+`.gemini/settings.json` is classified `SKIP` and never clobbered - developers who
+already maintain that file add `context.fileName: "AGENTS.md"` themselves. Enable
+the projection with `projections: ["claude", "gemini"]` in the standards manifest
+or by ticking Gemini CLI in the TUI projection picker.
+
 `Kind` is the stable `FileKind` discriminator carried on every generated file
-(`CONTEXT`, `RULES`, `SKILL`, `SKILLS`, `INDEX`). "Deterministic" means the
+(`CONTEXT`, `RULES`, `SKILL`, `SKILLS`, `INDEX`, `CONFIG`). "Deterministic" means the
 content is assembled from the scan and standards pack with no model call;
 "AI-synthesized" means a local model authored the prose (with a deterministic
 fallback when synthesis is disabled).
@@ -158,8 +195,8 @@ rely on this decision table:
 *Stable* - safe to integrate against; changes here follow the versioning policy
 below:
 
-* File paths and directory layout (`AGENTS.md`, `.ai/*`, `.claude/`, `.cursor/`,
-  `.windsurf/`, `.launchpad/*`).
+* File paths and directory layout (`AGENTS.md`, `.ai/*`, `.claude/`,
+  `.gemini/settings.json`, `.launchpad/*`).
 * The `launchpad:provenance` and `launchpad:managed:start/end` marker tokens.
 * The `FileKind` discriminator and the write-action decision table.
 * `.ai/*` heading anchors (explicit `{#slug}` anchors derived from each record's
