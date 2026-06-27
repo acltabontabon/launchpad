@@ -8,9 +8,9 @@ image::resources/launchpad-overview.drawio.png[Launchpad architecture overview]
 
 == Core principles
 
-=== Local-first
+=== Provider-pluggable
 
-Launchpad runs entirely on your machine. Source code, scan results, and generated context never leave the local filesystem. The local AI model runs through Ollama or a compatible local endpoint -- no cloud API calls are made during analysis or synthesis.
+Launchpad works with any AI provider that exposes an OpenAI-compatible endpoint. Local providers (Ollama, LM Studio, llama.cpp) are the default: source code, scan results, and generated context stay on your machine, and no cloud API calls are made during analysis or synthesis. Paid or remote providers are also supported; the choice belongs to the operator, not the tool.
 
 === Deterministic-first
 
@@ -57,8 +57,8 @@ Your Project
          │
          ▼
 ┌───────────────────┐
-│  Local AI         │  Synthesizes short narrative sections from the
-│  synthesis        │  structured data above. One bounded call per
+│  AI synthesis     │  Synthesizes short narrative sections from the
+│                   │  structured data above. One bounded call per
 │                   │  section. Falls back to deterministic output
 │                   │  if the model returns invalid content.
 └────────┬──────────┘

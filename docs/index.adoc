@@ -1,8 +1,8 @@
 = Launchpad documentation
 
-Launchpad prepares a project's context and engineering standards locally so a
-cloud AI agent starts with the cheap, repeatable cognitive work already done.
-This is the documentation index.
+Launchpad is a preparation engine: it scans the project, resolves engineering
+standards, and emits grounded context artifacts before any AI agent starts.
+Agent-agnostic and provider-pluggable. This is the documentation index.
 
 == Guides
 

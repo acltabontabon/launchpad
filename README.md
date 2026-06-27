@@ -44,7 +44,7 @@ It scans the project, resolves engineering standards, generates grounded project
 - **🧠 Generates grounded context files** -- `AGENTS.md` + `.ai/*` ready before the agent starts
 - **📦 Emits durable preparation artifacts** -- structured project context, standards, readiness signals, and agent-facing guidance
 - **🤝 Complements existing AI tools** -- works alongside Claude context mode, Cursor, Windsurf, Copilot, MCP servers, IDE assistants, and local agents
-- **🏠 Keeps local AI first-class** -- supports local/private workflows while leaving room for cloud, paid, hybrid, and deterministic preparation modes
+- **🔌 Provider-pluggable** -- local AI by default (Ollama, LM Studio, or any OpenAI-compatible endpoint); paid and cloud providers also supported
 
 ---
 
@@ -75,17 +75,15 @@ Launchpad is:
 
 ---
 
-## 🏠 Local AI support
+## 🔌 AI providers
 
-Ollama, LM Studio, llama.cpp, vLLM -- anything with an OpenAI-compatible endpoint works.
+Providers are pluggable. Local AI is the default -- Ollama, LM Studio, llama.cpp, vLLM, or anything with an OpenAI-compatible endpoint -- and keeps your code on your machine, which makes it a first-class option for privacy-sensitive, offline, air-gapped, or cost-sensitive workflows. Paid and cloud providers are also supported when they produce better results.
 
 Default:
 
 ```text
 http://localhost:11434
 ```
-
-Local AI remains a first-class option for privacy-sensitive, offline, air-gapped, or cost-sensitive workflows.
 
 ---
 
