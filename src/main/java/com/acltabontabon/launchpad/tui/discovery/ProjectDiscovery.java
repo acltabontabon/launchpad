@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.tui.discovery;
 
+import com.acltabontabon.launchpad.config.WorkspaceConfigService;
 import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
 import com.acltabontabon.launchpad.scanner.build.BuildSystemDetector;
 import java.io.IOException;
@@ -33,20 +34,13 @@ public final class ProjectDiscovery {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectDiscovery.class);
 
-    /** Common dev-root names relative to $HOME. First match wins; missing roots are skipped. */
-    private static final List<String> DEFAULT_ROOT_NAMES =
-        List.of("Workspace", "workspace", "code", "Code", "dev", "Developer",
-                "src", "Projects", "projects", "repos", "git");
-
     /** Directories never worth descending into. */
     private static final Set<String> SKIP_DIRS = Set.of(
         ".git", "node_modules", "target", "build", "dist", ".idea", ".vscode",
         ".gradle", ".mvn", "out", "bin", ".launchpad", ".cache", "vendor");
 
-    /** Cap depth so we don't get lost in nested monorepos. */
-    private static final int MAX_DEPTH = 3;
-
     private final ProjectSupportDetector detector;
+    private final WorkspaceConfigService workspaceConfig;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         var t = new Thread(r, "launchpad-discovery");
         t.setDaemon(true);
@@ -57,8 +51,9 @@ public final class ProjectDiscovery {
     private final AtomicBoolean inProgress = new AtomicBoolean(false);
     private final AtomicBoolean everRan = new AtomicBoolean(false);
 
-    public ProjectDiscovery(ProjectSupportDetector detector) {
+    public ProjectDiscovery(ProjectSupportDetector detector, WorkspaceConfigService workspaceConfig) {
         this.detector = detector;
+        this.workspaceConfig = workspaceConfig;
     }
 
     @PreDestroy
@@ -109,17 +104,21 @@ public final class ProjectDiscovery {
     }
 
     private List<DiscoveredProject> walkRoots() {
-        var home = Path.of(System.getProperty("user.home"));
         var hits = new ArrayList<DiscoveredProject>();
+        // Read config once per scan so a settings edit mid-walk can't produce an
+        // inconsistent walk; the next refresh() picks up the change.
+        var depth = workspaceConfig.depth();
+        var detectGitOnly = workspaceConfig.detectGitOnly();
+        var ignored = canonicalizeAll(workspaceConfig.ignoredPaths());
         // Dedupe by canonical path so case-insensitive filesystems (macOS default)
         // don't surface "~/Workspace/Foo" and "~/workspace/Foo" as separate hits.
         var seenRoots = new HashSet<Path>();
-        for (var name : DEFAULT_ROOT_NAMES) {
-            var root = home.resolve(name);
+        for (var root : workspaceConfig.resolvedRoots()) {
             if (!Files.isDirectory(root)) continue;
             var canonical = canonicalize(root);
+            if (isIgnored(canonical, ignored)) continue;
             if (!seenRoots.add(canonical)) continue;
-            walkRoot(canonical, hits);
+            walkRoot(canonical, hits, depth, detectGitOnly, ignored);
         }
         hits.sort(Comparator
             .comparing(DiscoveredProject::name, String.CASE_INSENSITIVE_ORDER)
@@ -130,14 +129,28 @@ public final class ProjectDiscovery {
     private static Path canonicalize(Path p) {
         try {
             return p.toRealPath();
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             return p.toAbsolutePath().normalize();
         }
     }
 
-    private void walkRoot(Path root, List<DiscoveredProject> hits) {
+    private static Set<Path> canonicalizeAll(List<Path> paths) {
+        var out = new HashSet<Path>();
+        for (var p : paths) {
+            out.add(canonicalize(p));
+        }
+        return out;
+    }
+
+    /** True when {@code path} is, or sits under, any ignored directory. */
+    private static boolean isIgnored(Path path, Set<Path> ignored) {
+        return ignored.stream().anyMatch(path::startsWith);
+    }
+
+    private void walkRoot(Path root, List<DiscoveredProject> hits, int depth,
+                          boolean detectGitOnly, Set<Path> ignored) {
         try {
-            Files.walkFileTree(root, Set.of(), MAX_DEPTH, new SimpleFileVisitor<>() {
+            Files.walkFileTree(root, Set.of(), depth, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                     var name = dir.getFileName() == null ? "" : dir.getFileName().toString();
@@ -147,7 +160,13 @@ public final class ProjectDiscovery {
                     if (!dir.equals(root) && name.startsWith(".")) {
                         return FileVisitResult.SKIP_SUBTREE;
                     }
+                    if (!dir.equals(root) && isIgnored(canonicalize(dir), ignored)) {
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
                     if (BuildSystemDetector.isProjectRoot(dir)) {
+                        if (detectGitOnly && !Files.exists(dir.resolve(".git"))) {
+                            return FileVisitResult.CONTINUE;
+                        }
                         var result = detector.detect(dir);
                         if (result.isSupported()) {
                             var canonical = canonicalize(dir);

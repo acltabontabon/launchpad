@@ -94,6 +94,11 @@ public class LaunchpadRuntimeHints implements RuntimeHintsRegistrar {
             // Per-project relationship metadata at <projectRoot>/.launchpad/project.yml,
             // overlaid into RegisteredProject on every registry read.
             "com.acltabontabon.launchpad.config.ProjectMetadataFile",
+            // User-global workspace config at ~/.launchpad/config.yml (roots, ignore
+            // list, depth, git-only gate). Nested records need explicit entries -
+            // without these the discovery walk silently falls back to defaults under native.
+            "com.acltabontabon.launchpad.config.WorkspaceConfigService$Document",
+            "com.acltabontabon.launchpad.config.WorkspaceConfigService$Workspace",
             // Per-project scan persisted to <projectRoot>/.launchpad/scan.json by ScanStore.
             // Read back by MCP tools and any tooling that resumes from cache.
             "com.acltabontabon.launchpad.scanner.ProjectContext",
