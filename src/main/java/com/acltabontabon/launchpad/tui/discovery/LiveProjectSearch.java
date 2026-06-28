@@ -1,5 +1,6 @@
 package com.acltabontabon.launchpad.tui.discovery;
 
+import com.acltabontabon.launchpad.config.WorkspaceConfigService;
 import com.acltabontabon.launchpad.scanner.ProjectSupportDetector;
 import com.acltabontabon.launchpad.scanner.build.BuildSystemDetector;
 import java.io.IOException;
@@ -9,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -68,6 +70,7 @@ public final class LiveProjectSearch {
         ".venv", "venv", ".next", ".nuxt", "_site");
 
     private final ProjectSupportDetector detector;
+    private final WorkspaceConfigService workspaceConfig;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         var t = new Thread(r, "launchpad-search-debounce");
@@ -90,8 +93,9 @@ public final class LiveProjectSearch {
     private volatile ScheduledFuture<?> pendingDebounce;
     private volatile Future<?> currentWalk;
 
-    public LiveProjectSearch(ProjectSupportDetector detector) {
+    public LiveProjectSearch(ProjectSupportDetector detector, WorkspaceConfigService workspaceConfig) {
         this.detector = detector;
+        this.workspaceConfig = workspaceConfig;
     }
 
     @PreDestroy
@@ -175,6 +179,10 @@ public final class LiveProjectSearch {
         var home = Path.of(System.getProperty("user.home"));
         if (!Files.isDirectory(home)) return List.of();
         var hits = new ArrayList<DiscoveredProject>();
+        // Honor the workspace ignore list and git-only gate so on-demand search
+        // never resurfaces a project that eager discovery deliberately hides.
+        var ignored = canonicalizeAll(workspaceConfig.ignoredPaths());
+        var detectGitOnly = workspaceConfig.detectGitOnly();
         var deadlineTripped = new boolean[]{false};
         try {
             Files.walkFileTree(home, Set.of(), MAX_DEPTH, new SimpleFileVisitor<>() {
@@ -191,9 +199,15 @@ public final class LiveProjectSearch {
                     if (!dir.equals(home) && (SKIP_DIRS.contains(name) || name.startsWith("."))) {
                         return FileVisitResult.SKIP_SUBTREE;
                     }
+                    if (!dir.equals(home) && isIgnored(canonicalize(dir), ignored)) {
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
                     // Match the directory name first - cheaper than parsing every build file we pass.
                     if (name.toLowerCase(Locale.ROOT).contains(needle)
                         && BuildSystemDetector.isProjectRoot(dir)) {
+                        if (detectGitOnly && !Files.exists(dir.resolve(".git"))) {
+                            return FileVisitResult.CONTINUE;
+                        }
                         var result = detector.detect(dir);
                         if (result.isSupported()) {
                             var canonical = canonicalize(dir);
@@ -225,8 +239,21 @@ public final class LiveProjectSearch {
     private static Path canonicalize(Path p) {
         try {
             return p.toRealPath();
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             return p.toAbsolutePath().normalize();
         }
+    }
+
+    private static Set<Path> canonicalizeAll(List<Path> paths) {
+        var out = new HashSet<Path>();
+        for (var p : paths) {
+            out.add(canonicalize(p));
+        }
+        return out;
+    }
+
+    /** True when {@code path} is, or sits under, any ignored directory. */
+    private static boolean isIgnored(Path path, Set<Path> ignored) {
+        return ignored.stream().anyMatch(path::startsWith);
     }
 }
