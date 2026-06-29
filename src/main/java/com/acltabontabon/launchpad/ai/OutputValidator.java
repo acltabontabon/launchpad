@@ -19,8 +19,32 @@ import java.util.regex.Pattern;
 public final class OutputValidator {
 
     private static final int MIN_CONTENT_CHARS = 120;
+    // Matches any backticked, path-shaped token bearing a trailing extension.
+    // Group 1 = full ref, group 2 = extension. The fixed extension allowlist
+    // moved out of the regex into KNOWN_EXTENSIONS (plus per-project extensions
+    // derived from the scan) - see findHallucinatedRefs. The prefix requires at
+    // least one char before the final dot, so a bare `.env` token is never
+    // matched and multi-dot paths (`infra/dev.tfvars`) resolve greedily.
     private static final Pattern BACKTICKED_PATH = Pattern.compile(
-        "`([A-Za-z0-9_\\-./]+\\.(java|kt|py|ts|tsx|js|jsx|go|rs|cs|rb|swift|xml|yml|yaml|toml|json|md|properties))`");
+        "`([A-Za-z0-9_\\-./]+\\.([A-Za-z0-9]+))`");
+    // File extensions (lowercase, no dot) we recognize as real source / config
+    // formats. A backticked token whose extension is outside this set - and not
+    // present among the scanned project's own source files - is left untouched,
+    // preserving the validator's conservative bias against false positives.
+    private static final Set<String> KNOWN_EXTENSIONS = Set.of(
+        // JVM
+        "java", "kt", "kts", "gradle", "groovy", "scala",
+        // Scripting / web
+        "py", "ts", "tsx", "js", "jsx", "mjs", "cjs", "rb", "php",
+        // Systems
+        "go", "rs", "cs", "swift", "c", "h", "cpp", "hpp",
+        // Data / scripts
+        "sql", "sh", "bash",
+        // Config / markup
+        "xml", "yml", "yaml", "toml", "json", "json5", "properties",
+        "ini", "env", "conf", "cfg", "tf", "tfvars", "hcl", "lock",
+        // Docs / misc
+        "md", "txt", "imports");
     // Spring profile config convention: application-<profile>.{properties,yml,yaml}.
     // These are real files in countless Spring projects even when the scanner
     // didn't find one - the model citing them is a convention reference, not a
@@ -59,13 +83,14 @@ public final class OutputValidator {
         if (content == null || content.isBlank()) return new CleanResult(content, 0);
         Set<String> sourceSet = new HashSet<>(ctx.sourceFiles());
         Set<String> basenames = buildBasenameAllowlist(ctx);
+        Set<String> extensions = buildExtensionAllowlist(ctx);
 
         var lines = content.split("\n", -1);
         var out = new StringBuilder();
         int stripped = 0;
         for (int i = 0; i < lines.length; i++) {
             var line = lines[i];
-            var hallucinated = findHallucinatedRefs(line, sourceSet, basenames);
+            var hallucinated = findHallucinatedRefs(line, sourceSet, basenames, extensions);
             if (hallucinated.isEmpty()) {
                 out.append(line);
             } else if (isBulletLine(line)) {
@@ -117,10 +142,13 @@ public final class OutputValidator {
         "requirements.txt", "setup.py", "pyproject.toml", "Pipfile",
         // Rust / Go / Ruby / .NET
         "Cargo.toml", "Cargo.lock", "go.mod", "go.sum",
-        "Gemfile", "Gemfile.lock", "Rakefile",
+        "Gemfile", "Gemfile.lock", "Rakefile", "poetry.lock",
         // Docker / infra
         "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
-        ".gitignore", ".dockerignore", ".env", ".env.example"
+        // Note: bare ".env" is intentionally NOT allowlisted - the path regex
+        // never matches a bare dotfile token, so the entry only ever affected
+        // directory-qualified refs like `config/.env`, which we want flagged.
+        ".gitignore", ".dockerignore", ".env.example"
     );
 
     private static Set<String> buildBasenameAllowlist(ProjectContext ctx) {
@@ -134,11 +162,35 @@ public final class OutputValidator {
         return basenames;
     }
 
-    private static List<String> findHallucinatedRefs(String line, Set<String> sourceSet, Set<String> basenames) {
+    /**
+     * Recognized file extensions for this scan: the static {@link #KNOWN_EXTENSIONS}
+     * set unioned with the extensions actually present among the project's source
+     * files. The union means a project using an uncommon extension still has that
+     * extension treated as a real file type, even when it is not hardcoded.
+     */
+    private static Set<String> buildExtensionAllowlist(ProjectContext ctx) {
+        Set<String> extensions = new HashSet<>(KNOWN_EXTENSIONS);
+        for (var p : ctx.sourceFiles()) {
+            int slash = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+            String basename = slash < 0 ? p : p.substring(slash + 1);
+            int dot = basename.lastIndexOf('.');
+            if (dot >= 0 && dot < basename.length() - 1) {
+                extensions.add(basename.substring(dot + 1).toLowerCase());
+            }
+        }
+        return extensions;
+    }
+
+    private static List<String> findHallucinatedRefs(
+        String line, Set<String> sourceSet, Set<String> basenames, Set<String> extensions
+    ) {
         var hits = new ArrayList<String>();
         Matcher m = BACKTICKED_PATH.matcher(line);
         while (m.find()) {
             String ref = m.group(1);
+            // Only judge tokens whose extension we recognize as a real file
+            // type; anything else is left untouched (e.g. `e.g.`, `v1.2`).
+            if (!extensions.contains(m.group(2).toLowerCase())) continue;
             String basename = ref.contains("/") ? ref.substring(ref.lastIndexOf('/') + 1) : ref;
             if (sourceSet.contains(ref) || basenames.contains(basename)) continue;
             if (SPRING_PROFILE_CONFIG.matcher(basename).matches()) continue;
